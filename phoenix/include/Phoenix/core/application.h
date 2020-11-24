@@ -1,9 +1,13 @@
+#ifndef __APPLICATION__
+#define __APPLICATION__
+
 #include <string>
 #include "window.h"
 #include "base.h"
 #include "layerStack.h"
 #include "timestep.h"
 #include "log.h"
+#include "assert.h"
 
 int main(int argc, char** argv);
 namespace Phoenix{
@@ -20,7 +24,7 @@ namespace Phoenix{
 		void Close();
 
 		// ImGuiLayer* GetImGuiLayer() { return m_ImGuiLayer; }
-
+        static Application& Get() { return *s_Instance; }
     private:
         void Run();
         bool OnWindowClose(WindowCloseEvent& e);
@@ -35,7 +39,11 @@ namespace Phoenix{
         LayerStack _layerStack;
 
     private:
+        static Application* s_Instance;
         friend int ::main(int argc, char** argv);
         
     };
 }
+
+
+#endif

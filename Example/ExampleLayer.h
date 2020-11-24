@@ -1,6 +1,7 @@
 #include <Phoenix/core/layer.h>
 #include <Phoenix/renderer/shader.h>
-
+#include <Phoenix/event/keyEvent.h>
+#include <Phoenix/core/application.h>
 class Triangle{
 public:
     Triangle(float* points, float* colors){
@@ -52,6 +53,9 @@ public:
 
     void OnUpdate(Timestep ts) override;
     void OnEvent(Event& e) override;
+
+private:
+
 private:
     Ref<Shader> shader;
     Ref<Triangle> three_triangle;

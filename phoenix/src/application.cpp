@@ -1,29 +1,36 @@
 #include "Phoenix/core/application.h"
-
-
+#include <Phoenix/renderer/renderer.h>
+#include <Phoenix/renderer/renderer_command.h>
 
 namespace Phoenix{
-
+    Application* Application::s_Instance = nullptr;
     Application::Application(const std::string name) {
         this->_name = name;
-        Log::Init();
+
+        PHX_CORE_ASSERT(!s_Instance, "Application already exists!");
+		s_Instance = this;
         this->_window = std::make_unique<Window>(WindowProperties(this->_name));
         this->_window->SetEventCallback(BIND_EVENT_FN(Application::OnEvent));
-        // Init Renderer
-
-        glViewport(0, 0, this->_window->GetWidth(), this->_window->GetHeight());
+        
+        Renderer::Init();
+        RenderCommand::SetViewport(0, 0, this->_window->GetWidth(), this->_window->GetHeight());
 
         PHX_CORE_INFO("Application initialized successfully.");
     }
 
     Application::~Application(){
-        // Shutdown renderer
+        Renderer::Shutdown();
     }
 
     void Application::OnEvent(Event& e){
         EventDispatcher dispathcer(e);
         dispathcer.Dispatch<WindowResizeEvent>(BIND_EVENT_FN(Application::OnWindowResize));
         dispathcer.Dispatch<WindowCloseEvent>(BIND_EVENT_FN(Application::OnWindowClose));
+        for (auto it = _layerStack.rbegin(); it != _layerStack.rend(); ++it){
+			if (e.Handled) 
+				break;
+			(*it)->OnEvent(e);
+		}
     }
 
     void Application::PushLayer(Layer* layer){
@@ -82,7 +89,7 @@ namespace Phoenix{
         }
 
         _minimized = false;
-        // Renderer::OnWindowResize(e.GetWidth(), e.GetHeight());
+        Renderer::OnWindowResize(e.GetWidth(), e.GetHeight());
 
         return false;
     }
