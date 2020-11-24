@@ -1,7 +1,8 @@
 #include <string>
 #include "window.h"
 #include "base.h"
-
+#include "timestep.h"
+#include "log.h"
 
 int main(int argc, char** argv);
 namespace Phoenix{

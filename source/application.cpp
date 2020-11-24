@@ -1,15 +1,17 @@
 #include "application.h"
 
-#include "timestep.h"
 
 
 namespace Phoenix{
 
     Application::Application(const std::string name) {
         this->_name = name;
+        Log::Init();
         this->_window = std::make_shared<Window>(WindowProperties(this->_name));
         this->_window->SetEventCallback(BIND_EVENT_FN(Application::onEvent));
         // Init Renderer
+
+        PHX_CORE_INFO("Application initialized successfully.");
     }
 
 
@@ -19,7 +21,6 @@ namespace Phoenix{
 
 
     void Application::onEvent(Event& e){
-        std::cout << "here" << std::endl;
         EventDispatcher dispathcer(e);
         dispathcer.Dispatch<WindowResizeEvent>(BIND_EVENT_FN(Application::OnWindowResize));
         dispathcer.Dispatch<WindowCloseEvent>(BIND_EVENT_FN(Application::OnWindowClose));

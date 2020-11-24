@@ -15,6 +15,7 @@ set(sources
     source/application.cpp
     source/core.cpp
     source/window.cpp
+    source/log.cpp
 )
 
 
@@ -29,10 +30,14 @@ include_directories(${CMAKE_PROJECT_NAME} ${OPENGL_INCLUDE_DIR})
 find_package(GLM REQUIRED)
 message(STATUS "GLM included at ${GLM_INCLUDE_DIR}")
 
+find_package(spdlog REQUIRED)
+message(STATUS "SPDLOG included at ${SPDLOG_INCLUDE_DIR}")
+
 add_executable(${CMAKE_PROJECT_NAME} ${sources})
 target_link_libraries(${CMAKE_PROJECT_NAME} ${SDL2_LIBRARIES})
 target_link_libraries(${CMAKE_PROJECT_NAME} glfw)
 target_link_libraries(${CMAKE_PROJECT_NAME} OpenGL::GL)
+target_link_libraries(${CMAKE_PROJECT_NAME} ${SPDLOG_LIBRARIES})
 
 
 
