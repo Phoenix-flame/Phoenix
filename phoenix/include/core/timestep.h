@@ -1,3 +1,5 @@
+#ifndef __TIMESTEP__
+#define __TIMESTEP__
 namespace Phoenix {
     class Timestep{
     public:
@@ -11,3 +13,5 @@ namespace Phoenix {
         float m_Time;
     };
 }
+
+#endif

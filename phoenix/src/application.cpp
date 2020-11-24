@@ -1,4 +1,4 @@
-#include "application.h"
+#include "core/application.h"
 
 
 
@@ -7,24 +7,37 @@ namespace Phoenix{
     Application::Application(const std::string name) {
         this->_name = name;
         Log::Init();
-        this->_window = std::make_shared<Window>(WindowProperties(this->_name));
-        this->_window->SetEventCallback(BIND_EVENT_FN(Application::onEvent));
+        this->_window = std::make_unique<Window>(WindowProperties(this->_name));
+        this->_window->SetEventCallback(BIND_EVENT_FN(Application::OnEvent));
         // Init Renderer
 
         PHX_CORE_INFO("Application initialized successfully.");
     }
 
-
     Application::~Application(){
         // Shutdown renderer
     }
 
-
-    void Application::onEvent(Event& e){
+    void Application::OnEvent(Event& e){
         EventDispatcher dispathcer(e);
         dispathcer.Dispatch<WindowResizeEvent>(BIND_EVENT_FN(Application::OnWindowResize));
         dispathcer.Dispatch<WindowCloseEvent>(BIND_EVENT_FN(Application::OnWindowClose));
     }
+
+    void Application::PushLayer(Layer* layer){
+		_layerStack.PushLayer(layer);
+		layer->OnAttach();
+	}
+
+	void Application::PushOverlay(Layer* layer){
+		_layerStack.PushOverlay(layer);
+		layer->OnAttach();
+	}
+
+	void Application::Close(){
+		_running = false;
+	}
+
 
     void Application::Run(){
         while(this->_running){

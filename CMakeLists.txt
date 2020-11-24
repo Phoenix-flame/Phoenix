@@ -1,44 +1,18 @@
-cmake_minimum_required(VERSION 3.2)
+cmake_minimum_required(VERSION 3.6)
+project(Example)
 
-project(Phoenix VERSION 4.7.2 LANGUAGES C CXX)
+# Add sub directories
+add_subdirectory(phoenix)
+add_subdirectory(utils)
+include_directories(${PROJECT_SOURCE_DIR})
+# Create the executable
+add_executable(${PROJECT_NAME} main.cpp)
 
-set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -pthread")
-set(CMAKE_CXX_CREATE_STATIC_LIBRARY true)
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${Phoenix_SOURCE_DIR}/cmake")
-
-message (${CMAKE_MODULE_PATH})
-
-
-set(sources
-    main.cpp
-    source/application.cpp
-    source/core.cpp
-    source/window.cpp
-    source/log.cpp
+# Link the static library from subproject1 using it's alias sub::lib1
+# Link the header only library from subproject2 using it's alias sub::lib2
+# This will cause the include directories for that target to be added to this project
+target_link_libraries(${PROJECT_NAME}
+    PRIVATE
+    phoenix
+    utils
 )
-
-
-
-find_package(SDL2 REQUIRED)
-include_directories(${CMAKE_PROJECT_NAME} ${SDL2_INCLUDE_DIRS})
-
-find_package(glfw3 3.3 REQUIRED)
-find_package(OpenGL REQUIRED)
-include_directories(${CMAKE_PROJECT_NAME} ${OPENGL_INCLUDE_DIR})
-
-find_package(GLM REQUIRED)
-message(STATUS "GLM included at ${GLM_INCLUDE_DIR}")
-
-find_package(spdlog REQUIRED)
-message(STATUS "SPDLOG included at ${SPDLOG_INCLUDE_DIR}")
-
-add_executable(${CMAKE_PROJECT_NAME} ${sources})
-target_link_libraries(${CMAKE_PROJECT_NAME} ${SDL2_LIBRARIES})
-target_link_libraries(${CMAKE_PROJECT_NAME} glfw)
-target_link_libraries(${CMAKE_PROJECT_NAME} OpenGL::GL)
-target_link_libraries(${CMAKE_PROJECT_NAME} ${SPDLOG_LIBRARIES})
-
-
-
-
