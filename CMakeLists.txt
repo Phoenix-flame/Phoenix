@@ -4,3 +4,6 @@ project(Example)
 # Add sub directories
 add_subdirectory(phoenix)
 add_subdirectory(Example)
+
+
+file(COPY assets DESTINATION Example)

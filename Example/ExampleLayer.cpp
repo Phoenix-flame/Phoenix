@@ -17,12 +17,12 @@ void ExampleLayer::OnDetach() {
 void ExampleLayer::OnUpdate(Phoenix::Timestep ts) {
     Phoenix::RenderCommand::SetClearColor(glm::vec4(0.9, 0.5, 0.4, 1.0));
     Phoenix::RenderCommand::Clear();
-    shader->Bind();
+    // shader->Bind();
    
-    shader->Unbind();
+    // shader->Unbind();
 }
 void ExampleLayer::OnEvent(Phoenix::Event& e) {
-    PHX_INFO("{0}", e);
+    // PHX_INFO("{0}", e);
     EventDispatcher dispacher(e);
     dispacher.Dispatch<KeyPressedEvent>([](KeyPressedEvent& e){
         if (e.GetKeyCode() == Phoenix::Key::Escape){
@@ -31,5 +31,15 @@ void ExampleLayer::OnEvent(Phoenix::Event& e) {
         }
         return false;
     });
+}
 
+
+void ExampleLayer::OnImGuiRender(){
+    
+    // ImGui::Begin("Settings");
+    if(ImGui::Begin("Settings")){
+        // PHX_CORE_WARN("OnImGuiRender");
+    }
+	ImGui::Text("Hello");
+	ImGui::End();
 }

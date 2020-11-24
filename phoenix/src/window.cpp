@@ -1,4 +1,6 @@
+#include <GL/glew.h>
 #include "Phoenix/core/window.h"
+#include <Phoenix/core/assert.h>
 
 static void GLFWErrorCallback(int error, const char* description){
    std::cerr << "[" << error << "]: " << description << std::endl; 
@@ -20,15 +22,16 @@ namespace Phoenix{
 
 
         int success = glfwInit();
+        PHX_CORE_ASSERT(success, "Could not initialize GLFW!");
         glfwSetErrorCallback(GLFWErrorCallback);
 
         _window = glfwCreateWindow((int)props.width, (int)props.height, props.title.c_str(), nullptr, nullptr);
 
         glfwMakeContextCurrent(_window);
 
-
+        glewInit();
         glfwSetWindowUserPointer(_window, &_data);
-        SetVSync(true);
+        SetVSync(false);
 
         // // Set GLFW callbacks
         glfwSetWindowSizeCallback(_window, [](GLFWwindow* window, int width, int height){
@@ -110,8 +113,8 @@ namespace Phoenix{
     }
 
     void Window::OnUpdate(){
-        glfwPollEvents();
         glfwSwapBuffers(_window);
+        glfwPollEvents();
     }
 
     void Window::SetVSync(bool enabled){

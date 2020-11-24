@@ -2,7 +2,7 @@
 #include <Phoenix/renderer/shader.h>
 #include <Phoenix/event/keyEvent.h>
 #include <Phoenix/core/application.h>
-
+#include <Phoenix/imGui/imgui.h>
 
 
 
@@ -12,14 +12,15 @@ public:
     ExampleLayer(const std::string& name = "Layer");
     ~ExampleLayer() = default;
 
-    void OnAttach() override;
-    void OnDetach() override;
+    virtual void OnAttach() override;
+    virtual void OnDetach() override;
 
-    void OnUpdate(Timestep ts) override;
-    void OnEvent(Event& e) override;
+    virtual void OnUpdate(Timestep ts) override;
+    virtual void OnEvent(Event& e) override;
+    virtual void OnImGuiRender() override;
 
 private:
-
+    bool test = true;
 private:
     Ref<Shader> shader;
 };

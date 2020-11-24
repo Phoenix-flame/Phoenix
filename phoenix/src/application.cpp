@@ -14,7 +14,7 @@ namespace Phoenix{
         
         Renderer::Init();
         RenderCommand::SetViewport(0, 0, this->_window->GetWidth(), this->_window->GetHeight());
-
+        
         _imGuiLayer = new ImGuiLayer();
 		PushOverlay(_imGuiLayer);
 
