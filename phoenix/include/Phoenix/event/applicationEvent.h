@@ -1,3 +1,6 @@
+#ifndef __APPLICATION__EVENT__
+#define __APPLICATION__EVENT__
+
 #include "event.h"
 #include <sstream>
 
@@ -31,3 +34,5 @@ namespace Phoenix{
         EVENT_CLASS_CATEGORY(EventCategoryApplication)
     };
 }
+
+#endif

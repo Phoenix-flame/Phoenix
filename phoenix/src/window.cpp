@@ -1,4 +1,4 @@
-#include "core/window.h"
+#include "Phoenix/core/window.h"
 
 static void GLFWErrorCallback(int error, const char* description){
    std::cerr << "[" << error << "]: " << description << std::endl; 
@@ -46,77 +46,61 @@ namespace Phoenix{
             data.EventCallback(event);
         });
 
-        // glfwSetKeyCallback(_window, [](GLFWwindow* window, int key, int scancode, int action, int mods)
-        // {
-        //     WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+        glfwSetKeyCallback(_window, [](GLFWwindow* window, int key, int scancode, int action, int mods){
+            WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
 
-        //     switch (action)
-        //     {
-        //         case GLFW_PRESS:
-        //         {
-        //             KeyPressedEvent event(key, 0);
-        //             data.EventCallback(event);
-        //             break;
-        //         }
-        //         case GLFW_RELEASE:
-        //         {
-        //             KeyReleasedEvent event(key);
-        //             data.EventCallback(event);
-        //             break;
-        //         }
-        //         case GLFW_REPEAT:
-        //         {
-        //             KeyPressedEvent event(key, 1);
-        //             data.EventCallback(event);
-        //             break;
-        //         }
-        //     }
-        // });
+            switch (action){
+                case GLFW_PRESS:{
+                    KeyPressedEvent event(key, 0);
+                    data.EventCallback(event);
+                    break;
+                }
+                case GLFW_RELEASE:{
+                    KeyReleasedEvent event(key);
+                    data.EventCallback(event);
+                    break;
+                }
+                case GLFW_REPEAT:{
+                    KeyPressedEvent event(key, 1);
+                    data.EventCallback(event);
+                    break;
+                }
+            }
+        });
 
-        // glfwSetCharCallback(_window, [](GLFWwindow* window, unsigned int keycode)
-        // {
-        //     WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+        glfwSetCharCallback(_window, [](GLFWwindow* window, unsigned int keycode){
+            WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+            KeyTypedEvent event(keycode);
+            data.EventCallback(event);
+        });
 
-        //     KeyTypedEvent event(keycode);
-        //     data.EventCallback(event);
-        // });
+        glfwSetMouseButtonCallback(_window, [](GLFWwindow* window, int button, int action, int mods){
+            WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+            switch (action){
+                case GLFW_PRESS:{
+                    MouseButtonPressedEvent event(button);
+                    data.EventCallback(event);
+                    break;
+                }
+                case GLFW_RELEASE:{
+                    MouseButtonReleasedEvent event(button);
+                    data.EventCallback(event);
+                    break;
+                }
+            }
+        });
 
-        // glfwSetMouseButtonCallback(_window, [](GLFWwindow* window, int button, int action, int mods)
-        // {
-        //     WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+        glfwSetScrollCallback(_window, [](GLFWwindow* window, double xOffset, double yOffset){
+            WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+            MouseScrolledEvent event((float)xOffset, (float)yOffset);
+            data.EventCallback(event);
+        });
 
-        //     switch (action)
-        //     {
-        //         case GLFW_PRESS:
-        //         {
-        //             MouseButtonPressedEvent event(button);
-        //             data.EventCallback(event);
-        //             break;
-        //         }
-        //         case GLFW_RELEASE:
-        //         {
-        //             MouseButtonReleasedEvent event(button);
-        //             data.EventCallback(event);
-        //             break;
-        //         }
-        //     }
-        // });
-
-        // glfwSetScrollCallback(_window, [](GLFWwindow* window, double xOffset, double yOffset)
-        // {
-        //     WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
-
-        //     MouseScrolledEvent event((float)xOffset, (float)yOffset);
-        //     data.EventCallback(event);
-        // });
-
-        // glfwSetCursorPosCallback(_window, [](GLFWwindow* window, double xPos, double yPos)
-        // {
-        //     WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
-
-        //     MouseMovedEvent event((float)xPos, (float)yPos);
-        //     data.EventCallback(event);
-        // });
+        glfwSetCursorPosCallback(_window, [](GLFWwindow* window, double xPos, double yPos){
+            WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+            MouseMovedEvent event((float)xPos, (float)yPos);
+            data.EventCallback(event);
+        });
     }
 
 

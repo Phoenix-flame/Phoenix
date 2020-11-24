@@ -1,4 +1,4 @@
-#include "core/application.h"
+#include "Phoenix/core/application.h"
 
 
 
@@ -10,6 +10,8 @@ namespace Phoenix{
         this->_window = std::make_unique<Window>(WindowProperties(this->_name));
         this->_window->SetEventCallback(BIND_EVENT_FN(Application::OnEvent));
         // Init Renderer
+
+        glViewport(0, 0, this->_window->GetWidth(), this->_window->GetHeight());
 
         PHX_CORE_INFO("Application initialized successfully.");
     }
@@ -48,8 +50,9 @@ namespace Phoenix{
 
             if (!this->_minimized){
                 {
-                    // for (Layer* layer : m_LayerStack)
-                    //     layer->OnUpdate(timestep);
+                    for (Layer* layer : _layerStack){
+                        layer->OnUpdate(timestep);
+                    }  
                 }
 
                 // m_ImGuiLayer->Begin();

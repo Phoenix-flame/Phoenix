@@ -9,8 +9,10 @@
 #include <memory>
 #include <functional>
 
-#include "../event/event.h"
-#include "../event/applicationEvent.h"
+#include "Phoenix/event/event.h"
+#include "Phoenix/event/applicationEvent.h"
+#include "Phoenix/event/keyEvent.h"
+#include "Phoenix/event/mouseEvent.h"
 
 namespace Phoenix{
     struct WindowProperties{

@@ -1,7 +1,13 @@
 #ifndef __LAYER__
 #define __LAYER__
-#include "../event/event.h"
+#include "Phoenix/event/event.h"
 #include "timestep.h"
+
+#define GL_GLEXT_PROTOTYPES
+#include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 namespace Phoenix{
     class Layer{

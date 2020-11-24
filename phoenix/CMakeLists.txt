@@ -10,6 +10,7 @@ add_library(
         src/window.cpp
         src/log.cpp
         src/layerStack.cpp
+        src/renderer/shader.cpp
 )
 # add_library(phoenix ALIAS ${APP_TARGET})
 include_directories(
