@@ -145,7 +145,7 @@ CMAKE_PROJECT_DESCRIPTION:STATIC=
 CMAKE_PROJECT_HOMEPAGE_URL:STATIC=
 
 //Value Computed by CMake
-CMAKE_PROJECT_NAME:STATIC=Lighting
+CMAKE_PROJECT_NAME:STATIC=Phoenix
 
 //Value Computed by CMake
 CMAKE_PROJECT_VERSION:STATIC=4.7.2
@@ -259,6 +259,12 @@ OPENGL_opengl_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libOpenGL.so
 
 //Path to a file.
 OPENGL_xmesa_INCLUDE_DIR:PATH=OPENGL_xmesa_INCLUDE_DIR-NOTFOUND
+
+//Value Computed by CMake
+Phoenix_BINARY_DIR:STATIC=/home/alireza/Programming/C++/MyGameEngineProject/build
+
+//Value Computed by CMake
+Phoenix_SOURCE_DIR:STATIC=/home/alireza/Programming/C++/MyGameEngineProject
 
 //The directory containing a CMake configuration file for SDL2.
 SDL2_DIR:PATH=/usr/lib/x86_64-linux-gnu/cmake/SDL2

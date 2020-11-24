@@ -1,0 +1,1 @@
+/usr/bin/c++   -std=c++14 -pthread  -rdynamic CMakeFiles/Phoenix.dir/main.cpp.o CMakeFiles/Phoenix.dir/source/application.cpp.o CMakeFiles/Phoenix.dir/source/core.cpp.o CMakeFiles/Phoenix.dir/source/window.cpp.o  -o Phoenix  -lSDL2 /usr/lib/x86_64-linux-gnu/libglfw.so.3.3 /usr/lib/x86_64-linux-gnu/libGL.so 

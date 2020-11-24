@@ -56,17 +56,6 @@ CMAKE_BINARY_DIR = /home/alireza/Programming/C++/MyGameEngineProject/build
 #=============================================================================
 # Targets provided globally by CMake.
 
-# Special rule for the target rebuild_cache
-rebuild_cache:
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --cyan "Running CMake to regenerate build system..."
-	/usr/bin/cmake -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR)
-.PHONY : rebuild_cache
-
-# Special rule for the target rebuild_cache
-rebuild_cache/fast: rebuild_cache
-
-.PHONY : rebuild_cache/fast
-
 # Special rule for the target edit_cache
 edit_cache:
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --cyan "No interactive CMake dialog available..."
@@ -77,6 +66,17 @@ edit_cache:
 edit_cache/fast: edit_cache
 
 .PHONY : edit_cache/fast
+
+# Special rule for the target rebuild_cache
+rebuild_cache:
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --cyan "Running CMake to regenerate build system..."
+	/usr/bin/cmake -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR)
+.PHONY : rebuild_cache
+
+# Special rule for the target rebuild_cache
+rebuild_cache/fast: rebuild_cache
+
+.PHONY : rebuild_cache/fast
 
 # The main all target
 all: cmake_check_build_system
@@ -111,17 +111,17 @@ depend:
 .PHONY : depend
 
 #=============================================================================
-# Target rules for targets named Lighting
+# Target rules for targets named Phoenix
 
 # Build rule for target.
-Lighting: cmake_check_build_system
-	$(MAKE) -f CMakeFiles/Makefile2 Lighting
-.PHONY : Lighting
+Phoenix: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 Phoenix
+.PHONY : Phoenix
 
 # fast build rule for target.
-Lighting/fast:
-	$(MAKE) -f CMakeFiles/Lighting.dir/build.make CMakeFiles/Lighting.dir/build
-.PHONY : Lighting/fast
+Phoenix/fast:
+	$(MAKE) -f CMakeFiles/Phoenix.dir/build.make CMakeFiles/Phoenix.dir/build
+.PHONY : Phoenix/fast
 
 main.o: main.cpp.o
 
@@ -129,7 +129,7 @@ main.o: main.cpp.o
 
 # target to build an object file
 main.cpp.o:
-	$(MAKE) -f CMakeFiles/Lighting.dir/build.make CMakeFiles/Lighting.dir/main.cpp.o
+	$(MAKE) -f CMakeFiles/Phoenix.dir/build.make CMakeFiles/Phoenix.dir/main.cpp.o
 .PHONY : main.cpp.o
 
 main.i: main.cpp.i
@@ -138,7 +138,7 @@ main.i: main.cpp.i
 
 # target to preprocess a source file
 main.cpp.i:
-	$(MAKE) -f CMakeFiles/Lighting.dir/build.make CMakeFiles/Lighting.dir/main.cpp.i
+	$(MAKE) -f CMakeFiles/Phoenix.dir/build.make CMakeFiles/Phoenix.dir/main.cpp.i
 .PHONY : main.cpp.i
 
 main.s: main.cpp.s
@@ -147,8 +147,35 @@ main.s: main.cpp.s
 
 # target to generate assembly for a file
 main.cpp.s:
-	$(MAKE) -f CMakeFiles/Lighting.dir/build.make CMakeFiles/Lighting.dir/main.cpp.s
+	$(MAKE) -f CMakeFiles/Phoenix.dir/build.make CMakeFiles/Phoenix.dir/main.cpp.s
 .PHONY : main.cpp.s
+
+source/application.o: source/application.cpp.o
+
+.PHONY : source/application.o
+
+# target to build an object file
+source/application.cpp.o:
+	$(MAKE) -f CMakeFiles/Phoenix.dir/build.make CMakeFiles/Phoenix.dir/source/application.cpp.o
+.PHONY : source/application.cpp.o
+
+source/application.i: source/application.cpp.i
+
+.PHONY : source/application.i
+
+# target to preprocess a source file
+source/application.cpp.i:
+	$(MAKE) -f CMakeFiles/Phoenix.dir/build.make CMakeFiles/Phoenix.dir/source/application.cpp.i
+.PHONY : source/application.cpp.i
+
+source/application.s: source/application.cpp.s
+
+.PHONY : source/application.s
+
+# target to generate assembly for a file
+source/application.cpp.s:
+	$(MAKE) -f CMakeFiles/Phoenix.dir/build.make CMakeFiles/Phoenix.dir/source/application.cpp.s
+.PHONY : source/application.cpp.s
 
 source/core.o: source/core.cpp.o
 
@@ -156,7 +183,7 @@ source/core.o: source/core.cpp.o
 
 # target to build an object file
 source/core.cpp.o:
-	$(MAKE) -f CMakeFiles/Lighting.dir/build.make CMakeFiles/Lighting.dir/source/core.cpp.o
+	$(MAKE) -f CMakeFiles/Phoenix.dir/build.make CMakeFiles/Phoenix.dir/source/core.cpp.o
 .PHONY : source/core.cpp.o
 
 source/core.i: source/core.cpp.i
@@ -165,7 +192,7 @@ source/core.i: source/core.cpp.i
 
 # target to preprocess a source file
 source/core.cpp.i:
-	$(MAKE) -f CMakeFiles/Lighting.dir/build.make CMakeFiles/Lighting.dir/source/core.cpp.i
+	$(MAKE) -f CMakeFiles/Phoenix.dir/build.make CMakeFiles/Phoenix.dir/source/core.cpp.i
 .PHONY : source/core.cpp.i
 
 source/core.s: source/core.cpp.s
@@ -174,8 +201,35 @@ source/core.s: source/core.cpp.s
 
 # target to generate assembly for a file
 source/core.cpp.s:
-	$(MAKE) -f CMakeFiles/Lighting.dir/build.make CMakeFiles/Lighting.dir/source/core.cpp.s
+	$(MAKE) -f CMakeFiles/Phoenix.dir/build.make CMakeFiles/Phoenix.dir/source/core.cpp.s
 .PHONY : source/core.cpp.s
+
+source/window.o: source/window.cpp.o
+
+.PHONY : source/window.o
+
+# target to build an object file
+source/window.cpp.o:
+	$(MAKE) -f CMakeFiles/Phoenix.dir/build.make CMakeFiles/Phoenix.dir/source/window.cpp.o
+.PHONY : source/window.cpp.o
+
+source/window.i: source/window.cpp.i
+
+.PHONY : source/window.i
+
+# target to preprocess a source file
+source/window.cpp.i:
+	$(MAKE) -f CMakeFiles/Phoenix.dir/build.make CMakeFiles/Phoenix.dir/source/window.cpp.i
+.PHONY : source/window.cpp.i
+
+source/window.s: source/window.cpp.s
+
+.PHONY : source/window.s
+
+# target to generate assembly for a file
+source/window.cpp.s:
+	$(MAKE) -f CMakeFiles/Phoenix.dir/build.make CMakeFiles/Phoenix.dir/source/window.cpp.s
+.PHONY : source/window.cpp.s
 
 # Help Target
 help:
@@ -183,15 +237,21 @@ help:
 	@echo "... all (the default if no target is provided)"
 	@echo "... clean"
 	@echo "... depend"
-	@echo "... rebuild_cache"
 	@echo "... edit_cache"
-	@echo "... Lighting"
+	@echo "... rebuild_cache"
+	@echo "... Phoenix"
 	@echo "... main.o"
 	@echo "... main.i"
 	@echo "... main.s"
+	@echo "... source/application.o"
+	@echo "... source/application.i"
+	@echo "... source/application.s"
 	@echo "... source/core.o"
 	@echo "... source/core.i"
 	@echo "... source/core.s"
+	@echo "... source/window.o"
+	@echo "... source/window.i"
+	@echo "... source/window.s"
 .PHONY : help
 
 

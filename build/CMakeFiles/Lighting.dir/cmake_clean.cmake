@@ -1,6 +1,8 @@
 file(REMOVE_RECURSE
   "CMakeFiles/Lighting.dir/main.cpp.o"
+  "CMakeFiles/Lighting.dir/source/application.cpp.o"
   "CMakeFiles/Lighting.dir/source/core.cpp.o"
+  "CMakeFiles/Lighting.dir/source/window.cpp.o"
   "Lighting"
   "Lighting.pdb"
 )

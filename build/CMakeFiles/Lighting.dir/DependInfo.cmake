@@ -5,7 +5,9 @@ set(CMAKE_DEPENDS_LANGUAGES
 # The set of files for implicit dependencies of each language:
 set(CMAKE_DEPENDS_CHECK_CXX
   "/home/alireza/Programming/C++/MyGameEngineProject/main.cpp" "/home/alireza/Programming/C++/MyGameEngineProject/build/CMakeFiles/Lighting.dir/main.cpp.o"
+  "/home/alireza/Programming/C++/MyGameEngineProject/source/application.cpp" "/home/alireza/Programming/C++/MyGameEngineProject/build/CMakeFiles/Lighting.dir/source/application.cpp.o"
   "/home/alireza/Programming/C++/MyGameEngineProject/source/core.cpp" "/home/alireza/Programming/C++/MyGameEngineProject/build/CMakeFiles/Lighting.dir/source/core.cpp.o"
+  "/home/alireza/Programming/C++/MyGameEngineProject/source/window.cpp" "/home/alireza/Programming/C++/MyGameEngineProject/build/CMakeFiles/Lighting.dir/source/window.cpp.o"
   )
 set(CMAKE_CXX_COMPILER_ID "GNU")
 

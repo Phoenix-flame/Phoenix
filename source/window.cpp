@@ -13,9 +13,9 @@ Window::~Window(){
 }
 
 void Window::Init(const WindowProperties& props){
-    m_Data.Title = props.title;
-    m_Data.Width = props.width;
-    m_Data.Height = props.height;
+    _data.Title = props.title;
+    _data.Width = props.width;
+    _data.Height = props.height;
 
 
     int success = glfwInit();
@@ -26,12 +26,11 @@ void Window::Init(const WindowProperties& props){
     glfwMakeContextCurrent(_window);
 
 
-    glfwSetWindowUserPointer(_window, &m_Data);
+    glfwSetWindowUserPointer(_window, &_data);
     SetVSync(true);
 
-    // Set GLFW callbacks
-    glfwSetWindowSizeCallback(_window, [](GLFWwindow* window, int width, int height)
-    {
+    // // Set GLFW callbacks
+    glfwSetWindowSizeCallback(_window, [](GLFWwindow* window, int width, int height){
         WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
         data.Width = width;
         data.Height = height;
@@ -40,95 +39,94 @@ void Window::Init(const WindowProperties& props){
         data.EventCallback(event);
     });
 
-    glfwSetWindowCloseCallback(_window, [](GLFWwindow* window)
-    {
+    glfwSetWindowCloseCallback(_window, [](GLFWwindow* window){
         WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
         WindowCloseEvent event;
         data.EventCallback(event);
     });
 
-    glfwSetKeyCallback(_window, [](GLFWwindow* window, int key, int scancode, int action, int mods)
-    {
-        WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+    // glfwSetKeyCallback(_window, [](GLFWwindow* window, int key, int scancode, int action, int mods)
+    // {
+    //     WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
 
-        switch (action)
-        {
-            case GLFW_PRESS:
-            {
-                KeyPressedEvent event(key, 0);
-                data.EventCallback(event);
-                break;
-            }
-            case GLFW_RELEASE:
-            {
-                KeyReleasedEvent event(key);
-                data.EventCallback(event);
-                break;
-            }
-            case GLFW_REPEAT:
-            {
-                KeyPressedEvent event(key, 1);
-                data.EventCallback(event);
-                break;
-            }
-        }
-    });
+    //     switch (action)
+    //     {
+    //         case GLFW_PRESS:
+    //         {
+    //             KeyPressedEvent event(key, 0);
+    //             data.EventCallback(event);
+    //             break;
+    //         }
+    //         case GLFW_RELEASE:
+    //         {
+    //             KeyReleasedEvent event(key);
+    //             data.EventCallback(event);
+    //             break;
+    //         }
+    //         case GLFW_REPEAT:
+    //         {
+    //             KeyPressedEvent event(key, 1);
+    //             data.EventCallback(event);
+    //             break;
+    //         }
+    //     }
+    // });
 
-    glfwSetCharCallback(_window, [](GLFWwindow* window, unsigned int keycode)
-    {
-        WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+    // glfwSetCharCallback(_window, [](GLFWwindow* window, unsigned int keycode)
+    // {
+    //     WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
 
-        KeyTypedEvent event(keycode);
-        data.EventCallback(event);
-    });
+    //     KeyTypedEvent event(keycode);
+    //     data.EventCallback(event);
+    // });
 
-    glfwSetMouseButtonCallback(_window, [](GLFWwindow* window, int button, int action, int mods)
-    {
-        WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+    // glfwSetMouseButtonCallback(_window, [](GLFWwindow* window, int button, int action, int mods)
+    // {
+    //     WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
 
-        switch (action)
-        {
-            case GLFW_PRESS:
-            {
-                MouseButtonPressedEvent event(button);
-                data.EventCallback(event);
-                break;
-            }
-            case GLFW_RELEASE:
-            {
-                MouseButtonReleasedEvent event(button);
-                data.EventCallback(event);
-                break;
-            }
-        }
-    });
+    //     switch (action)
+    //     {
+    //         case GLFW_PRESS:
+    //         {
+    //             MouseButtonPressedEvent event(button);
+    //             data.EventCallback(event);
+    //             break;
+    //         }
+    //         case GLFW_RELEASE:
+    //         {
+    //             MouseButtonReleasedEvent event(button);
+    //             data.EventCallback(event);
+    //             break;
+    //         }
+    //     }
+    // });
 
-    glfwSetScrollCallback(_window, [](GLFWwindow* window, double xOffset, double yOffset)
-    {
-        WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+    // glfwSetScrollCallback(_window, [](GLFWwindow* window, double xOffset, double yOffset)
+    // {
+    //     WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
 
-        MouseScrolledEvent event((float)xOffset, (float)yOffset);
-        data.EventCallback(event);
-    });
+    //     MouseScrolledEvent event((float)xOffset, (float)yOffset);
+    //     data.EventCallback(event);
+    // });
 
-    glfwSetCursorPosCallback(_window, [](GLFWwindow* window, double xPos, double yPos)
-    {
-        WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
+    // glfwSetCursorPosCallback(_window, [](GLFWwindow* window, double xPos, double yPos)
+    // {
+    //     WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
 
-        MouseMovedEvent event((float)xPos, (float)yPos);
-        data.EventCallback(event);
-    });
+    //     MouseMovedEvent event((float)xPos, (float)yPos);
+    //     data.EventCallback(event);
+    // });
 }
 
 
 void Window::Shutdown(){
-    // glfwDestroyWindow(_window);
+    glfwDestroyWindow(_window);
     glfwTerminate();
 }
 
 void Window::OnUpdate(){
-    // glfwPollEvents();
-    // m_Context->SwapBuffers();
+    glfwPollEvents();
+    glfwSwapBuffers(_window);
 }
 
 void Window::SetVSync(bool enabled){
@@ -137,9 +135,9 @@ void Window::SetVSync(bool enabled){
     else
         glfwSwapInterval(0);
 
-    m_Data.VSync = enabled;
+    _data.VSync = enabled;
 }
 
 bool Window::IsVSync() const{
-    return m_Data.VSync;
+    return _data.VSync;
 }

@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.2)
 
-project(Lighting VERSION 4.7.2 LANGUAGES C CXX)
+project(Phoenix VERSION 4.7.2 LANGUAGES C CXX)
 
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -pthread")
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -pthread")
 set(CMAKE_CXX_CREATE_STATIC_LIBRARY true)
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${Lighting_SOURCE_DIR}/cmake")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${Phoenix_SOURCE_DIR}/cmake")
 
 message (${CMAKE_MODULE_PATH})
 
@@ -14,6 +14,7 @@ set(sources
     main.cpp
     source/application.cpp
     source/core.cpp
+    source/window.cpp
 )
 
 

@@ -53,7 +53,7 @@ CMAKE_BINARY_DIR = /home/alireza/Programming/C++/MyGameEngineProject/build
 # Directory level rules for the build root directory
 
 # The main recursive "all" target.
-all: CMakeFiles/Lighting.dir/all
+all: CMakeFiles/Phoenix.dir/all
 
 .PHONY : all
 
@@ -63,36 +63,36 @@ preinstall:
 .PHONY : preinstall
 
 # The main recursive "clean" target.
-clean: CMakeFiles/Lighting.dir/clean
+clean: CMakeFiles/Phoenix.dir/clean
 
 .PHONY : clean
 
 #=============================================================================
-# Target rules for target CMakeFiles/Lighting.dir
+# Target rules for target CMakeFiles/Phoenix.dir
 
 # All Build rule for target.
-CMakeFiles/Lighting.dir/all:
-	$(MAKE) -f CMakeFiles/Lighting.dir/build.make CMakeFiles/Lighting.dir/depend
-	$(MAKE) -f CMakeFiles/Lighting.dir/build.make CMakeFiles/Lighting.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/alireza/Programming/C++/MyGameEngineProject/build/CMakeFiles --progress-num=1,2,3 "Built target Lighting"
-.PHONY : CMakeFiles/Lighting.dir/all
+CMakeFiles/Phoenix.dir/all:
+	$(MAKE) -f CMakeFiles/Phoenix.dir/build.make CMakeFiles/Phoenix.dir/depend
+	$(MAKE) -f CMakeFiles/Phoenix.dir/build.make CMakeFiles/Phoenix.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/alireza/Programming/C++/MyGameEngineProject/build/CMakeFiles --progress-num=1,2,3,4,5 "Built target Phoenix"
+.PHONY : CMakeFiles/Phoenix.dir/all
 
 # Build rule for subdir invocation for target.
-CMakeFiles/Lighting.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/alireza/Programming/C++/MyGameEngineProject/build/CMakeFiles 3
-	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/Lighting.dir/all
+CMakeFiles/Phoenix.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/alireza/Programming/C++/MyGameEngineProject/build/CMakeFiles 5
+	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/Phoenix.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/alireza/Programming/C++/MyGameEngineProject/build/CMakeFiles 0
-.PHONY : CMakeFiles/Lighting.dir/rule
+.PHONY : CMakeFiles/Phoenix.dir/rule
 
 # Convenience name for target.
-Lighting: CMakeFiles/Lighting.dir/rule
+Phoenix: CMakeFiles/Phoenix.dir/rule
 
-.PHONY : Lighting
+.PHONY : Phoenix
 
 # clean rule for target.
-CMakeFiles/Lighting.dir/clean:
-	$(MAKE) -f CMakeFiles/Lighting.dir/build.make CMakeFiles/Lighting.dir/clean
-.PHONY : CMakeFiles/Lighting.dir/clean
+CMakeFiles/Phoenix.dir/clean:
+	$(MAKE) -f CMakeFiles/Phoenix.dir/build.make CMakeFiles/Phoenix.dir/clean
+.PHONY : CMakeFiles/Phoenix.dir/clean
 
 #=============================================================================
 # Special targets to cleanup operation of make.

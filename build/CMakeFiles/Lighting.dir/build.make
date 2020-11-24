@@ -70,9 +70,22 @@ CMakeFiles/Lighting.dir/main.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/Lighting.dir/main.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/alireza/Programming/C++/MyGameEngineProject/main.cpp -o CMakeFiles/Lighting.dir/main.cpp.s
 
+CMakeFiles/Lighting.dir/source/application.cpp.o: CMakeFiles/Lighting.dir/flags.make
+CMakeFiles/Lighting.dir/source/application.cpp.o: ../source/application.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/alireza/Programming/C++/MyGameEngineProject/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/Lighting.dir/source/application.cpp.o"
+	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/Lighting.dir/source/application.cpp.o -c /home/alireza/Programming/C++/MyGameEngineProject/source/application.cpp
+
+CMakeFiles/Lighting.dir/source/application.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/Lighting.dir/source/application.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/alireza/Programming/C++/MyGameEngineProject/source/application.cpp > CMakeFiles/Lighting.dir/source/application.cpp.i
+
+CMakeFiles/Lighting.dir/source/application.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/Lighting.dir/source/application.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/alireza/Programming/C++/MyGameEngineProject/source/application.cpp -o CMakeFiles/Lighting.dir/source/application.cpp.s
+
 CMakeFiles/Lighting.dir/source/core.cpp.o: CMakeFiles/Lighting.dir/flags.make
 CMakeFiles/Lighting.dir/source/core.cpp.o: ../source/core.cpp
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/alireza/Programming/C++/MyGameEngineProject/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/Lighting.dir/source/core.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/alireza/Programming/C++/MyGameEngineProject/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/Lighting.dir/source/core.cpp.o"
 	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/Lighting.dir/source/core.cpp.o -c /home/alireza/Programming/C++/MyGameEngineProject/source/core.cpp
 
 CMakeFiles/Lighting.dir/source/core.cpp.i: cmake_force
@@ -83,21 +96,38 @@ CMakeFiles/Lighting.dir/source/core.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/Lighting.dir/source/core.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/alireza/Programming/C++/MyGameEngineProject/source/core.cpp -o CMakeFiles/Lighting.dir/source/core.cpp.s
 
+CMakeFiles/Lighting.dir/source/window.cpp.o: CMakeFiles/Lighting.dir/flags.make
+CMakeFiles/Lighting.dir/source/window.cpp.o: ../source/window.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/alireza/Programming/C++/MyGameEngineProject/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/Lighting.dir/source/window.cpp.o"
+	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/Lighting.dir/source/window.cpp.o -c /home/alireza/Programming/C++/MyGameEngineProject/source/window.cpp
+
+CMakeFiles/Lighting.dir/source/window.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/Lighting.dir/source/window.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/alireza/Programming/C++/MyGameEngineProject/source/window.cpp > CMakeFiles/Lighting.dir/source/window.cpp.i
+
+CMakeFiles/Lighting.dir/source/window.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/Lighting.dir/source/window.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/alireza/Programming/C++/MyGameEngineProject/source/window.cpp -o CMakeFiles/Lighting.dir/source/window.cpp.s
+
 # Object files for target Lighting
 Lighting_OBJECTS = \
 "CMakeFiles/Lighting.dir/main.cpp.o" \
-"CMakeFiles/Lighting.dir/source/core.cpp.o"
+"CMakeFiles/Lighting.dir/source/application.cpp.o" \
+"CMakeFiles/Lighting.dir/source/core.cpp.o" \
+"CMakeFiles/Lighting.dir/source/window.cpp.o"
 
 # External object files for target Lighting
 Lighting_EXTERNAL_OBJECTS =
 
 Lighting: CMakeFiles/Lighting.dir/main.cpp.o
+Lighting: CMakeFiles/Lighting.dir/source/application.cpp.o
 Lighting: CMakeFiles/Lighting.dir/source/core.cpp.o
+Lighting: CMakeFiles/Lighting.dir/source/window.cpp.o
 Lighting: CMakeFiles/Lighting.dir/build.make
 Lighting: /usr/lib/x86_64-linux-gnu/libglfw.so.3.3
 Lighting: /usr/lib/x86_64-linux-gnu/libGL.so
 Lighting: CMakeFiles/Lighting.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/alireza/Programming/C++/MyGameEngineProject/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Linking CXX executable Lighting"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/alireza/Programming/C++/MyGameEngineProject/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Linking CXX executable Lighting"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/Lighting.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.

@@ -2,11 +2,12 @@
 
 #include "timestep.h"
 
+
+
 Application::Application(const std::string name) {
     this->_name = name;
-    // Create an instance of window*
     this->_window = std::make_shared<Window>(WindowProperties(this->_name));
-    // Window Event Handler
+    this->_window->SetEventCallback(BIND_EVENT_FN(Application::onEvent));
     // Init Renderer
 }
 
@@ -16,9 +17,16 @@ Application::~Application(){
 }
 
 
+void Application::onEvent(Event& e){
+    std::cout << "here" << std::endl;
+    EventDispatcher dispathcer(e);
+    dispathcer.Dispatch<WindowResizeEvent>(BIND_EVENT_FN(Application::OnWindowResize));
+    dispathcer.Dispatch<WindowCloseEvent>(BIND_EVENT_FN(Application::OnWindowClose));
+}
+
 void Application::Run(){
     while(this->_running){
-        float time = 0; //(float)glfwGetTime();
+        float time = (float)glfwGetTime();
         Timestep timestep = time - _lastFrameTime;
         _lastFrameTime = time;
 
@@ -39,6 +47,24 @@ void Application::Run(){
             // m_ImGuiLayer->End();
         }
 
-        // m_Window->OnUpdate();
+        _window->OnUpdate();
     }   
+}
+
+
+bool Application::OnWindowClose(WindowCloseEvent& e){
+    _running = false;
+    return true;
+}
+
+bool Application::OnWindowResize(WindowResizeEvent& e){
+    if (e.GetWidth() == 0 || e.GetHeight() == 0){
+        _minimized = true;
+        return false;
+    }
+
+    _minimized = false;
+    // Renderer::OnWindowResize(e.GetWidth(), e.GetHeight());
+
+    return false;
 }

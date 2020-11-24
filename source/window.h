@@ -7,7 +7,10 @@
 #include <iostream>
 #include <math.h>
 #include <memory>
-#include <function>
+#include <functional>
+
+#include "events/event.h"
+#include "events/applicationEvent.h"
 
 
 struct WindowProperties{
@@ -29,10 +32,10 @@ public:
 
     void OnUpdate();
 
-    unsigned int GetWidth() const { return m_Data.Width; }
-    unsigned int GetHeight() const { return m_Data.Height; }
+    unsigned int GetWidth() const { return _data.Width; }
+    unsigned int GetHeight() const { return _data.Height; }
 
-    void SetEventCallback(const std::function<void(Event&)& callback) { m_Data.EventCallback = callback; }
+    void SetEventCallback(const std::function<void(Event&)>& callback) { _data.EventCallback = callback; }
     void SetVSync(bool enabled);
     bool IsVSync() const;
 
@@ -50,8 +53,8 @@ private:
         std::string Title;
         unsigned int Width, Height;
         bool VSync;
-        std::function<void(Event&) EventCallback;
+        std::function<void(Event&)> EventCallback;
     };
 
-    WindowData m_Data;
+    WindowData _data;
 };

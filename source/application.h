@@ -1,13 +1,21 @@
 #include <string>
 #include "window.h"
+#include "base.h"
+
+
+int main(int argc, char** argv);
 
 class Application{
 public:
     Application(const std::string name = "Phoenix_flame");
     virtual ~Application();
+    void onEvent(Event&);
+
+
 private:
     void Run();
-    void onEvent();
+    bool OnWindowClose(WindowCloseEvent& e);
+    bool OnWindowResize(WindowResizeEvent& e);
     friend int ::main(int argc, char** argv);
 
 private:
