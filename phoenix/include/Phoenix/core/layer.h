@@ -3,11 +3,6 @@
 #include "Phoenix/event/event.h"
 #include "timestep.h"
 
-#define GL_GLEXT_PROTOTYPES
-#include <GLFW/glfw3.h>
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
 
 namespace Phoenix{
     class Layer{
@@ -17,7 +12,7 @@ namespace Phoenix{
 
             virtual void OnAttach() {}
             virtual void OnDetach() {}
-
+            virtual void OnImGuiRender() {}
             virtual void OnUpdate(Timestep ts) {}
             virtual void OnEvent(Event& e) {}
         protected:

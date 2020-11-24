@@ -15,6 +15,9 @@ namespace Phoenix{
         Renderer::Init();
         RenderCommand::SetViewport(0, 0, this->_window->GetWidth(), this->_window->GetHeight());
 
+        _imGuiLayer = new ImGuiLayer();
+		PushOverlay(_imGuiLayer);
+
         PHX_CORE_INFO("Application initialized successfully.");
     }
 
@@ -62,14 +65,13 @@ namespace Phoenix{
                     }  
                 }
 
-                // m_ImGuiLayer->Begin();
-                // {
-                //     HZ_PROFILE_SCOPE("LayerStack OnImGuiRender");
-
-                //     for (Layer* layer : m_LayerStack)
-                //         layer->OnImGuiRender();
-                // }
-                // m_ImGuiLayer->End();
+                _imGuiLayer->Begin();
+                {
+                    for (Layer* layer : _layerStack){
+                        layer->OnImGuiRender();
+                    }
+                }
+                _imGuiLayer->End();
             }
 
             _window->OnUpdate();

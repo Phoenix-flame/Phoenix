@@ -15,6 +15,11 @@ add_library(
         src/renderer/rendererAPI.cpp
         src/renderer/renderer.cpp
         src/opengl/opengl_rendererAPI.cpp
+        src/imGui/imgui_demo.cpp
+        src/imGui/imgui_draw.cpp
+        src/imGui/imgui.cpp
+        src/imGui/imgui_impl_glfw_gl3.cpp
+        src/imGui/ImGuiLayer.cpp
 )
 # add_library(phoenix ALIAS ${APP_TARGET})
 include_directories(
@@ -38,9 +43,13 @@ find_package(glfw3 3.3 REQUIRED)
 find_package(OpenGL REQUIRED)
 include_directories(${APP_TARGET} ${OPENGL_INCLUDE_DIR})
 find_package(GLM REQUIRED)
+# glew
+find_package(GLEW REQUIRED)
+include_directories(${GLEW_INCLUDE_DIRS})
+
 find_package(spdlog REQUIRED)
 
 target_link_libraries(${APP_TARGET} ${SDL2_LIBRARIES})
 target_link_libraries(${APP_TARGET} glfw)
-target_link_libraries(${APP_TARGET} OpenGL::GL)
+target_link_libraries(${APP_TARGET} OpenGL::GL ${GLEW_LIBRARIES})
 target_link_libraries(${APP_TARGET} ${SPDLOG_LIBRARIES})

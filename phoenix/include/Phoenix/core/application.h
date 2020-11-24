@@ -1,6 +1,7 @@
 #ifndef __APPLICATION__
 #define __APPLICATION__
 
+#include <Phoenix/imGui/ImGuiLayer.h>
 #include <string>
 #include "window.h"
 #include "base.h"
@@ -37,6 +38,7 @@ namespace Phoenix{
         float _lastFrameTime = 0.0f;
         std::unique_ptr<Window> _window;
         LayerStack _layerStack;
+        ImGuiLayer* _imGuiLayer;
 
     private:
         static Application* s_Instance;
