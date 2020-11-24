@@ -3,6 +3,6 @@
 #include "source/application.h"
 
 int main(int argc, char** argv){
-    Application app;
+    Phoenix::Application app;
     app.Run();
 }
