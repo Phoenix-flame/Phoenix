@@ -1,3 +1,0 @@
-/home/alireza/Programming/C++/MyGameEngineProject/build/CMakeFiles/edit_cache.dir
-/home/alireza/Programming/C++/MyGameEngineProject/build/CMakeFiles/rebuild_cache.dir
-/home/alireza/Programming/C++/MyGameEngineProject/build/CMakeFiles/Phoenix.dir
