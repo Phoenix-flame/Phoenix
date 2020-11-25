@@ -35,7 +35,7 @@ void ExampleLayer::OnEvent(Phoenix::Event& e) {
 
 
 void ExampleLayer::OnImGuiRender(){
-    ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
+    ImGui::Begin("Settings", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
 	ImGui::Text("Hello");
     ImGui::ColorEdit3("Background Color", glm::value_ptr(_backgroundColor));
 	ImGui::End();

@@ -15,40 +15,40 @@ namespace Phoenix{
     ImGuiLayer::ImGuiLayer(): Layer("ImGuiLayer"){}
 
 	void ImGuiLayer::OnAttach(){
-        // glewInit();
-        PHX_CORE_INFO("{0} attached.", this->layer_name);
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
 		ImGuiIO& io = ImGui::GetIO(); (void)io;
 		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
 		//io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-		// io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
+		io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
 		// io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;         // Enable Multi-Viewport / Platform Windows
 		//io.ConfigFlags |= ImGuiConfigFlags_ViewportsNoTaskBarIcons;
 		//io.ConfigFlags |= ImGuiConfigFlags_ViewportsNoMerge;
 		io.Fonts->AddFontFromFileTTF("assets/fonts/Roboto-Regular.ttf", 15.0f);
 		io.FontDefault = io.Fonts->AddFontFromFileTTF("assets/fonts/Roboto-Regular.ttf", 15.0f);
-		// When viewports are enabled we tweak WindowRounding/WindowBg so platform windows can look identical to regular ones.
-
+	
+        ImGuiStyle& style = ImGui::GetStyle();
+        style.WindowRounding = 0.0f;
+        style.Colors[ImGuiCol_WindowBg].w = 1.0f;
 		SetDarkThemeColors();
 
 		Application& app = Application::Get();
 		GLFWwindow* window = static_cast<GLFWwindow*>(app.GetWindow().GetNativeWindow());
-		// Setup Platform/Renderer bindings
+
 		ImGui_ImplGlfw_InitForOpenGL(window, true);
         ImGui_ImplOpenGL3_Init("#version 130");
-        
+        PHX_CORE_INFO("{0} attached.", this->layer_name);
 	}
 
 	void ImGuiLayer::OnDetach(){
-        PHX_CORE_INFO("{0} detached.", this->layer_name);
         ImGui_ImplOpenGL3_Shutdown();
 		ImGui_ImplGlfw_Shutdown();
 		ImGui::DestroyContext();
+        PHX_CORE_INFO("{0} detached.", this->layer_name);
 	}
 
 	void ImGuiLayer::OnEvent(Event& e){
-		if (m_BlockEvents){
+		if (_blockEvents){
 			ImGuiIO& io = ImGui::GetIO();
 			e.Handled |= e.IsInCategory(EventCategoryMouse) & io.WantCaptureMouse;
 			e.Handled |= e.IsInCategory(EventCategoryKeyboard) & io.WantCaptureKeyboard;

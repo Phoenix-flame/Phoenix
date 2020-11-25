@@ -21,7 +21,8 @@ public:
 
 private:
     bool test = true;
+    bool vsync = false;
 private:
     Ref<Shader> shader;
-    glm::vec3 _backgroundColor = { 0.4, 0.5, 0.9 };
+    glm::vec3 _backgroundColor = { 0.28, 0.65, 0.87 };
 };

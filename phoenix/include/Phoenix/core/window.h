@@ -18,8 +18,8 @@ namespace Phoenix{
     struct WindowProperties{
         WindowProperties(std::string name){
             this->title = name;
-            this->width = 800;
-            this->height = 600;
+            this->width = 1366;
+            this->height = 750;
         }
         std::string title;
         int width;
