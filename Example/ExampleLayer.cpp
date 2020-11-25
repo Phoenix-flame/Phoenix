@@ -35,8 +35,13 @@ void ExampleLayer::OnEvent(Phoenix::Event& e) {
 
 
 void ExampleLayer::OnImGuiRender(){
+    ImGui::ShowMetricsWindow();
+    ImGui::ShowDemoWindow();
     ImGui::Begin("Settings", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
 	ImGui::Text("Hello");
     ImGui::ColorEdit3("Background Color", glm::value_ptr(_backgroundColor));
+    if (ImGui::Checkbox("VSync", &vsync)){
+        Application::Get().GetWindow().SetVSync(vsync);
+    }
 	ImGui::End();
 }
