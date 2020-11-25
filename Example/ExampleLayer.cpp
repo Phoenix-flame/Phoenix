@@ -15,7 +15,7 @@ void ExampleLayer::OnDetach() {
 }
 
 void ExampleLayer::OnUpdate(Phoenix::Timestep ts) {
-    Phoenix::RenderCommand::SetClearColor(glm::vec4(0.9, 0.5, 0.4, 1.0));
+    Phoenix::RenderCommand::SetClearColor(glm::vec4(_backgroundColor, 1.0));
     Phoenix::RenderCommand::Clear();
     // shader->Bind();
    
@@ -35,11 +35,8 @@ void ExampleLayer::OnEvent(Phoenix::Event& e) {
 
 
 void ExampleLayer::OnImGuiRender(){
-    
-    // ImGui::Begin("Settings");
-    if(ImGui::Begin("Settings")){
-        // PHX_CORE_WARN("OnImGuiRender");
-    }
+    ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
 	ImGui::Text("Hello");
+    ImGui::ColorEdit3("Background Color", glm::value_ptr(_backgroundColor));
 	ImGui::End();
 }

@@ -23,4 +23,5 @@ private:
     bool test = true;
 private:
     Ref<Shader> shader;
+    glm::vec3 _backgroundColor = { 0.4, 0.5, 0.9 };
 };
