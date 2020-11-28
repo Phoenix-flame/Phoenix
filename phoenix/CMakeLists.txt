@@ -4,24 +4,17 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -pthread ")
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${phoenix_SOURCE_DIR}/cmake")
 set(APP_TARGET phoenix)
+
+file(GLOB core_src
+    "src/core/*.cpp"
+    "src/imGui/*.cpp"
+    "src/opengl/*.cpp"
+    "src/renderer/*.cpp"
+)
+
 add_library(
         ${APP_TARGET} STATIC
-        src/application.cpp
-        src/window.cpp
-        src/log.cpp
-        src/layerStack.cpp
-        src/renderer/shader.cpp
-        src/renderer/renderer_command.cpp
-        src/renderer/rendererAPI.cpp
-        src/renderer/renderer.cpp
-        src/opengl/opengl_rendererAPI.cpp
-        src/imGui/imgui_demo.cpp
-        src/imGui/imgui_draw.cpp
-        src/imGui/imgui.cpp
-        src/imGui/imgui_impl_opengl3.cpp
-        src/imGui/imgui_impl_glfw.cpp
-        src/imGui/imgui_widgets.cpp
-        src/imGui/ImGuiLayer.cpp
+        ${core_src}
 )
 # add_library(phoenix ALIAS ${APP_TARGET})
 include_directories(
