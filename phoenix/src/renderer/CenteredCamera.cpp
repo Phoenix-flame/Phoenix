@@ -1,0 +1,43 @@
+#include <Phoenix/renderer/Camera.h>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+namespace Phoenix{
+    CenteredCamera::CenteredCamera(float fov, float aspect, float near, float far, const glm::vec3& pos = glm::vec3(0, 0, -5)){
+        _position = pos;
+        _target = glm::vec3(0.0, 0.0, 0.0);
+        this->SetProjection(fov, aspect, near, far);
+        this->RecalculateViewMatrix();
+    }
+
+    CenteredCamera::CenteredCamera(const glm::vec3& pos){
+        _position = pos;
+        _target = glm::vec3(0.0, 0.0, 0.0);
+        this->SetProjection(glm::radians(45.0f), 1366.0f / 720.0f, 0.1f, 100.0f);
+        this->RecalculateViewMatrix();
+    }
+
+    void CenteredCamera::SetProjection(float fov, float aspect, float near, float far){
+        _projectionMatrix = glm::perspective(fov, aspect, near, far);
+        _viewProjectionMatrix = _projectionMatrix * _viewMatrix;
+        this->RecalculateViewMatrix();
+    }
+
+    void CenteredCamera::SetTarget(const glm::vec3& target){
+        _target = target;
+        this->RecalculateViewMatrix();
+    }
+
+    void CenteredCamera::RecalculateViewMatrix(){
+        float camX = -_radius * sinf(_yaw*(M_PI/180)) * cosf((_pitch)*(M_PI/180));
+        float camY = -_radius * sinf((_pitch)*(M_PI/180));
+        float camZ = -_radius * cosf((_yaw)*(M_PI/180)) * cosf((_pitch)*(M_PI/180));
+
+        _position = glm::vec3(camX, camY, camZ);
+	    glm::vec3 cameraDirection = glm::normalize(_position - _target);
+        _right = glm::normalize(glm::cross(_worldUp, cameraDirection));
+        _up = glm::cross(cameraDirection, _right);
+
+        _viewMatrix = glm::lookAt(_position, _target, _up);
+        _viewProjectionMatrix = _projectionMatrix * _viewMatrix;
+    }
+}
