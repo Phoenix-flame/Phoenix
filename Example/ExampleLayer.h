@@ -65,4 +65,5 @@ private:
     Ref<Triangle> t;
     glm::vec3 _backgroundColor = { 0.28, 0.65, 0.87 };
     OrthographicCameraController camera_controller;
+    PerspectiveCameraController second_camera;
 };

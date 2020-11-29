@@ -1,10 +1,35 @@
-
+#pragma once
 #include <Phoenix/core/timestep.h>
 #include <Phoenix/event/event.h>
 #include <Phoenix/event/mouseEvent.h>
 #include <Phoenix/event/applicationEvent.h>
 #include <Phoenix/renderer/Camera.h>
 namespace Phoenix{
+    class PerspectiveCameraController{
+    public:
+        PerspectiveCameraController(float aspectRatio, float fov, float near, float far);
+
+        void OnUpdate(Timestep ts);
+        void OnEvent(Event& e);
+        void OnResize(float width, float height);
+        CenteredCamera& GetCamera() { return _camera; }
+        const CenteredCamera& GetCamera() const { return _camera; }
+
+    private:
+        bool OnMouseMoved(MouseMovedEvent& e);
+        bool OnMouseScrolled(MouseScrolledEvent& e);
+		bool OnWindowResized(WindowResizeEvent& e);
+
+    private:
+        float _aspectRatio;
+        float _fov;
+        float _near;
+        float _far;
+        float _lastX = 1280 / 2.0f;
+        float _lastY = 720 / 2.0f;
+        bool _firstMouse = true;
+        CenteredCamera _camera;
+    };
     class OrthographicCameraController{
     public:
         OrthographicCameraController(float aspectRatio, bool rotation = false);

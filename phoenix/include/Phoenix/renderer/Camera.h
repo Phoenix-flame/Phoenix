@@ -7,11 +7,11 @@ namespace Phoenix{
     class CenteredCamera{
     public:
         CenteredCamera(float fov, float aspect, float near, float far, const glm::vec3& pos = glm::vec3(0, 0, -5));
-        CenteredCamera(const glm::vec3& pos = glm::vec3(0, 0, -5));
 
         void SetProjection(float fov, float aspect, float near, float far);
         void SetTarget(const glm::vec3& target);
-
+        void SetRadius(float offset);
+        void ChangeDirection(float xoffset, float yoffset);
         const glm::mat4& GetProjectionMatrix() const { return _projectionMatrix; }
 		const glm::mat4& GetViewMatrix() const { return _viewMatrix; }
 		const glm::mat4& GetViewProjectionMatrix() const { return _viewProjectionMatrix; }

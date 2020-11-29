@@ -2,17 +2,10 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 namespace Phoenix{
-    CenteredCamera::CenteredCamera(float fov, float aspect, float near, float far, const glm::vec3& pos = glm::vec3(0, 0, -5)){
+    CenteredCamera::CenteredCamera(float fov, float aspect, float near, float far, const glm::vec3& pos){
         _position = pos;
         _target = glm::vec3(0.0, 0.0, 0.0);
         this->SetProjection(fov, aspect, near, far);
-        this->RecalculateViewMatrix();
-    }
-
-    CenteredCamera::CenteredCamera(const glm::vec3& pos){
-        _position = pos;
-        _target = glm::vec3(0.0, 0.0, 0.0);
-        this->SetProjection(glm::radians(45.0f), 1366.0f / 720.0f, 0.1f, 100.0f);
         this->RecalculateViewMatrix();
     }
 
@@ -24,6 +17,21 @@ namespace Phoenix{
 
     void CenteredCamera::SetTarget(const glm::vec3& target){
         _target = target;
+        this->RecalculateViewMatrix();
+    }
+
+    void CenteredCamera::SetRadius(float offset){
+        if (_radius >= 1.0f && _radius <= 45.0f){ _radius -= offset; }
+        if (_radius <= 1.0f) { _radius = 1.0f; }
+        else if (_radius >= 45.0f) { _radius = 45.0f; }
+        this->RecalculateViewMatrix();
+    }
+
+    void CenteredCamera::ChangeDirection(float xoffset, float yoffset){
+        _yaw   += xoffset;
+        _pitch += yoffset;
+        if (_pitch > 89.0f) { _pitch = 89.0f; }
+        if (_pitch < -89.0f) { _pitch = -89.0f; }
         this->RecalculateViewMatrix();
     }
 
