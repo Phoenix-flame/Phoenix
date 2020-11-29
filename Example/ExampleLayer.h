@@ -65,6 +65,10 @@ private:
     Ref<Shader> shader;
     Ref<Triangle> t;
     glm::vec3 _backgroundColor = { 0.28, 0.65, 0.87 };
-    OrthographicCameraController camera_controller;
+    OrthographicCameraController main_camera;
     PerspectiveCameraController second_camera;
+    int selected_camera = 0;
+    bool overlayEnabled = true;
+private:
+    void ImGuiOverlay();
 };
