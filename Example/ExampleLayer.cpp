@@ -22,6 +22,7 @@ ExampleLayer::ExampleLayer(const std::string& name): Layer(name),
     // All triangles in one VAO
     t = CreateRef<Triangle>(vertices, colors);
     t->Init(9);
+    glGenFramebuffers(1, &fbo);
 }
 
 void ExampleLayer::OnAttach() {
@@ -33,6 +34,9 @@ void ExampleLayer::OnDetach() {
 
 void ExampleLayer::OnUpdate(Phoenix::Timestep ts) {
     // camera_controller.OnUpdate(ts);
+    
+    
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);  
     Phoenix::RenderCommand::SetClearColor(glm::vec4(_backgroundColor, 1.0));
     Phoenix::RenderCommand::Clear();
     shader->Bind();

@@ -61,6 +61,7 @@ private:
     bool test = true;
     bool vsync = false;
 private:
+    unsigned int fbo;
     Ref<Shader> shader;
     Ref<Triangle> t;
     glm::vec3 _backgroundColor = { 0.28, 0.65, 0.87 };
