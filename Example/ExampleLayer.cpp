@@ -8,13 +8,11 @@ ExampleLayer::ExampleLayer(const std::string& name): Layer(name),
     {  
     this->shader = Shader::Create("/home/alireza/Programming/C++/MyGameEngineProject/Example/assets/shaders/basic.glsl");
     float vertices[] = {
-        // first triangle
         -0.5f, -0.5f, 0.0f,  // left 
         -0.0f,  0.5f, 0.0f,  // right
          0.5f, -0.5f, 0.0f,  // top 
     };
     float colors[] = {
-        // first
         1.0f, 0.0f,  0.0f,
         0.0f, 1.0f,  0.0f,
         0.0f, 0.0f,  1.0f,
