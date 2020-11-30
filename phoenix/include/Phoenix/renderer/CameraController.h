@@ -12,6 +12,7 @@ namespace Phoenix{
         void OnUpdate(Timestep ts);
         void OnEvent(Event& e);
         void OnResize(float width, float height);
+        void SetFOV(float fov);
         CenteredCamera& GetCamera() { return _camera; }
         const CenteredCamera& GetCamera() const { return _camera; }
 

@@ -19,6 +19,11 @@ namespace Phoenix{
 		_camera.SetProjection(_fov, _aspectRatio, _near, _far);
     }
 
+    void PerspectiveCameraController::SetFOV(float fov){
+        _fov = glm::radians(fov);
+        _camera.SetProjection(_fov, _aspectRatio, _near, _far);
+    }   
+
     bool PerspectiveCameraController::OnMouseMoved(MouseMovedEvent& e){
         float xpos = e.GetX();
         float ypos = e.GetY();

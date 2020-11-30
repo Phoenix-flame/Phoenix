@@ -116,6 +116,7 @@ private:
     PerspectiveCameraController second_camera;
     int selected_camera = 0;
     bool overlayEnabled = true;
+    float fov = 45.0;
 private:
     void ImGuiOverlay();
 };

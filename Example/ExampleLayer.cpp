@@ -60,6 +60,10 @@ void ExampleLayer::OnImGuiRender(){
     ImGui::RadioButton("Orthographic", &selected_camera, 0); ImGui::SameLine();
     ImGui::RadioButton("Perspective", &selected_camera, 1);
 
+    if (ImGui::SliderFloat("FOV", &fov , 45.0, 100.0)){
+        this->second_camera.SetFOV(fov);
+    }
+
     ImGuiOverlay();
 
 	ImGui::End();
