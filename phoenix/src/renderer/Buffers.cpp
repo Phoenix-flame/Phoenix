@@ -19,7 +19,7 @@ namespace Phoenix{
         glBindBuffer(GL_ARRAY_BUFFER, 0);
     }
 
-    IndexBuffer::IndexBuffer(float* data, int size){
+    IndexBuffer::IndexBuffer(uint32_t* data, uint32_t size): _count(size){
         glGenBuffers(1, &EBO);
         Bind();
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, size, data, GL_STATIC_DRAW);

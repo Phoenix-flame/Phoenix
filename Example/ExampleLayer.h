@@ -4,44 +4,30 @@
 #include <Phoenix/core/application.h>
 #include <Phoenix/imGui/imgui.h>
 #include <Phoenix/renderer/CameraController.h>
-
+#include <Phoenix/renderer/Buffers.h>
+#include <Phoenix/renderer/VertexArray.h>
+#include <Phoenix/renderer/renderer_command.h>
 
 class Triangle{
 public:
-    Triangle(float* points, float* colors){
-        this->points = points;
-        this->colors = colors;
-    }
-    void Init(int num = 9){
-        glGenVertexArrays(1, &this->VAO);
-        glBindVertexArray(this->VAO);
-        glGenBuffers(1, &this->VBO_Points);
-        glGenBuffers(1, &this->VBO_Colors);
-        glBindBuffer(GL_ARRAY_BUFFER, this->VBO_Points);
-        glBufferData(GL_ARRAY_BUFFER, num * sizeof(float), this->points, GL_STATIC_DRAW);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-        glBindBuffer(GL_ARRAY_BUFFER, this->VBO_Colors);
-        glBufferData(GL_ARRAY_BUFFER, num * sizeof(float), this->colors, GL_STATIC_DRAW);
-        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-        glEnableVertexAttribArray(0);
-        glEnableVertexAttribArray(1);
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
-        glBindVertexArray(0);
+    Triangle(float* vertices){
+        _vertex_array = Phoenix::CreateRef<Phoenix::VertexArray>();
+        Phoenix::Ref<Phoenix::VertexBuffer> vertexBuffer = Phoenix::CreateRef<Phoenix::VertexBuffer>(vertices, sizeof(vertices));
+        Phoenix::BufferLayout layout = {
+            { Phoenix::ShaderDataType::Float3, "a_Position" },
+            { Phoenix::ShaderDataType::Float3, "a_Color" }
+        };
+        vertexBuffer->SetLayout(layout);
+        _vertex_array->AddVertexBuffer(vertexBuffer);
+        uint32_t indices[3] = { 0, 1, 2 };
+        Phoenix::Ref<Phoenix::IndexBuffer> indexBuffer = Phoenix::CreateRef<Phoenix::IndexBuffer>(indices, sizeof(indices) / sizeof(uint32_t));
+        _vertex_array->SetIndexBuffer(indexBuffer);
     }
     void Draw(){
-        glBindVertexArray(this->VAO);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
-    }
-    void Draw(int num){
-        glBindVertexArray(this->VAO);
-        glDrawArrays(GL_TRIANGLES, 0, num);
+        Phoenix::RenderCommand::DrawIndexed(_vertex_array, 3);
     }
 private:
-    float* points;
-    float* colors;
-    unsigned int VAO;
-    unsigned int VBO_Points;
-    unsigned int VBO_Colors;
+    Phoenix::Ref<Phoenix::VertexArray> _vertex_array;
 };
 
 using namespace Phoenix;

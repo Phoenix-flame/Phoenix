@@ -1,5 +1,5 @@
 #include "ExampleLayer.h"
-#include <Phoenix/renderer/renderer_command.h>
+
 #include <Phoenix/core/base.h>
 #include <Phoenix/event/event.h>
 ExampleLayer::ExampleLayer(const std::string& name): Layer(name), 
@@ -8,18 +8,12 @@ ExampleLayer::ExampleLayer(const std::string& name): Layer(name),
     {  
     this->shader = Shader::Create("/home/alireza/Programming/C++/MyGameEngineProject/Example/assets/shaders/basic.glsl");
     float vertices[] = {
-        -0.5f, -0.5f, 0.0f,  // left 
-        -0.0f,  0.5f, 0.0f,  // right
-         0.5f, -0.5f, 0.0f,  // top 
-    };
-    float colors[] = {
-        1.0f, 0.0f,  0.0f,
-        0.0f, 1.0f,  0.0f,
-        0.0f, 0.0f,  1.0f,
+        -0.5f, -0.5f, 0.0f, 1.0f, 0.0f,  0.0f,  // left 
+        -0.0f,  0.5f, 0.0f, 0.0f, 1.0f,  0.0f, // right
+         0.5f, -0.5f, 0.0f, 0.0f, 0.0f,  1.0f,  // top 
     };
     // All triangles in one VAO
-    t = CreateRef<Triangle>(vertices, colors);
-    t->Init(9);
+    t = CreateRef<Triangle>(vertices);
     glGenFramebuffers(1, &fbo);
 }
 
