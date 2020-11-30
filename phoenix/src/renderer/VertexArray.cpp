@@ -37,7 +37,7 @@ namespace Phoenix{
     void VertexArray::AddVertexBuffer(const Ref<VertexBuffer>& vertexBuffer){
         PHX_CORE_ASSERT(vertexBuffer->GetLayout().GetElements().size(), "Vertex Buffer has no layout!");
 
-		Bind();
+		glBindVertexArray(VAO);
 		vertexBuffer->Bind();
 
 		const auto& layout = vertexBuffer->GetLayout();
@@ -53,6 +53,7 @@ namespace Phoenix{
 				case ShaderDataType::Int4:
 				case ShaderDataType::Bool:{
 					glEnableVertexAttribArray(_vertexBufferIndex);
+                    PHX_CORE_TRACE("{0}, {1}, {2}, {3}", _vertexBufferIndex, element.GetComponentCount(), layout.GetStride(), element.Offset);
 					glVertexAttribPointer(_vertexBufferIndex,
 						element.GetComponentCount(),
 						ShaderDataTypeToOpenGLBaseType(element.Type),
@@ -73,6 +74,7 @@ namespace Phoenix{
 							element.Normalized ? GL_TRUE : GL_FALSE,
 							layout.GetStride(),
 							(const void*)(element.Offset + sizeof(float) * count * i));
+                        glEnableVertexAttribArray(_vertexBufferIndex);
 						glVertexAttribDivisor(_vertexBufferIndex, 1);
 						_vertexBufferIndex++;
 					}

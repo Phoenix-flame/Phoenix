@@ -7,14 +7,7 @@ ExampleLayer::ExampleLayer(const std::string& name): Layer(name),
         second_camera(1280.0f / 720.0f, glm::radians(45.0), 0.1, 100.0)
     {  
     this->shader = Shader::Create("/home/alireza/Programming/C++/MyGameEngineProject/Example/assets/shaders/basic.glsl");
-    float vertices[] = {
-        -0.5f, -0.5f, 0.0f, 1.0f, 0.0f,  0.0f,  // left 
-        -0.0f,  0.5f, 0.0f, 0.0f, 1.0f,  0.0f, // right
-         0.5f, -0.5f, 0.0f, 0.0f, 0.0f,  1.0f,  // top 
-    };
-    // All triangles in one VAO
-    t = CreateRef<Triangle>(vertices);
-    glGenFramebuffers(1, &fbo);
+    t = CreateRef<Box>();
 }
 
 void ExampleLayer::OnAttach() {

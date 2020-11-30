@@ -2,6 +2,7 @@
 #include <string>
 #include <initializer_list>
 #include <vector>
+#include <Phoenix/core/log.h>
 namespace Phoenix{
 
     enum class ShaderDataType{
@@ -9,8 +10,7 @@ namespace Phoenix{
 	};
 
 	static uint32_t ShaderDataTypeSize(ShaderDataType type){
-		switch (type)
-		{
+		switch (type){
 			case ShaderDataType::Float:    return 4;
 			case ShaderDataType::Float2:   return 4 * 2;
 			case ShaderDataType::Float3:   return 4 * 3;
@@ -26,8 +26,7 @@ namespace Phoenix{
 		return 0;
 	}
 
-	struct BufferElement
-	{
+	struct BufferElement{
 		std::string Name;
 		ShaderDataType Type;
 		uint32_t Size;
@@ -78,8 +77,7 @@ namespace Phoenix{
 		void CalculateOffsetsAndStride(){
 			size_t offset = 0;
 			m_Stride = 0;
-			for (auto& element : m_Elements)
-			{
+			for (auto& element : m_Elements){
 				element.Offset = offset;
 				offset += element.Size;
 				m_Stride += element.Size;

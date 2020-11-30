@@ -8,25 +8,86 @@
 #include <Phoenix/renderer/VertexArray.h>
 #include <Phoenix/renderer/renderer_command.h>
 
-class Triangle{
+class Box{
 public:
-    Triangle(float* vertices){
+    Box(){
         _vertex_array = Phoenix::CreateRef<Phoenix::VertexArray>();
-        Phoenix::Ref<Phoenix::VertexBuffer> vertexBuffer = Phoenix::CreateRef<Phoenix::VertexBuffer>(vertices, sizeof(vertices));
+        _vertex_array->Bind();
+        Phoenix::Ref<Phoenix::VertexBuffer> vertexBuffer = Phoenix::CreateRef<Phoenix::VertexBuffer>(this->vertices, sizeof(this->vertices));
         Phoenix::BufferLayout layout = {
             { Phoenix::ShaderDataType::Float3, "a_Position" },
             { Phoenix::ShaderDataType::Float3, "a_Color" }
         };
         vertexBuffer->SetLayout(layout);
         _vertex_array->AddVertexBuffer(vertexBuffer);
-        uint32_t indices[3] = { 0, 1, 2 };
         Phoenix::Ref<Phoenix::IndexBuffer> indexBuffer = Phoenix::CreateRef<Phoenix::IndexBuffer>(indices, sizeof(indices) / sizeof(uint32_t));
         _vertex_array->SetIndexBuffer(indexBuffer);
     }
+    void Bind(){
+        
+    }
     void Draw(){
-        Phoenix::RenderCommand::DrawIndexed(_vertex_array, 3);
+        _vertex_array->Bind();
+        Phoenix::RenderCommand::DrawIndexed(_vertex_array);
     }
 private:
+    float vertices[218] = {
+        -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,
+         0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,
+         0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,
+         0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,
+        -0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,
+        -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,
+
+        -0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,
+         0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,
+         0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,
+         0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,
+        -0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,
+        -0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,
+
+        -0.5f,  0.5f,  0.5f, -1.0f,  0.0f,  0.0f,
+        -0.5f,  0.5f, -0.5f, -1.0f,  0.0f,  0.0f,
+        -0.5f, -0.5f, -0.5f, -1.0f,  0.0f,  0.0f,
+        -0.5f, -0.5f, -0.5f, -1.0f,  0.0f,  0.0f,
+        -0.5f, -0.5f,  0.5f, -1.0f,  0.0f,  0.0f,
+        -0.5f,  0.5f,  0.5f, -1.0f,  0.0f,  0.0f,
+
+         0.5f,  0.5f,  0.5f,  1.0f,  0.0f,  0.0f,
+         0.5f,  0.5f, -0.5f,  1.0f,  0.0f,  0.0f,
+         0.5f, -0.5f, -0.5f,  1.0f,  0.0f,  0.0f,
+         0.5f, -0.5f, -0.5f,  1.0f,  0.0f,  0.0f,
+         0.5f, -0.5f,  0.5f,  1.0f,  0.0f,  0.0f,
+         0.5f,  0.5f,  0.5f,  1.0f,  0.0f,  0.0f,
+
+        -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,
+         0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,
+         0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,
+         0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,
+        -0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,
+        -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,
+
+        -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,
+         0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,
+         0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,
+         0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,
+        -0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,
+        -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f
+    };
+    unsigned int indices[36] = {
+        0, 1, 2,   // first Box
+        3, 4, 5,
+        6, 7, 8,
+        9, 10, 11,
+        12, 13, 14, 
+        15, 16, 17, 
+        18, 19, 20,
+        21, 22, 23,
+        24, 25, 26, 
+        27, 28, 29,
+        30, 31, 32,
+        33, 34, 35
+    };  
     Phoenix::Ref<Phoenix::VertexArray> _vertex_array;
 };
 
@@ -49,7 +110,7 @@ private:
 private:
     unsigned int fbo;
     Ref<Shader> shader;
-    Ref<Triangle> t;
+    Ref<Box> t;
     glm::vec3 _backgroundColor = { 0.28, 0.65, 0.87 };
     OrthographicCameraController main_camera;
     PerspectiveCameraController second_camera;

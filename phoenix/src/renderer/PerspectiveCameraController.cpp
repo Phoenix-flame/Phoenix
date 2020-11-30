@@ -34,8 +34,8 @@ namespace Phoenix{
         _lastX = xpos;
         _lastY = ypos;
         
-        xoffset *= 0.1f;
-        yoffset *= 0.1f;
+        xoffset *= 0.2f;
+        yoffset *= 0.2f;
         if (Input::IsMouseButtonPressed(Mouse::Button0)){
             _camera.ChangeDirection(xoffset, yoffset);
         }

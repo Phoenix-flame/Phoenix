@@ -53,7 +53,7 @@ namespace Phoenix{
 
     void OpenGLRendererAPI::DrawIndexed(const Ref<VertexArray>& vertexArray, uint32_t indexCount){
 		uint32_t count = indexCount ? indexCount : vertexArray->GetIndexBuffer()->GetCount();
-		glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_INT, nullptr);
+		glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_INT, 0);
 		glBindTexture(GL_TEXTURE_2D, 0);
 	}
 }

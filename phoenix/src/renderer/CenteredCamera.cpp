@@ -28,7 +28,7 @@ namespace Phoenix{
     }
 
     void CenteredCamera::ChangeDirection(float xoffset, float yoffset){
-        _yaw   += xoffset;
+        _yaw   -= xoffset;
         _pitch += yoffset;
         if (_pitch > 89.0f) { _pitch = 89.0f; }
         if (_pitch < -89.0f) { _pitch = -89.0f; }
