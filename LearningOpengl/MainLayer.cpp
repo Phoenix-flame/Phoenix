@@ -102,7 +102,7 @@ void MainLayer::ShowObject(const char* prefix, int uid, Ref<Object> obj){
             ImGui::NextColumn();
             ImGui::SetNextItemWidth(-1);
             float pos[3] = {obj->GetPosition().x, obj->GetPosition().y, obj->GetPosition().z};
-            if (ImGui::DragFloat3("", pos)){
+            if (ImGui::DragFloat3("", pos, 0.01)){
                 obj->SetPosition(glm::vec3(pos[0], pos[1], pos[2]));
             }
             ImGui::NextColumn();
@@ -116,8 +116,12 @@ void MainLayer::ShowObject(const char* prefix, int uid, Ref<Object> obj){
             ImGui::NextColumn();
             ImGui::SetNextItemWidth(-1);
             float scale[3] = {obj->GetScale().x, obj->GetScale().y, obj->GetScale().z};
-            if (ImGui::SliderFloat3("", scale, 0.01, 10)){
+            if (ImGui::DragFloat3("", scale, 0.01, 0.01, 10)){
                 obj->SetScale(glm::vec3(scale[0], scale[1], scale[2]));
+            }
+            // ImGui::SameLine();
+            if (ImGui::Button("Reset")){
+                obj->SetScale(glm::vec3(1.0, 1.0, 1.0));
             }
             ImGui::NextColumn();
             ImGui::PopID();
