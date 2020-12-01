@@ -53,7 +53,6 @@ namespace Phoenix{
 				case ShaderDataType::Int4:
 				case ShaderDataType::Bool:{
 					glEnableVertexAttribArray(_vertexBufferIndex);
-                    PHX_CORE_TRACE("{0}, {1}, {2}, {3}", _vertexBufferIndex, element.GetComponentCount(), layout.GetStride(), element.Offset);
 					glVertexAttribPointer(_vertexBufferIndex,
 						element.GetComponentCount(),
 						ShaderDataTypeToOpenGLBaseType(element.Type),

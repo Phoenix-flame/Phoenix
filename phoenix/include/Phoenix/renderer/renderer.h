@@ -1,6 +1,6 @@
 #pragma once 
 #include <Phoenix/renderer/renderer_api.h>
-
+#include <Phoenix/renderer/shader.h>
 namespace Phoenix{
     class Renderer{
 	public:
@@ -12,7 +12,12 @@ namespace Phoenix{
 		// static void BeginScene(OrthographicCamera& camera);
 		static void EndScene();
 
-		// static void Submit(const Ref<Shader>& shader, const Ref<VertexArray>& vertexArray, const glm::mat4& transform = glm::mat4(1.0f));
+		static void Submit(
+            const Ref<Shader>& shader, 
+            const Ref<VertexArray>& vertexArray, 
+            const glm::mat4& projection, 
+            const glm::mat4& transform = glm::mat4(1.0f)
+        );
 
 		static RendererAPI::API GetAPI() { return RendererAPI::GetAPI(); }
 	private:

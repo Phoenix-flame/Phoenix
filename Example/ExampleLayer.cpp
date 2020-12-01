@@ -8,6 +8,7 @@ ExampleLayer::ExampleLayer(const std::string& name): Layer(name),
     {  
     this->shader = Shader::Create("/home/alireza/Programming/C++/MyGameEngineProject/Example/assets/shaders/basic.glsl");
     t = CreateRef<Box>();
+    base = CreateRef<Base>();
 }
 
 void ExampleLayer::OnAttach() {
@@ -27,6 +28,7 @@ void ExampleLayer::OnUpdate(Phoenix::Timestep ts) {
     glm::mat4 projection = (selected_camera == 1)?second_camera.GetCamera().GetViewProjectionMatrix():main_camera.GetCamera().GetViewProjectionMatrix();
     shader->SetMat4("projection", projection);
     t->Draw();
+    base->Draw();
     shader->Unbind();
 
 }
