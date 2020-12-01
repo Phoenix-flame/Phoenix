@@ -33,4 +33,5 @@ private:
     PerspectiveCameraController m_MainCamera;
 private:
     void ImGuiOverlay();
+    void ShowObject(const char* prefix, int uid, std::vector<Ref<Object>> objs);
 };

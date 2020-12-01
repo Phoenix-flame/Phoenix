@@ -7,8 +7,7 @@ ExampleLayer::ExampleLayer(const std::string& name): Layer(name),
         second_camera(1280.0f / 720.0f, glm::radians(45.0), 0.1, 100.0)
     {  
     this->shader = Shader::Create("/home/alireza/Programming/C++/MyGameEngineProject/Example/assets/shaders/basic.glsl");
-    t = CreateRef<Box>();
-    base = CreateRef<Base>();
+    box = CreateRef<Box>("Box");
 }
 
 void ExampleLayer::OnAttach() {
@@ -23,14 +22,8 @@ void ExampleLayer::OnUpdate(Phoenix::Timestep ts) {
     
     Phoenix::RenderCommand::SetClearColor(glm::vec4(_backgroundColor, 1.0));
     Phoenix::RenderCommand::Clear();
-    shader->Bind();
-    shader->SetFloat4("my_color", glm::vec4(0.4f, 0.4f, 0.4f, 0.0f));
     glm::mat4 projection = (selected_camera == 1)?second_camera.GetCamera().GetViewProjectionMatrix():main_camera.GetCamera().GetViewProjectionMatrix();
-    shader->SetMat4("projection", projection);
-    t->Draw();
-    base->Draw();
-    shader->Unbind();
-
+    box->Draw(projection);
 }
 void ExampleLayer::OnEvent(Phoenix::Event& e) {
     if (selected_camera == 0) main_camera.OnEvent(e);

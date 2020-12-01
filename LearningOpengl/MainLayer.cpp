@@ -53,11 +53,46 @@ void MainLayer::OnImGuiRender(){
         Application::Get().GetWindow().SetVSync(vsync);
     }
 	ImGui::End();
+
+
+
     ImGui::Begin("Objects", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
-    for (auto& o:m_Boxes){
-        ImGui::Checkbox(static_cast<std::string>(*o).c_str(), o->GetEnablePtr());
-    }
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
+    ImGui::Columns(2);
+    ImGui::Separator();
+    ShowObject("Boxes", 0, m_Boxes);
+    ImGui::Columns(1);
+    ImGui::Separator();
+    ImGui::PopStyleVar();
     ImGui::End();
 
 }
 
+void MainLayer::ShowObject(const char* prefix, int uid, std::vector<Ref<Object>> objs){
+    ImGui::PushID(uid);
+
+    // Text and Tree nodes are less high than framed widgets, using AlignTextToFramePadding() we add vertical spacing to make the tree lines equal high.
+    ImGui::AlignTextToFramePadding();
+    bool node_open = ImGui::TreeNode(prefix);
+    ImGui::NextColumn();
+    ImGui::AlignTextToFramePadding();
+    ImGui::NextColumn();
+    if (node_open){
+        int id = 0;
+        for (auto& o:objs){
+            ImGui::PushID(id);
+            // Here we use a TreeNode to highlight on hover (we could use e.g. Selectable as well)
+            ImGui::AlignTextToFramePadding();
+            ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_Bullet;
+            ImGui::TreeNodeEx(static_cast<std::string>(*o).c_str(), flags);
+            ImGui::NextColumn();
+            ImGui::SetNextItemWidth(-1);
+            ImGui::Checkbox("Enabled", o->GetEnablePtr());
+            ImGui::NextColumn();
+            ImGui::PopID();
+            id++;
+        }
+        ImGui::TreePop();
+    }
+    ImGui::PopID();
+}
