@@ -7,9 +7,10 @@ MainLayer::MainLayer(const std::string& name): Layer(name),
         m_MainCamera(1280.0f / 720.0f, glm::radians(45.0), 0.1, 100.0)
     {  
     m_Origin = CreateRef<Origin>();
-    for (int i = -5 ; i <= 5 ; i++){
-        m_Boxes.push_back(CreateRef<Box>("Box " + std::to_string(i + 5) ,glm::vec3(2*i, 0, 0)));
+    for (int i = -4 ; i <= 4 ; i++){
+        m_Boxes.push_back(CreateRef<Box>("Box " + std::to_string(i + 4) ,glm::vec3(2*i, 0, 0)));
     }
+    m_Boxes.push_back(CreateRef<TexturedBox>("Textured Box", glm::vec3(0, 0, 2)));
 }
 
 void MainLayer::OnAttach() {
@@ -103,6 +104,20 @@ void MainLayer::ShowObject(const char* prefix, int uid, Ref<Object> obj){
             float pos[3] = {obj->GetPosition().x, obj->GetPosition().y, obj->GetPosition().z};
             if (ImGui::DragFloat3("", pos)){
                 obj->SetPosition(glm::vec3(pos[0], pos[1], pos[2]));
+            }
+            ImGui::NextColumn();
+            ImGui::PopID();
+        }
+        {
+            ImGui::PushID(2);
+            ImGui::AlignTextToFramePadding();
+            ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_Bullet;
+            ImGui::TreeNodeEx("Scale", flags);
+            ImGui::NextColumn();
+            ImGui::SetNextItemWidth(-1);
+            float scale[3] = {obj->GetScale().x, obj->GetScale().y, obj->GetScale().z};
+            if (ImGui::SliderFloat3("", scale, 0.01, 10)){
+                obj->SetScale(glm::vec3(scale[0], scale[1], scale[2]));
             }
             ImGui::NextColumn();
             ImGui::PopID();
