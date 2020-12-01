@@ -3,7 +3,7 @@
 
 class Box: public Object{
 public:
-    Box(std::string name, const glm::vec3& pos = glm::vec3(0.0f, 0.0f, 0.0f)): Object(name){
+    Box(std::string name, const glm::vec3& pos = glm::vec3(0.0f, 0.0f, 0.0f)): Object(pos, name){
         m_Shader = Phoenix::Shader::Create("/home/alireza/Programming/C++/MyGameEngineProject/Example/assets/shaders/basic.glsl");
         m_Vertex_array = Phoenix::CreateRef<Phoenix::VertexArray>();
         m_Vertex_array->Bind();
@@ -16,7 +16,6 @@ public:
         m_Vertex_array->AddVertexBuffer(vertexBuffer);
         Phoenix::Ref<Phoenix::IndexBuffer> indexBuffer = Phoenix::CreateRef<Phoenix::IndexBuffer>(indices, sizeof(indices) / sizeof(unsigned int));
         m_Vertex_array->SetIndexBuffer(indexBuffer);
-        m_Transform = glm::translate(m_Transform, pos);
     }
 
 private:

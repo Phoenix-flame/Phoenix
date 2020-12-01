@@ -8,12 +8,22 @@
 
 class Object{
 public:
-    Object(std::string name = "Object") : m_Name(name) {}
+    Object(const glm::vec3& pos, std::string name = "Object") : m_Name(name), m_Position(pos) {
+        m_Transform = glm::translate(m_Transform, m_Position);
+    }
 
     virtual void Draw(const glm::mat4& projection){
         if (!m_Enabled) return;
         Phoenix::Renderer::Submit(m_Shader, m_Vertex_array, projection, m_Transform);
     }
+
+    void SetPosition(const glm::vec3 new_pos) {
+        glm::vec3 movement_vec = new_pos - m_Position;
+        m_Position = new_pos;
+        m_Transform = glm::translate(m_Transform, movement_vec);
+    }
+    
+    glm::vec3& GetPosition() { return m_Position; }
 
     void Enable() { m_Enabled = true; }
     void Disable() { m_Enabled = false; }
@@ -22,6 +32,7 @@ public:
     operator std::string () const {return m_Name; }
 protected:
     const std::string m_Name;
+    glm::vec3 m_Position;
     bool m_Enabled = true;
     Phoenix::Ref<Phoenix::VertexArray> m_Vertex_array;
     Phoenix::Ref<Phoenix::Shader> m_Shader;

@@ -8,7 +8,7 @@
 #include <Phoenix/renderer/VertexArray.h>
 #include <Phoenix/renderer/renderer_command.h>
 #include "Box.h"
-
+#include "Origin.h"
 
 
 using namespace Phoenix;
@@ -27,11 +27,11 @@ public:
 private:
     bool vsync = false;
 private:
-    
+    Ref<Origin> m_Origin;
     std::vector<Ref<Object>> m_Boxes;
     glm::vec3 m_BackgroundColor = { 0.28, 0.65, 0.87 };
     PerspectiveCameraController m_MainCamera;
 private:
     void ImGuiOverlay();
-    void ShowObject(const char* prefix, int uid, std::vector<Ref<Object>> objs);
+    void ShowObject(const char* prefix, int uid, Ref<Object> obj);
 };
