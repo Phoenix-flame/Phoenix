@@ -83,10 +83,10 @@ void MainLayer::ShowObject(const char* prefix, int uid, Ref<Object> obj){
     ImGui::AlignTextToFramePadding();
     ImGui::NextColumn();
     if (node_open){
+        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_Bullet;
         {
             ImGui::PushID(0);
             ImGui::AlignTextToFramePadding();
-            ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_Bullet;
             ImGui::TreeNodeEx("Enabled", flags);
             ImGui::NextColumn();
             ImGui::SetNextItemWidth(-1);
@@ -97,7 +97,6 @@ void MainLayer::ShowObject(const char* prefix, int uid, Ref<Object> obj){
         {
             ImGui::PushID(1);
             ImGui::AlignTextToFramePadding();
-            ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_Bullet;
             ImGui::TreeNodeEx("Position", flags);
             ImGui::NextColumn();
             ImGui::SetNextItemWidth(-1);
@@ -111,7 +110,6 @@ void MainLayer::ShowObject(const char* prefix, int uid, Ref<Object> obj){
         {
             ImGui::PushID(2);
             ImGui::AlignTextToFramePadding();
-            ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_Bullet;
             ImGui::TreeNodeEx("Scale", flags);
             ImGui::NextColumn();
             ImGui::SetNextItemWidth(-1);
@@ -119,9 +117,26 @@ void MainLayer::ShowObject(const char* prefix, int uid, Ref<Object> obj){
             if (ImGui::DragFloat3("", scale, 0.01, 0.01, 10)){
                 obj->SetScale(glm::vec3(scale[0], scale[1], scale[2]));
             }
-            // ImGui::SameLine();
             if (ImGui::Button("Reset")){
                 obj->SetScale(glm::vec3(1.0, 1.0, 1.0));
+            }
+            ImGui::NextColumn();
+            ImGui::PopID();
+        }
+        {
+            ImGui::PushID(3);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TreeNodeEx("Rotation", flags);
+            ImGui::NextColumn();
+            ImGui::SetNextItemWidth(-1);
+            float rotation[3] = {obj->GetRotation().x, obj->GetRotation().y, obj->GetRotation().z};
+            if (ImGui::DragFloat3("", rotation, 0.5, -180, 180)){
+                obj->SetRotationX(rotation[0]);
+                obj->SetRotationY(rotation[1]);
+                obj->SetRotationZ(rotation[2]);
+            }
+            if (ImGui::Button("Reset")){
+                obj->ResetRotation();
             }
             ImGui::NextColumn();
             ImGui::PopID();

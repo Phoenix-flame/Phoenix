@@ -29,6 +29,7 @@ public:
         m_Shader->SetMat4("model", m_Transform);
         m_Shader->SetMat4("projection", projection);
         m_Vertex_array->Bind();
+        glLineWidth(2.5);
         uint32_t count = m_Vertex_array->GetIndexBuffer()->GetCount();
 		glDrawElements(GL_LINES, count, GL_UNSIGNED_INT, 0);
 		glBindTexture(GL_TEXTURE_2D, 0);
@@ -39,11 +40,11 @@ public:
 private:
     float vertices[218] = {
          0.0f,  0.0f,  0.0f,  1.0f,  0.0f,  0.0f,
-         0.5f,  0.0f,  0.0f,  1.0f,  0.0f,  0.0f,
+         0.3f,  0.0f,  0.0f,  1.0f,  0.0f,  0.0f,
          0.0f,  0.0f,  0.0f,  0.0f,  1.0f,  0.0f,
-         0.0f,  0.5f,  0.0f,  0.0f,  1.0f,  0.0f,
+         0.0f,  0.3f,  0.0f,  0.0f,  1.0f,  0.0f,
          0.0f,  0.0f,  0.0f,  0.0f,  0.0f,  1.0f,
-         0.0f,  0.0f,  0.5f,  0.0f,  0.0f,  1.0f,
+         0.0f,  0.0f,  0.3f,  0.0f,  0.0f,  1.0f,
     };
     unsigned int indices[36] = {
         0, 1, 2,   // first Box
