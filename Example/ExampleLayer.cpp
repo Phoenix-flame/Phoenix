@@ -12,19 +12,42 @@ ExampleLayer::ExampleLayer(const std::string& name): Layer(name),
 
 void ExampleLayer::OnAttach() {
     PHX_INFO("{0} attached.", this->layer_name);
+    FramebufferSpecification fbSpec;
+    fbSpec.Width = 640;
+    fbSpec.Height = 480;
+    m_Framebuffer = Framebuffer::Create(fbSpec);
 }
 void ExampleLayer::OnDetach() {
     PHX_INFO("{0} detached.", this->layer_name);
 }
 
 void ExampleLayer::OnUpdate(Phoenix::Timestep ts) {
-    if (selected_camera == 0) main_camera.OnUpdate(ts);
-    
+    // Resize
+    FramebufferSpecification spec = m_Framebuffer->GetSpecification();
+    if ( m_ViewportSize.x > 0.0f && m_ViewportSize.y > 0.0f && // zero sized framebuffer is invalid
+        (spec.Width != m_ViewportSize.x || spec.Height != m_ViewportSize.y))
+    {
+        m_Framebuffer->Resize((uint32_t)m_ViewportSize.x, (uint32_t)m_ViewportSize.y);
+        main_camera.OnResize(m_ViewportSize.x, m_ViewportSize.y);
+        second_camera.OnResize(m_ViewportSize.x, m_ViewportSize.y);
+    }
+
+    // Update
+    if (m_ViewportFocused){
+        if (selected_camera == 0) main_camera.OnUpdate(ts);
+    }
+
+
+    m_Framebuffer->Bind();
     Phoenix::RenderCommand::SetClearColor(glm::vec4(_backgroundColor, 1.0));
     Phoenix::RenderCommand::Clear();
     glm::mat4 projection = (selected_camera == 1)?second_camera.GetCamera().GetViewProjectionMatrix():main_camera.GetCamera().GetViewProjectionMatrix();
     box->Draw(projection);
+
+
+    m_Framebuffer->Unbind();
 }
+
 void ExampleLayer::OnEvent(Phoenix::Event& e) {
     if (selected_camera == 0) main_camera.OnEvent(e);
     else if (selected_camera == 1)second_camera.OnEvent(e);
@@ -59,9 +82,24 @@ void ExampleLayer::OnImGuiRender(){
         this->second_camera.SetFOV(fov);
     }
 
+	ImGui::End();
+
     ImGuiOverlay();
 
-	ImGui::End();
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 0, 0 });
+    ImGui::Begin("Viewport");
+
+    m_ViewportFocused = ImGui::IsWindowFocused();
+    m_ViewportHovered = ImGui::IsWindowHovered();
+    Application::Get().GetImGuiLayer()->BlockEvents(!m_ViewportFocused || !m_ViewportHovered);
+
+    ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
+    m_ViewportSize = { viewportPanelSize.x, viewportPanelSize.y };
+
+    uint64_t textureID = m_Framebuffer->GetColorAttachmentRendererID();
+    ImGui::Image(reinterpret_cast<void*>(textureID), ImVec2{ m_ViewportSize.x, m_ViewportSize.y }, ImVec2{ 0, 1 }, ImVec2{ 1, 0 });
+    ImGui::End();
+    ImGui::PopStyleVar();
 }
 
 

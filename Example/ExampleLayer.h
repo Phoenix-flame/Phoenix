@@ -7,6 +7,7 @@
 #include <Phoenix/renderer/Buffers.h>
 #include <Phoenix/renderer/VertexArray.h>
 #include <Phoenix/renderer/renderer_command.h>
+#include <Phoenix/renderer/Framebuffer.h>
 #include "Box.h"
 
 using namespace Phoenix;
@@ -26,6 +27,10 @@ public:
 private:
     bool vsync = false;
 private:
+    Ref<Framebuffer> m_Framebuffer;
+    bool m_ViewportFocused = false, m_ViewportHovered = false;
+    glm::vec2 m_ViewportSize = { 0.0f, 0.0f };
+    
     Ref<Shader> shader;
     Ref<Box> box;
     glm::vec3 _backgroundColor = { 0.28, 0.65, 0.87 };

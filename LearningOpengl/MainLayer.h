@@ -7,6 +7,7 @@
 #include <Phoenix/renderer/Buffers.h>
 #include <Phoenix/renderer/VertexArray.h>
 #include <Phoenix/renderer/renderer_command.h>
+#include <Phoenix/renderer/Framebuffer.h>
 #include "Box.h"
 #include "Origin.h"
 
@@ -27,6 +28,11 @@ public:
 private:
     bool vsync = false;
 private:
+    Ref<Framebuffer> m_Framebuffer;
+    bool m_ViewportFocused = false, m_ViewportHovered = false;
+    glm::vec2 m_ViewportSize = { 0.0f, 0.0f };
+    
+
     Ref<Origin> m_Origin;
     std::vector<Ref<Object>> m_Boxes;
     glm::vec3 m_BackgroundColor = { 0.28, 0.65, 0.87 };
@@ -34,4 +40,5 @@ private:
 private:
     void ImGuiOverlay();
     void ShowObject(const char* prefix, int uid, Ref<Object> obj);
+    void DrawVec3Control(const std::string& label, glm::vec3& values, float resetValue = 0.0f, float columnWidth = 100.0f);
 };

@@ -24,7 +24,7 @@ namespace Phoenix{
 
 		void Close();
 
-		// ImGuiLayer* GetImGuiLayer() { return m_ImGuiLayer; }
+		ImGuiLayer* GetImGuiLayer() { return _imGuiLayer; }
         static Application& Get() { return *s_Instance; }
     private:
         void Run();
