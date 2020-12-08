@@ -13,8 +13,8 @@ namespace Phoenix{
         void OnEvent(Event& e);
         void OnResize(float width, float height);
         void SetFOV(float fov);
-        CenteredCamera& GetCamera() { return _camera; }
-        const CenteredCamera& GetCamera() const { return _camera; }
+        PerspectiveCamera& GetCamera() { return _camera; }
+        const PerspectiveCamera& GetCamera() const { return _camera; }
 
     private:
         bool OnMouseMoved(MouseMovedEvent& e);
@@ -29,7 +29,7 @@ namespace Phoenix{
         float _lastX = 1280 / 2.0f;
         float _lastY = 720 / 2.0f;
         bool _firstMouse = true;
-        CenteredCamera _camera;
+        PerspectiveCamera _camera;
     };
     class OrthographicCameraController{
     public:

@@ -4,9 +4,9 @@
 
 
 namespace Phoenix{
-    class CenteredCamera{
+    class PerspectiveCamera{
     public:
-        CenteredCamera(float fov, float aspect, float near, float far, const glm::vec3& pos = glm::vec3(0, 0, -5));
+        PerspectiveCamera(float fov, float aspect, float near, float far, const glm::vec3& pos = glm::vec3(0, 0, -5));
 
         void SetProjection(float fov, float aspect, float near, float far);
         void SetTarget(const glm::vec3& target);

@@ -8,8 +8,10 @@
 #include <Phoenix/renderer/VertexArray.h>
 #include <Phoenix/renderer/renderer_command.h>
 #include <Phoenix/renderer/Framebuffer.h>
+#include <Phoenix/Scene/Scene.h>
 #include "Box.h"
 #include "Origin.h"
+#include "SceneEditor.h"
 
 
 using namespace Phoenix;
@@ -26,7 +28,7 @@ public:
     virtual void OnImGuiRender() override;
 
 private:
-    bool vsync = false;
+    bool vsync = true;
 private:
     Ref<Framebuffer> m_Framebuffer;
     bool m_ViewportFocused = false, m_ViewportHovered = false;
@@ -37,6 +39,8 @@ private:
     std::vector<Ref<Object>> m_Boxes;
     glm::vec3 m_BackgroundColor = { 0.28, 0.65, 0.87 };
     PerspectiveCameraController m_MainCamera;
+    Ref<SceneEditor> m_SceneEditor;
+    Ref<Phoenix::Scene> m_Scene;
 private:
     void ImGuiOverlay();
     void ShowObject(const char* prefix, int uid, Ref<Object> obj);

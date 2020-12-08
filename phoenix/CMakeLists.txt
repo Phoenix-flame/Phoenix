@@ -1,7 +1,7 @@
 
 project (phoenix)
-set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14 -pthread ")
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -pthread ")
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${phoenix_SOURCE_DIR}/cmake")
 set(APP_TARGET phoenix)
 
@@ -10,6 +10,7 @@ file(GLOB core_src
     "src/imGui/*.cpp"
     "src/opengl/*.cpp"
     "src/renderer/*.cpp"
+    "src/Scene/*.cpp"
 )
 
 add_library(
@@ -31,6 +32,10 @@ get_property(dirs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY INCLUDE_DIRECTO
 foreach(dir ${dirs})
   message(STATUS "dir='${dir}'")
 endforeach()
+target_compile_features(${APP_TARGET}
+    PRIVATE
+    cxx_std_17
+)
 
 #find_package(SDL2 REQUIRED)
 #include_directories(${APP_TARGET} ${SDL2_INCLUDE_DIRS})
@@ -42,9 +47,12 @@ find_package(GLM REQUIRED)
 find_package(GLEW REQUIRED)
 include_directories(${APP_TARGET} ${GLEW_INCLUDE_DIRS})
 
+find_package(EnTT REQUIRED)
+include_directories(${APP_TARGET} ${EnTT_INCLUDE_DIRS})
+
 find_package(spdlog REQUIRED)
 
 #target_link_libraries(${APP_TARGET} ${SDL2_LIBRARIES})
 target_link_libraries(${APP_TARGET} glfw)
 target_link_libraries(${APP_TARGET} OpenGL::GL ${GLEW_LIBRARIES})
-target_link_libraries(${APP_TARGET} ${SPDLOG_LIBRARIES})
+target_link_libraries(${APP_TARGET} ${SPDLOG_LIBRARIES}  ${EnTT_LIBRARIES})

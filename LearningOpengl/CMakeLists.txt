@@ -6,6 +6,7 @@ include_directories(${PROJECT_SOURCE_DIR})
 add_executable(${PROJECT_NAME} 
     main.cpp
     MainLayer.cpp
+    SceneEditor.cpp
 )
 
 # Link the static library from subproject1 using it's alias sub::lib1

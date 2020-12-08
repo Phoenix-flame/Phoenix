@@ -2,32 +2,32 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 namespace Phoenix{
-    CenteredCamera::CenteredCamera(float fov, float aspect, float near, float far, const glm::vec3& pos){
+    PerspectiveCamera::PerspectiveCamera(float fov, float aspect, float near, float far, const glm::vec3& pos){
         _position = pos;
         _target = glm::vec3(0.0, 0.0, 0.0);
         this->SetProjection(fov, aspect, near, far);
         this->RecalculateViewMatrix();
     }
 
-    void CenteredCamera::SetProjection(float fov, float aspect, float near, float far){
+    void PerspectiveCamera::SetProjection(float fov, float aspect, float near, float far){
         _projectionMatrix = glm::perspective(fov, aspect, near, far);
         _viewProjectionMatrix = _projectionMatrix * _viewMatrix;
         this->RecalculateViewMatrix();
     }
 
-    void CenteredCamera::SetTarget(const glm::vec3& target){
+    void PerspectiveCamera::SetTarget(const glm::vec3& target){
         _target = target;
         this->RecalculateViewMatrix();
     }
 
-    void CenteredCamera::SetRadius(float offset){
+    void PerspectiveCamera::SetRadius(float offset){
         if (_radius >= 1.0f && _radius <= 45.0f){ _radius -= offset; }
         if (_radius <= 1.0f) { _radius = 1.0f; }
         else if (_radius >= 45.0f) { _radius = 45.0f; }
         this->RecalculateViewMatrix();
     }
 
-    void CenteredCamera::ChangeDirection(float xoffset, float yoffset){
+    void PerspectiveCamera::ChangeDirection(float xoffset, float yoffset){
         _yaw   -= xoffset;
         _pitch += yoffset;
         if (_pitch > 89.0f) { _pitch = 89.0f; }
@@ -35,7 +35,7 @@ namespace Phoenix{
         this->RecalculateViewMatrix();
     }
 
-    void CenteredCamera::RecalculateViewMatrix(){
+    void PerspectiveCamera::RecalculateViewMatrix(){
         float camX = -_radius * sinf(_yaw*(M_PI/180)) * cosf((_pitch)*(M_PI/180));
         float camY = -_radius * sinf((_pitch)*(M_PI/180));
         float camZ = -_radius * cosf((_yaw)*(M_PI/180)) * cosf((_pitch)*(M_PI/180));

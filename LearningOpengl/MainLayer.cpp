@@ -9,10 +9,21 @@ MainLayer::MainLayer(const std::string& name): Layer(name),
 
 void MainLayer::OnAttach() {
     PHX_INFO("{0} attached.", this->layer_name);
+
+    Application::Get().GetWindow().SetVSync(true);
+
     FramebufferSpecification fbSpec;
     fbSpec.Width = 640;
     fbSpec.Height = 480;
     m_Framebuffer = Framebuffer::Create(fbSpec);
+
+    m_Scene = CreateRef<Phoenix::Scene>();
+
+    for (int i = 0 ; i < 5 ; i++){
+        m_Scene->CreateEntity("Entity" + std::to_string(i));
+    }
+
+    m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
 
     m_Origin = CreateRef<Origin>();
     for (int i = -4 ; i <= 4 ; i++){
@@ -73,7 +84,7 @@ void MainLayer::OnEvent(Phoenix::Event& e) {
 
 
 void MainLayer::OnImGuiRender(){
-    ImGui::ShowMetricsWindow();
+    // ImGui::ShowMetricsWindow();
     ImGui::Begin("Settings", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
 	ImGui::Text("Hello");
     ImGui::ColorEdit3("Background Color", glm::value_ptr(m_BackgroundColor));
@@ -112,6 +123,8 @@ void MainLayer::OnImGuiRender(){
     ImGui::Image(reinterpret_cast<void*>(textureID), ImVec2{ m_ViewportSize.x, m_ViewportSize.y }, ImVec2{ 0, 1 }, ImVec2{ 1, 0 });
     ImGui::End();
     ImGui::PopStyleVar();
+
+    m_SceneEditor->OnImGuiRender();
 
 }
 

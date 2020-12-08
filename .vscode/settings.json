@@ -63,6 +63,10 @@
         "string": "cpp",
         "string_view": "cpp",
         "variant": "cpp",
-        "codecvt": "cpp"
+        "codecvt": "cpp",
+        "forward_list": "cpp",
+        "unordered_set": "cpp",
+        "future": "cpp",
+        "any": "cpp"
     }
 }
