@@ -1,7 +1,7 @@
 #include <Phoenix/renderer/CameraController.h>
 #include <Phoenix/renderer/Camera.h>
 #include <Phoenix/core/Input.h>
-
+#include <Phoenix/imGui/imgui.h>
 namespace Phoenix{
     PerspectiveCameraController::PerspectiveCameraController(float aspectRatio, float fov, float near, float far):
         _aspectRatio(aspectRatio), _fov(fov), _near(near), _far(far), _camera(fov, aspectRatio, near, far){}
@@ -32,9 +32,9 @@ namespace Phoenix{
             _lastY = ypos;
             _firstMouse = false;
         }
-
-        float xoffset = xpos - _lastX;
-        float yoffset = _lastY - ypos;
+        ImGuiIO& io = ImGui::GetIO(); (void)io;
+        float xoffset = io.MouseDelta.x;//xpos - _lastX;
+        float yoffset = -io.MouseDelta.y; //_lastY - ypos;
 
         _lastX = xpos;
         _lastY = ypos;

@@ -19,17 +19,9 @@ void MainLayer::OnAttach() {
 
     m_Scene = CreateRef<Phoenix::Scene>();
 
-    for (int i = 0 ; i < 5 ; i++){
-        m_Scene->CreateEntity("Entity" + std::to_string(i));
-    }
-
     m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
 
     m_Origin = CreateRef<Origin>();
-    for (int i = -4 ; i <= 4 ; i++){
-        m_Boxes.push_back(CreateRef<Box>("Box " + std::to_string(i + 4) ,glm::vec3(2*i, 0, 0)));
-    }
-    m_Boxes.push_back(CreateRef<TexturedBox>("Textured Box", glm::vec3(0, 0, 2)));
 }
 void MainLayer::OnDetach() {
     PHX_INFO("{0} detached.", this->layer_name);
@@ -59,9 +51,7 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
     glm::mat4 projection = m_MainCamera.GetCamera().GetViewProjectionMatrix();
     
     m_Scene->OnUpdate(m_MainCamera.GetCamera(), ts);
-    // for (auto b:m_Boxes){
-    //     b->Draw(projection);
-    // }
+
     m_Origin->Draw(projection);
 
     m_Framebuffer->Unbind();
@@ -85,7 +75,7 @@ void MainLayer::OnEvent(Phoenix::Event& e) {
 
 
 void MainLayer::OnImGuiRender(){
-    // ImGui::ShowMetricsWindow();
+    ImGui::ShowMetricsWindow();
     ImGui::Begin("Settings", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
 	ImGui::Text("Hello");
     ImGui::ColorEdit3("Background Color", glm::value_ptr(m_BackgroundColor));
