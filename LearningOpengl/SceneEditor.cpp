@@ -198,6 +198,13 @@ namespace Phoenix{
                 PHX_CORE_ASSERT("This entity already has the Cube Component!");
                 ImGui::CloseCurrentPopup();
             }
+            if (ImGui::MenuItem("Origin")){
+                if (!m_SelectedEntity.HasComponent<OriginComponent>())
+                    m_SelectedEntity.AddComponent<OriginComponent>();
+                else
+                PHX_CORE_ASSERT("This entity already has the Cube Component!");
+                ImGui::CloseCurrentPopup();
+            }
 				// if (ImGui::MenuItem("Camera")){
 				// 	if (!m_SelectedEntity.HasComponent<CameraComponent>())
 				// 		m_SelectedEntity.AddComponent<CameraComponent>();
@@ -229,6 +236,9 @@ namespace Phoenix{
 		});
         DrawComponent<CubeComponent>("Cube", entity, [](auto& component){
 			ImGui::Text("It has a cube");
+		});
+        DrawComponent<OriginComponent>("Origin", entity, [](auto& component){
+			ImGui::Checkbox("Enable", &component.m_Enabled);
 		});
 
 		// DrawComponent<CameraComponent>("Camera", entity, [](auto& component){

@@ -4,13 +4,9 @@
 #include <Phoenix/core/application.h>
 #include <Phoenix/imGui/imgui.h>
 #include <Phoenix/renderer/CameraController.h>
-#include <Phoenix/renderer/Buffers.h>
-#include <Phoenix/renderer/VertexArray.h>
-#include <Phoenix/renderer/renderer_command.h>
 #include <Phoenix/renderer/Framebuffer.h>
+#include <Phoenix/renderer/renderer_command.h>
 #include <Phoenix/Scene/Scene.h>
-#include "Box.h"
-#include "Origin.h"
 #include "SceneEditor.h"
 
 
@@ -34,9 +30,6 @@ private:
     bool m_ViewportFocused = false, m_ViewportHovered = false;
     glm::vec2 m_ViewportSize = { 0.0f, 0.0f };
     
-
-    Ref<Origin> m_Origin;
-    std::vector<Ref<Object>> m_Boxes;
     glm::vec3 m_BackgroundColor = { 0.28, 0.65, 0.87 };
     PerspectiveCameraController m_MainCamera;
     Ref<SceneEditor> m_SceneEditor;

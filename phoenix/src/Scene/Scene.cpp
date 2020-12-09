@@ -19,6 +19,8 @@ namespace Phoenix{
     }
 
     void Scene::OnUpdate(PerspectiveCamera& cam, Timestep ts){
+        
+
         auto view = m_Registry.view<CubeComponent, TransformComponent>();
         for (auto entity : view) {
             auto cube = view.get<CubeComponent>(entity);
@@ -32,5 +34,12 @@ namespace Phoenix{
         // for (auto entity : view){
         //     auto transform = view.get<TransformComponent>(entity);
         // }
+
+
+        auto origins = m_Registry.view<OriginComponent>();
+        for (auto o:origins){
+            auto origin = origins.get<OriginComponent>(o);
+            origin.Draw(cam.GetViewProjectionMatrix());
+        }
     }
 }

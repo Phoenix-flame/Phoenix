@@ -20,8 +20,6 @@ void MainLayer::OnAttach() {
     m_Scene = CreateRef<Phoenix::Scene>();
 
     m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
-
-    m_Origin = CreateRef<Origin>();
 }
 void MainLayer::OnDetach() {
     PHX_INFO("{0} detached.", this->layer_name);
@@ -49,11 +47,8 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
     Phoenix::RenderCommand::Clear();
     
     glm::mat4 projection = m_MainCamera.GetCamera().GetViewProjectionMatrix();
-    
     m_Scene->OnUpdate(m_MainCamera.GetCamera(), ts);
-
-    m_Origin->Draw(projection);
-
+    
     m_Framebuffer->Unbind();
 }
 
