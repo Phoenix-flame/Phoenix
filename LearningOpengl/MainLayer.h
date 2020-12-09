@@ -41,8 +41,7 @@ private:
     PerspectiveCameraController m_MainCamera;
     Ref<SceneEditor> m_SceneEditor;
     Ref<Phoenix::Scene> m_Scene;
-private:
-    void ImGuiOverlay();
-    void ShowObject(const char* prefix, int uid, Ref<Object> obj);
-    void DrawVec3Control(const std::string& label, glm::vec3& values, float resetValue = 0.0f, float columnWidth = 100.0f);
+
+    bool m_OverlayEnabled = true;
+
 };

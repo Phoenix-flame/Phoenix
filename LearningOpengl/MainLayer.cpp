@@ -75,29 +75,24 @@ void MainLayer::OnEvent(Phoenix::Event& e) {
 
 
 void MainLayer::OnImGuiRender(){
-    ImGui::ShowMetricsWindow();
     ImGui::Begin("Settings", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
-	ImGui::Text("Hello");
+	ImGui::Text("Metrics");
+    ImGuiContext& g = *GImGui;
+    ImGuiIO& io = g.IO;
+    ImGuiMetricsConfig* cfg = &g.DebugMetricsConfig;
+
+    // Basic info
+    ImGui::Text("Dear ImGui %s", ImGui::GetVersion());
+    ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
+    ImGui::Text("%d vertices, %d indices (%d triangles)", io.MetricsRenderVertices, io.MetricsRenderIndices, io.MetricsRenderIndices / 3);
+    ImGui::Separator();
+
     ImGui::ColorEdit3("Background Color", glm::value_ptr(m_BackgroundColor));
     if (ImGui::Checkbox("VSync", &vsync)){
         Application::Get().GetWindow().SetVSync(vsync);
     }
 	ImGui::End();
 
-
-
-    ImGui::Begin("Objects", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
-    ImGui::Columns(2);
-    ImGui::Separator();
-    int id = 0;
-    for (auto& obj:m_Boxes){
-        ShowObject(static_cast<std::string>(*obj).c_str(), id++, obj);
-    }  
-    ImGui::Columns(1);
-    ImGui::Separator();
-    ImGui::PopStyleVar();
-    ImGui::End();
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 0, 0 });
     ImGui::Begin("Viewport");
@@ -117,134 +112,6 @@ void MainLayer::OnImGuiRender(){
 
     m_SceneEditor->OnImGuiRender();
 
-}
+    
 
-void MainLayer::ShowObject(const char* prefix, int uid, Ref<Object> obj){
-    static int test[3] = {1, 2, 3};
-    ImGui::PushID(uid);
-    ImGui::AlignTextToFramePadding();
-    bool node_open = ImGui::TreeNode(prefix);
-    ImGui::NextColumn();
-    ImGui::AlignTextToFramePadding();
-    ImGui::NextColumn();
-    if (node_open){
-        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_Bullet;
-        {
-            ImGui::PushID(0);
-            ImGui::AlignTextToFramePadding();
-            ImGui::TreeNodeEx("Enabled", flags);
-            ImGui::NextColumn();
-            ImGui::SetNextItemWidth(-1);
-            ImGui::Checkbox("", obj->GetEnablePtr());
-            ImGui::NextColumn();
-            ImGui::PopID();
-        }
-        {
-            ImGui::PushID(2);
-            ImGui::AlignTextToFramePadding();
-            ImGui::TreeNodeEx("Scale", flags);
-            ImGui::NextColumn();
-            ImGui::SetNextItemWidth(-1);
-            float scale[3] = {obj->GetScale().x, obj->GetScale().y, obj->GetScale().z};
-            if (ImGui::DragFloat3("", scale, 0.01, 0.01, 10)){
-                obj->SetScale(glm::vec3(scale[0], scale[1], scale[2]));
-            }
-            if (ImGui::Button("Reset")){
-                obj->SetScale(glm::vec3(1.0, 1.0, 1.0));
-            }
-            ImGui::NextColumn();
-            ImGui::PopID();
-        }
-        {
-            ImGui::PushID(3);
-            ImGui::AlignTextToFramePadding();
-            ImGui::TreeNodeEx("Rotation", flags);
-            ImGui::NextColumn();
-            ImGui::SetNextItemWidth(-1);
-            float rotation[3] = {obj->GetRotation().x, obj->GetRotation().y, obj->GetRotation().z};
-            if (ImGui::DragFloat3("", rotation, 0.5, -180, 180)){
-                obj->SetRotationX(rotation[0]);
-                obj->SetRotationY(rotation[1]);
-                obj->SetRotationZ(rotation[2]);
-            }
-            if (ImGui::Button("Reset")){
-                obj->ResetRotation();
-            }
-            ImGui::NextColumn();
-            ImGui::PopID();
-        }
-        {
-            DrawVec3Control("Translation", obj->GetPosition());
-        }
-        ImGui::TreePop();
-    }
-    ImGui::PopID();
-}
-
-
-
-void MainLayer::DrawVec3Control(const std::string& label, glm::vec3& values, float resetValue, float columnWidth )
-{
-    ImGuiIO& io = ImGui::GetIO();
-    auto boldFont = io.Fonts->Fonts[0];
-
-    ImGui::PushID(label.c_str());
-
-    ImGui::Columns(2);
-    ImGui::SetColumnWidth(0, columnWidth);
-    ImGui::Text(label.c_str());
-    ImGui::NextColumn();
-    ImGui::PushMultiItemsWidths(3, ImGui::CalcItemWidth());
-    // ImGui::Push();
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{ 0, 0 });
-
-    float lineHeight = ImGui::GetIO().FontDefault->FontSize + ImGui::GetStyle().FramePadding.y * 2.0;
-    ImVec2 buttonSize = { lineHeight + 3.0f, lineHeight };
-
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.8f, 0.1f, 0.15f, 1.0f });
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.9f, 0.2f, 0.2f, 1.0f });
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 0.8f, 0.1f, 0.15f, 1.0f });
-    ImGui::PushFont(boldFont);
-    if (ImGui::Button("X", buttonSize))
-        values.x = resetValue;
-    ImGui::PopFont();
-    ImGui::PopStyleColor(3);
-
-    ImGui::SameLine();
-    ImGui::DragFloat("##X", &values.x, 0.1f, 0.0f, 0.0f, "%.2f");
-    ImGui::PopItemWidth();
-    ImGui::SameLine();
-
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.2f, 0.7f, 0.2f, 1.0f });
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.3f, 0.8f, 0.3f, 1.0f });
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 0.2f, 0.7f, 0.2f, 1.0f });
-    ImGui::PushFont(boldFont);
-    if (ImGui::Button("Y", buttonSize))
-        values.y = resetValue;
-    ImGui::PopFont();
-    ImGui::PopStyleColor(3);
-
-    ImGui::SameLine();
-    ImGui::DragFloat("##Y", &values.y, 0.1f, 0.0f, 0.0f, "%.2f");
-    ImGui::PopItemWidth();
-    ImGui::SameLine();
-
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.1f, 0.25f, 0.8f, 1.0f });
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.2f, 0.35f, 0.9f, 1.0f });
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 0.1f, 0.25f, 0.8f, 1.0f });
-    ImGui::PushFont(boldFont);
-    if (ImGui::Button("Z", buttonSize))
-        values.z = resetValue;
-    ImGui::PopFont();
-    ImGui::PopStyleColor(3);
-
-    ImGui::SameLine();
-    ImGui::DragFloat("##Z", &values.z, 0.1f, 0.0f, 0.0f, "%.2f");
-    ImGui::PopItemWidth();
-
-    ImGui::PopStyleVar();
-
-    ImGui::Columns(1);
-
-    ImGui::PopID();
 }
