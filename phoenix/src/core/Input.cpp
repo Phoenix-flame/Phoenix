@@ -1,6 +1,7 @@
 #include <Phoenix/core/Input.h>
 #include <Phoenix/core/application.h>
 #include <GLFW/glfw3.h>
+#include <Phoenix/imGui/imgui.h>
 namespace Phoenix{
     bool Input::IsKeyPressed(const KeyCode key){
 		auto* window = static_cast<GLFWwindow*>(Application::Get().GetWindow().GetNativeWindow());
@@ -29,4 +30,10 @@ namespace Phoenix{
 	float Input::GetMouseY(){
 		return GetMousePosition().y;
 	}
+
+    glm::vec2 Input::GetMouseDelta(){
+        ImGuiIO& io = ImGui::GetIO(); (void)io;
+
+        return {io.MouseDelta.x, io.MouseDelta.y};
+    }
 }

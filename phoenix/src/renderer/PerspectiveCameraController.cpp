@@ -25,19 +25,8 @@ namespace Phoenix{
     }   
 
     bool PerspectiveCameraController::OnMouseMoved(MouseMovedEvent& e){
-        float xpos = e.GetX();
-        float ypos = e.GetY();
-        if (_firstMouse){
-            _lastX = xpos;
-            _lastY = ypos;
-            _firstMouse = false;
-        }
-        ImGuiIO& io = ImGui::GetIO(); (void)io;
-        float xoffset = io.MouseDelta.x;//xpos - _lastX;
-        float yoffset = -io.MouseDelta.y; //_lastY - ypos;
-
-        _lastX = xpos;
-        _lastY = ypos;
+        float xoffset = Input::GetMouseDelta().x;
+        float yoffset = -Input::GetMouseDelta().y; 
         
         xoffset *= 0.2f;
         yoffset *= 0.2f;

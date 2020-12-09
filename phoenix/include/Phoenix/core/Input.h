@@ -11,5 +11,6 @@ namespace Phoenix{
 		static glm::vec2 GetMousePosition();
 		static float GetMouseX();
 		static float GetMouseY();
+        static glm::vec2 GetMouseDelta();
 	};
 }
