@@ -3,6 +3,7 @@
 #include <Phoenix/core/base.h>
 #include <Phoenix/core/timestep.h>
 #include <entt/entity/registry.hpp>
+#include <Phoenix/renderer/Camera.h>
 // #include <Phoenix/Scene/Entity.h>
 
 namespace Phoenix{
@@ -13,7 +14,7 @@ namespace Phoenix{
         Scene() = default;
         ~Scene() = default;
 
-        void OnUpdate(Timestep ts);
+        void OnUpdate(PerspectiveCamera& cam, Timestep ts);
         Entity CreateEntity(const std::string& name);
         void DestroyEntity(Entity entity);
 

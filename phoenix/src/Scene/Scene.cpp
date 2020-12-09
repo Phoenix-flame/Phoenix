@@ -2,6 +2,7 @@
 #include <Phoenix/Scene/Scene.h>
 #include <Phoenix/Scene/Entity.h>
 #include <Phoenix/Scene/Component.h>
+#include <Phoenix/renderer/renderer.h>
 
 
 namespace Phoenix{
@@ -17,10 +18,19 @@ namespace Phoenix{
         m_Registry.destroy(entity);
     }
 
-    void Scene::OnUpdate(Timestep ts){
-        auto view = m_Registry.view<TransformComponent>();
-        for (auto entity : view){
+    void Scene::OnUpdate(PerspectiveCamera& cam, Timestep ts){
+        auto view = m_Registry.view<CubeComponent, TransformComponent>();
+        for (auto entity : view) {
+            auto cube = view.get<CubeComponent>(entity);
             auto transform = view.get<TransformComponent>(entity);
+            // Render
+            {
+                Renderer::Submit(cube.m_Shader, cube.m_Vertex_array, cam.GetViewProjectionMatrix(), transform.GetTransform());
+            }
         }
+        // auto view = m_Registry.view<TransformComponent>();
+        // for (auto entity : view){
+        //     auto transform = view.get<TransformComponent>(entity);
+        // }
     }
 }

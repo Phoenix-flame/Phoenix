@@ -3,6 +3,8 @@
 #include <Phoenix/core/assert.h>
 #include <Phoenix/renderer/Camera.h>
 #include <glm/gtc/matrix_transform.hpp>
+#include <Phoenix/renderer/shader.h>
+#include <Phoenix/renderer/VertexArray.h>
 namespace Phoenix{
 
     struct TagComponent{
@@ -18,6 +20,87 @@ namespace Phoenix{
 
         CameraComponent() = default;
         CameraComponent(const CameraComponent& other) = default;
+    };
+
+
+    struct CubeComponent{
+        CubeComponent(){
+            m_Shader = Shader::Create("/home/alireza/Programming/C++/MyGameEngineProject/Example/assets/shaders/basic.glsl");
+            m_Vertex_array = CreateRef<VertexArray>();
+            m_Vertex_array->Bind();
+            Ref<VertexBuffer> vertexBuffer = CreateRef<VertexBuffer>(this->vertices, sizeof(this->vertices));
+            BufferLayout layout = {
+                { ShaderDataType::Float3, "a_Position" },
+                { ShaderDataType::Float3, "a_Color" }
+            };
+            vertexBuffer->SetLayout(layout);
+            m_Vertex_array->AddVertexBuffer(vertexBuffer);
+            Ref<IndexBuffer> indexBuffer = CreateRef<IndexBuffer>(indices, sizeof(indices) / sizeof(unsigned int));
+            m_Vertex_array->SetIndexBuffer(indexBuffer);
+            
+        }
+
+
+        Ref<VertexArray> m_Vertex_array;
+        Ref<Shader> m_Shader;
+
+        float vertices[218] = {
+            -0.5f, -0.5f, -0.5f,  0.4f,  0.4f,  1.0f,
+            0.5f, -0.5f, -0.5f,  0.4f,  0.4f,  1.0f,
+            0.5f,  0.5f, -0.5f,  0.4f,  0.4f,  1.0f,
+            0.5f,  0.5f, -0.5f,  0.4f,  0.4f,  1.0f,
+            -0.5f,  0.5f, -0.5f,  0.4f,  0.4f,  1.0f,
+            -0.5f, -0.5f, -0.5f,  0.4f,  0.4f,  1.0f,
+
+            -0.5f, -0.5f,  0.5f,  0.4f,  0.4f,  1.0f,
+            0.5f, -0.5f,  0.5f,  0.4f,  0.4f,  1.0f,
+            0.5f,  0.5f,  0.5f,  0.4f,  0.4f,  1.0f,
+            0.5f,  0.5f,  0.5f,  0.4f,  0.4f,  1.0f,
+            -0.5f,  0.5f,  0.5f,  0.4f,  0.4f,  1.0f,
+            -0.5f, -0.5f,  0.5f,  0.4f,  0.4f,  1.0f,
+
+            -0.5f,  0.5f,  0.5f,  1.0f,  0.4f,  0.4f,
+            -0.5f,  0.5f, -0.5f,  1.0f,  0.4f,  0.4f,
+            -0.5f, -0.5f, -0.5f,  1.0f,  0.4f,  0.4f,
+            -0.5f, -0.5f, -0.5f,  1.0f,  0.4f,  0.4f,
+            -0.5f, -0.5f,  0.5f,  1.0f,  0.4f,  0.4f,
+            -0.5f,  0.5f,  0.5f,  1.0f,  0.4f,  0.4f,
+
+            0.5f,  0.5f,  0.5f,  1.0f,  0.4f,  0.4f,
+            0.5f,  0.5f, -0.5f,  1.0f,  0.4f,  0.4f,
+            0.5f, -0.5f, -0.5f,  1.0f,  0.4f,  0.4f,
+            0.5f, -0.5f, -0.5f,  1.0f,  0.4f,  0.4f,
+            0.5f, -0.5f,  0.5f,  1.0f,  0.4f,  0.4f,
+            0.5f,  0.5f,  0.5f,  1.0f,  0.4f,  0.4f,
+
+            -0.5f, -0.5f, -0.5f,  0.4f,  1.0f,  0.4f,
+            0.5f, -0.5f, -0.5f,  0.4f,  1.0f,  0.4f,
+            0.5f, -0.5f,  0.5f,  0.4f,  1.0f,  0.4f,
+            0.5f, -0.5f,  0.5f,  0.4f,  1.0f,  0.4f,
+            -0.5f, -0.5f,  0.5f,  0.4f,  1.0f,  0.4f,
+            -0.5f, -0.5f, -0.5f,  0.4f,  1.0f,  0.4f,
+
+            -0.5f,  0.5f, -0.5f,  0.4f,  1.0f,  0.4f,
+            0.5f,  0.5f, -0.5f,  0.4f,  1.0f,  0.4f,
+            0.5f,  0.5f,  0.5f,  0.4f,  1.0f,  0.4f,
+            0.5f,  0.5f,  0.5f,  0.4f,  1.0f,  0.4f,
+            -0.5f,  0.5f,  0.5f,  0.4f,  1.0f,  0.4f,
+            -0.5f,  0.5f, -0.5f,  0.4f,  1.0f,  0.4f
+        };
+        unsigned int indices[36] = {
+            0, 1, 2,   // first Box
+            3, 4, 5,
+            6, 7, 8,
+            9, 10, 11,
+            12, 13, 14, 
+            15, 16, 17, 
+            18, 19, 20,
+            21, 22, 23,
+            24, 25, 26, 
+            27, 28, 29,
+            30, 31, 32,
+            33, 34, 35
+        };  
     };
 
 

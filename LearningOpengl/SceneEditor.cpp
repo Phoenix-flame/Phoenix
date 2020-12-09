@@ -191,18 +191,18 @@ namespace Phoenix{
 			ImGui::OpenPopup("AddComponent");
 
 		if (ImGui::BeginPopup("AddComponent")){
-            if (ImGui::MenuItem("Transform")) {
-                if (!m_SelectedEntity.HasComponent<TransformComponent>()){
-                    m_SelectedEntity.AddComponent<TransformComponent>();
-                }
-                else { PHX_CORE_ASSERT("This entity already has the Camera Component!"); }
+            if (ImGui::MenuItem("Cube")){
+                if (!m_SelectedEntity.HasComponent<CubeComponent>())
+                    m_SelectedEntity.AddComponent<CubeComponent>();
+                else
+                PHX_CORE_ASSERT("This entity already has the Cube Component!");
                 ImGui::CloseCurrentPopup();
             }
 				// if (ImGui::MenuItem("Camera")){
 				// 	if (!m_SelectedEntity.HasComponent<CameraComponent>())
 				// 		m_SelectedEntity.AddComponent<CameraComponent>();
 				// 	else
-				// 		HZ_CORE_WARN("This entity already has the Camera Component!");
+				// 		PHX_CORE_ASSERT("This entity already has the Camera Component!");
 				// 	ImGui::CloseCurrentPopup();
 				// }
 
@@ -211,7 +211,7 @@ namespace Phoenix{
 				// 	if (!m_SelectedEntity.HasComponent<SpriteRendererComponent>())
 				// 		m_SelectedEntity.AddComponent<SpriteRendererComponent>();
 				// 	else
-				// 		HZ_CORE_WARN("This entity already has the Sprite Renderer Component!");
+				// 		PHX_CORE_ASSERT("This entity already has the Sprite Renderer Component!");
 				// 	ImGui::CloseCurrentPopup();
 				// }
 
@@ -226,6 +226,9 @@ namespace Phoenix{
 			DrawVec3Control("Rotation", rotation);
 			component.Rotation = glm::radians(rotation);
 			DrawVec3Control("Scale", component.Scale, 1.0f);
+		});
+        DrawComponent<CubeComponent>("Cube", entity, [](auto& component){
+			ImGui::Text("It has a cube");
 		});
 
 		// DrawComponent<CameraComponent>("Camera", entity, [](auto& component){

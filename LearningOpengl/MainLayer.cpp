@@ -58,9 +58,10 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
     
     glm::mat4 projection = m_MainCamera.GetCamera().GetViewProjectionMatrix();
     
-    for (auto b:m_Boxes){
-        b->Draw(projection);
-    }
+    m_Scene->OnUpdate(m_MainCamera.GetCamera(), ts);
+    // for (auto b:m_Boxes){
+    //     b->Draw(projection);
+    // }
     m_Origin->Draw(projection);
 
     m_Framebuffer->Unbind();
