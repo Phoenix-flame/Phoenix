@@ -5,9 +5,8 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -pthread ")
 # Add sub directories
 add_subdirectory(phoenix)
 add_subdirectory(Example)
-add_subdirectory(3D_Engine)
-add_subdirectory(2D_Engine)
+add_subdirectory(Sandbox)
 
 
 file(COPY assets DESTINATION Example)
-file(COPY assets DESTINATION LearningOpengl)
+file(COPY assets DESTINATION Sandbox)

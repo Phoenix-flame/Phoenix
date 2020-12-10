@@ -1,4 +1,4 @@
-project(engine-3d)
+project(Sandbox)
 
 # Add sub directories
 include_directories(${PROJECT_SOURCE_DIR})
