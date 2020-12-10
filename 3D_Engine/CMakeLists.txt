@@ -1,4 +1,4 @@
-project(Learning)
+project(engine-3d)
 
 # Add sub directories
 include_directories(${PROJECT_SOURCE_DIR})

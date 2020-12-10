@@ -24,7 +24,7 @@ namespace Phoenix{
         shader->Unbind();
     }
 
-	void Renderer::EndScene(){
-	}
+	// void Renderer::EndScene(){
+	// }
 
 }
