@@ -3,6 +3,7 @@
 
 #include <Phoenix/imGui/ImGuiLayer.h>
 #include <string>
+#include <map>
 #include "window.h"
 #include "base.h"
 #include "layerStack.h"
@@ -26,6 +27,7 @@ namespace Phoenix{
 
 		ImGuiLayer* GetImGuiLayer() { return _imGuiLayer; }
         static Application& Get() { return *s_Instance; }
+        static std::map<std::string, int> s_TimeContainer;
     private:
         void Run();
         bool OnWindowClose(WindowCloseEvent& e);
@@ -41,6 +43,7 @@ namespace Phoenix{
         ImGuiLayer* _imGuiLayer;
 
     private:
+        
         static Application* s_Instance;
         friend int ::main(int argc, char** argv);
         

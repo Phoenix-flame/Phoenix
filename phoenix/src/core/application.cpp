@@ -4,6 +4,8 @@
 
 namespace Phoenix{
     Application* Application::s_Instance = nullptr;
+
+    std::map<std::string, int> Application::s_TimeContainer;
     Application::Application(const std::string name) {
         this->_name = name;
 

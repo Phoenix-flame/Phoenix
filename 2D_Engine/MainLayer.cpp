@@ -4,6 +4,7 @@
 #include <Phoenix/event/event.h>
 #include <Phoenix/imGui/imgui_internal.h>
 #include <Phoenix/Scene/Component.h>
+#include <Phoenix/core/Profiler.h>
 MainLayer::MainLayer(const std::string& name): Layer(name), 
         m_MainCamera()
     { }
@@ -49,6 +50,7 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
 
     // Update
     if (m_ViewportFocused){
+        PHX_PROFILE("MainCamera Update");
         m_MainCamera.OnUpdate(ts);
     }
 
@@ -58,8 +60,11 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
     Phoenix::RenderCommand::Clear();
     
     glm::mat4 projection = m_MainCamera.GetViewProjectionMatrix();
-    m_Scene->OnUpdate(projection, ts);
-    
+    {
+        PHX_PROFILE("Scene Update");
+        m_Scene->OnUpdate(projection, ts);
+    }
+
     m_Framebuffer->Unbind();
 }
 
@@ -100,6 +105,27 @@ void MainLayer::OnImGuiRender(){
     }
 	ImGui::End();
 
+    ImGui::Begin("Profiler", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
+    ImGui::Columns(2);
+    ImGui::Separator();
+    int id = 0;
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_Bullet;
+    for (auto p:Application::s_TimeContainer){
+        ImGui::PushID(id++);
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text((p.first).c_str());
+        ImGui::NextColumn();
+        ImGui::SetNextItemWidth(-1);
+        ImGui::Text((std::to_string(p.second) + " us").c_str());
+        ImGui::NextColumn();
+        ImGui::PopID();
+    }
+    ImGui::Columns(1);
+    ImGui::Separator();
+    ImGui::PopStyleVar();
+    ImGui::End();
+
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 0, 0 });
     ImGui::Begin("Viewport");
@@ -116,7 +142,6 @@ void MainLayer::OnImGuiRender(){
     ImGui::Image(reinterpret_cast<void*>(textureID), ImVec2{ m_ViewportSize.x, m_ViewportSize.y }, ImVec2{ 0, 1 }, ImVec2{ 1, 0 });
     ImGui::End();
     ImGui::PopStyleVar();
-
     m_SceneEditor->OnImGuiRender();
 
     

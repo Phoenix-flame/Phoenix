@@ -4,7 +4,7 @@
 #include <Phoenix/Scene/Component.h>
 #include <Phoenix/renderer/renderer.h>
 #include <Phoenix/core/log.h>
-
+#include <Phoenix/core/Profiler.h>
 namespace Phoenix{
     Entity Scene::CreateEntity(const std::string& name){
         Entity entity = { m_Registry.create(), this };
@@ -30,15 +30,20 @@ namespace Phoenix{
             }
         }
 
-        auto view = m_Registry.view<CubeComponent, TransformComponent>();
-        for (auto entity : view) {
-            auto cube = view.get<CubeComponent>(entity);
-            auto transform = view.get<TransformComponent>(entity);
-            // Render
-            {
-                Renderer::Submit(cube.m_Shader, cube.m_Vertex_array, sceneCameraProjection, transform.GetTransform());
+
+        {
+            PHX_PROFILE("Scene Components");
+            auto view = m_Registry.view<CubeComponent, TransformComponent>();
+            for (auto entity : view) {
+                auto cube = view.get<CubeComponent>(entity);
+                auto transform = view.get<TransformComponent>(entity);
+                // Render
+                {
+                    Renderer::Submit(cube.m_Shader, cube.m_Vertex_array, sceneCameraProjection, transform.GetTransform());
+                }
             }
         }
+        
 
         auto origins = m_Registry.view<OriginComponent>();
         for (auto o:origins){
