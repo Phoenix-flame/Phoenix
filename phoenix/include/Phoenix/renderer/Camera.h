@@ -50,6 +50,7 @@ namespace Phoenix{
 		const glm::mat4& GetViewMatrix() const { return _viewMatrix; }
 		const glm::mat4& GetViewProjectionMatrix() const { return _viewProjectionMatrix; }
 
+        OrthographicCamera& OnUpdate() { RecalculateViewMatrix(); return *this; }
     private:
 		void RecalculateViewMatrix();
 	private:

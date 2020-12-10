@@ -19,18 +19,18 @@ namespace Phoenix{
     }
 
     void Scene::OnUpdate(const glm::mat4& projection, Timestep ts){
-        auto view = m_Registry.view<CubeComponent, TransformComponent>();
-
-        auto cameras = m_Registry.view<CameraComponent>();
+        auto cameras = m_Registry.view<TransformComponent,CameraComponent>();
         glm::mat4 sceneCameraProjection = projection;
         for (auto cam:cameras){
             auto camera = cameras.get<CameraComponent>(cam);
+            auto transform = cameras.get<TransformComponent>(cam);
             if (camera.primaryCamera){
-                sceneCameraProjection = camera.camera.GetViewProjectionMatrix();
+                sceneCameraProjection = camera.camera.RecalculateProjection().GetProjection() * glm::inverse(transform.GetTransform());
                 break;
             }
         }
 
+        auto view = m_Registry.view<CubeComponent, TransformComponent>();
         for (auto entity : view) {
             auto cube = view.get<CubeComponent>(entity);
             auto transform = view.get<TransformComponent>(entity);
@@ -48,15 +48,40 @@ namespace Phoenix{
     }
 
 
-    void Scene::OnResize(uint32_t width, uint32_t height){
+    void Scene::OnResize(float width, float height){
         m_ViewportWidth = width;
 		m_ViewportHeight = height;
         // Update camera component
-        auto cameras = m_Registry.view<CameraComponent>();
-        for (auto cam:cameras){
-            auto camera = cameras.get<CameraComponent>(cam);
-            PHX_CORE_WARN("Here");
-            camera.camera.SetViewportSize(m_ViewportWidth, m_ViewportHeight);
+        auto view = m_Registry.view<CameraComponent>();
+        for (auto& entity:view){
+            auto& cameraComponent = view.get<CameraComponent>(entity);
+            cameraComponent.camera.SetViewportSize(m_ViewportWidth, m_ViewportHeight);
         }
     }
+
+    template<typename T>
+	void Scene::OnComponentAdded(Entity entity, T& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<TransformComponent>(Entity entity, TransformComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<CubeComponent>(Entity entity, CubeComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<OriginComponent>(Entity entity, OriginComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<TagComponent>(Entity entity, TagComponent& component){
+	}
+
+
+    template<>
+	void Scene::OnComponentAdded<CameraComponent>(Entity entity, CameraComponent& component){
+		component.camera.SetViewportSize(m_ViewportWidth, m_ViewportHeight);
+	}
 }

@@ -42,6 +42,9 @@ private:
     Ref<SceneEditor> m_SceneEditor;
     Ref<Phoenix::Scene> m_Scene;
 
+    Entity m_CameraEntity;
+    Entity m_CubeEntity;
+
     bool m_OverlayEnabled = true;
 
 };

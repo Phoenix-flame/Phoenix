@@ -195,7 +195,7 @@ namespace Phoenix{
                 if (!m_SelectedEntity.HasComponent<CameraComponent>())
                     m_SelectedEntity.AddComponent<CameraComponent>();
                 else
-                    PHX_CORE_ASSERT("This entity already has the Cube Component!");
+                    PHX_CORE_ASSERT("This entity already has the Camera Component!");
                 ImGui::CloseCurrentPopup();
             }
             if (ImGui::MenuItem("Cube")){
@@ -209,16 +209,9 @@ namespace Phoenix{
                 if (!m_SelectedEntity.HasComponent<OriginComponent>())
                     m_SelectedEntity.AddComponent<OriginComponent>();
                 else
-                    PHX_CORE_ASSERT("This entity already has the Cube Component!");
+                    PHX_CORE_ASSERT("This entity already has the Origin Component!");
                 ImGui::CloseCurrentPopup();
             }
-				// if (ImGui::MenuItem("Camera")){
-				// 	if (!m_SelectedEntity.HasComponent<CameraComponent>())
-				// 		m_SelectedEntity.AddComponent<CameraComponent>();
-				// 	else
-				// 		PHX_CORE_ASSERT("This entity already has the Camera Component!");
-				// 	ImGui::CloseCurrentPopup();
-				// }
 
 				// if (ImGui::MenuItem("Sprite Renderer"))
 				// {
@@ -245,70 +238,61 @@ namespace Phoenix{
 			ImGui::Text("It has a cube");
 		});
         DrawComponent<OriginComponent>("Origin", entity, [](auto& component){
-			ImGui::Checkbox("Enable", &component.m_Enabled);
+			ImGui::Checkbox("Enabled", &component.m_Enabled);
 		});
-        DrawComponent<CameraComponent>("Origin", entity, [](auto& component){
-            ImGui::Checkbox("Primary", &component.primaryCamera);
-			DrawVec3Control("Position", component.camera._position);
+		DrawComponent<CameraComponent>("Camera", entity, [](auto& component){
+			auto& camera = component.camera;
+
+			ImGui::Checkbox("Primary", &component.primaryCamera);
+
+			const char* projectionTypeStrings[] = { "Perspective", "Orthographic" };
+			const char* currentProjectionTypeString = projectionTypeStrings[(int)camera.GetProjectionType()];
+			if (ImGui::BeginCombo("Projection", currentProjectionTypeString)){
+				for (int i = 0; i < 2; i++){
+					bool isSelected = currentProjectionTypeString == projectionTypeStrings[i];
+					if (ImGui::Selectable(projectionTypeStrings[i], isSelected)){
+						currentProjectionTypeString = projectionTypeStrings[i];
+						camera.SetProjectionType((SceneCamera::ProjectionType)i);
+					}
+					if (isSelected)
+						ImGui::SetItemDefaultFocus();
+				}
+
+				ImGui::EndCombo();
+			}
+
+			if (camera.GetProjectionType() == SceneCamera::ProjectionType::Perspective){
+				float perspectiveVerticalFov = glm::degrees(camera.GetPerspectiveVerticalFOV());
+				if (ImGui::DragFloat("Vertical FOV", &perspectiveVerticalFov))
+					camera.SetPerspectiveVerticalFOV(glm::radians(perspectiveVerticalFov));
+
+				float perspectiveNear = camera.GetPerspectiveNearClip();
+				if (ImGui::DragFloat("Near", &perspectiveNear))
+					camera.SetPerspectiveNearClip(perspectiveNear);
+
+				float perspectiveFar = camera.GetPerspectiveFarClip();
+				if (ImGui::DragFloat("Far", &perspectiveFar))
+					camera.SetPerspectiveFarClip(perspectiveFar);
+			}
+
+			if (camera.GetProjectionType() == SceneCamera::ProjectionType::Orthographic){
+				float orthoSize = camera.GetOrthographicSize();
+				if (ImGui::DragFloat("Size", &orthoSize))
+					camera.SetOrthographicSize(orthoSize);
+
+				float orthoNear = camera.GetOrthographicNearClip();
+				if (ImGui::DragFloat("Near", &orthoNear))
+					camera.SetOrthographicNearClip(orthoNear);
+
+				float orthoFar = camera.GetOrthographicFarClip();
+				if (ImGui::DragFloat("Far", &orthoFar))
+					camera.SetOrthographicFarClip(orthoFar);
+                // float aspect = camera.GetOrthographicAcpectRatio();
+				// if (ImGui::DragFloat("Aspect Ratio", &aspect, 0.1))
+				// 	camera.SetOrthographicAcpectRatio(aspect);
+
+			}
 		});
-
-		// DrawComponent<CameraComponent>("Camera", entity, [](auto& component){
-		// 	auto& camera = component.Camera;
-
-		// 	ImGui::Checkbox("Primary", &component.Primary);
-
-		// 	const char* projectionTypeStrings[] = { "Perspective", "Orthographic" };
-		// 	const char* currentProjectionTypeString = projectionTypeStrings[(int)camera.GetProjectionType()];
-		// 	if (ImGui::BeginCombo("Projection", currentProjectionTypeString))
-		// 	{
-		// 		for (int i = 0; i < 2; i++)
-		// 		{
-		// 			bool isSelected = currentProjectionTypeString == projectionTypeStrings[i];
-		// 			if (ImGui::Selectable(projectionTypeStrings[i], isSelected))
-		// 			{
-		// 				currentProjectionTypeString = projectionTypeStrings[i];
-		// 				camera.SetProjectionType((SceneCamera::ProjectionType)i);
-		// 			}
-
-		// 			if (isSelected)
-		// 				ImGui::SetItemDefaultFocus();
-		// 		}
-
-		// 		ImGui::EndCombo();
-		// 	}
-
-		// 	if (camera.GetProjectionType() == SceneCamera::ProjectionType::Perspective)
-		// 	{
-		// 		float perspectiveVerticalFov = glm::degrees(camera.GetPerspectiveVerticalFOV());
-		// 		if (ImGui::DragFloat("Vertical FOV", &perspectiveVerticalFov))
-		// 			camera.SetPerspectiveVerticalFOV(glm::radians(perspectiveVerticalFov));
-
-		// 		float perspectiveNear = camera.GetPerspectiveNearClip();
-		// 		if (ImGui::DragFloat("Near", &perspectiveNear))
-		// 			camera.SetPerspectiveNearClip(perspectiveNear);
-
-		// 		float perspectiveFar = camera.GetPerspectiveFarClip();
-		// 		if (ImGui::DragFloat("Far", &perspectiveFar))
-		// 			camera.SetPerspectiveFarClip(perspectiveFar);
-		// 	}
-
-		// 	if (camera.GetProjectionType() == SceneCamera::ProjectionType::Orthographic)
-		// 	{
-		// 		float orthoSize = camera.GetOrthographicSize();
-		// 		if (ImGui::DragFloat("Size", &orthoSize))
-		// 			camera.SetOrthographicSize(orthoSize);
-
-		// 		float orthoNear = camera.GetOrthographicNearClip();
-		// 		if (ImGui::DragFloat("Near", &orthoNear))
-		// 			camera.SetOrthographicNearClip(orthoNear);
-
-		// 		float orthoFar = camera.GetOrthographicFarClip();
-		// 		if (ImGui::DragFloat("Far", &orthoFar))
-		// 			camera.SetOrthographicFarClip(orthoFar);
-
-		// 		ImGui::Checkbox("Fixed Aspect Ratio", &component.FixedAspectRatio);
-		// 	}
-		// });
 
 		// DrawComponent<SpriteRendererComponent>("Sprite Renderer", entity, [](auto& component)
 		// {

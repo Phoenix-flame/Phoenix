@@ -21,7 +21,9 @@ namespace Phoenix{
 	}
 
     void OrthographicCamera::SetViewportSize(uint32_t width, uint32_t height){
+        
         m_AspectRatio = (float)width / (float)height;
-        SetProjection(-m_AspectRatio, m_AspectRatio, -1, 1);
+        
+        SetProjection(-m_AspectRatio, m_AspectRatio, -1.0, 1.0);
     }
 }

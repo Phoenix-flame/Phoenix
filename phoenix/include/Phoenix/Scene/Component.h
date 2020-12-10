@@ -1,7 +1,7 @@
 #pragma once
 #include <Phoenix/core/base.h>
 #include <Phoenix/core/assert.h>
-#include <Phoenix/renderer/Camera.h>
+#include <Phoenix/Scene/SceneCamera.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <Phoenix/renderer/shader.h>
 #include <Phoenix/renderer/VertexArray.h>
@@ -16,9 +16,9 @@ namespace Phoenix{
 	};
 
     struct CameraComponent{
-        OrthographicCamera camera;
+        SceneCamera camera;
         bool primaryCamera = false;
-        CameraComponent(): camera(-16.0/9.0, 16.0/9.0, -1, 1) {};
+        CameraComponent() = default;
         CameraComponent(const CameraComponent& other) = default;
     };
 

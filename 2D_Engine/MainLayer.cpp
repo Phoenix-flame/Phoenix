@@ -3,6 +3,7 @@
 #include <Phoenix/core/base.h>
 #include <Phoenix/event/event.h>
 #include <Phoenix/imGui/imgui_internal.h>
+#include <Phoenix/Scene/Component.h>
 MainLayer::MainLayer(const std::string& name): Layer(name), 
         m_MainCamera(1280.0f / 720.0f)
     { }
@@ -19,6 +20,14 @@ void MainLayer::OnAttach() {
 
     m_Scene = CreateRef<Phoenix::Scene>();
 
+    m_Scene->OnResize(m_Framebuffer->GetSpecification().Width, m_Framebuffer->GetSpecification().Height);
+
+    m_CameraEntity = m_Scene->CreateEntity("Camera");
+    m_CameraEntity.AddComponent<CameraComponent>();
+
+    m_CubeEntity = m_Scene->CreateEntity("Cube");
+    m_CubeEntity.AddComponent<CubeComponent>();
+
     m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
 }
 
@@ -34,8 +43,8 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
     if ( m_ViewportSize.x > 0.0f && m_ViewportSize.y > 0.0f &&
         (spec.Width != m_ViewportSize.x || spec.Height != m_ViewportSize.y)){
         m_Framebuffer->Resize((uint32_t)m_ViewportSize.x, (uint32_t)m_ViewportSize.y);
+        m_Scene->OnResize(m_ViewportSize.x, m_ViewportSize.y);
         m_MainCamera.OnResize(m_ViewportSize.x, m_ViewportSize.y);
-        m_Scene->OnResize((uint32_t)m_ViewportSize.x, (uint32_t)m_ViewportSize.y);
     }
 
     // Update
@@ -57,7 +66,7 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
 
 void MainLayer::OnEvent(Phoenix::Event& e) {
     if (m_ViewportFocused){
-        // m_MainCamera.OnEvent(e);
+        m_MainCamera.OnEvent(e);
     }
     
     EventDispatcher dispacher(e);
