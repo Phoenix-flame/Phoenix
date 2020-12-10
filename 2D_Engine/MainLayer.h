@@ -24,6 +24,13 @@ public:
     virtual void OnImGuiRender() override;
 
 private:
+    bool OnResize(WindowResizeEvent& e){
+        m_ViewportSize.x = (float)e.GetWidth();
+        m_ViewportSize.y = (float)e.GetHeight();
+        return false;
+    }
+
+private:
     bool vsync = true;
 private:
     Ref<Framebuffer> m_Framebuffer;
@@ -31,7 +38,7 @@ private:
     glm::vec2 m_ViewportSize = { 0.0f, 0.0f };
     
     glm::vec3 m_BackgroundColor = { 0.28, 0.65, 0.87 };
-    PerspectiveCameraController m_MainCamera;
+    OrthographicCameraController m_MainCamera;
     Ref<SceneEditor> m_SceneEditor;
     Ref<Phoenix::Scene> m_Scene;
 

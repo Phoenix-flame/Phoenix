@@ -1,5 +1,6 @@
 #include <Phoenix/renderer/Camera.h>
 #include <glm/gtc/matrix_transform.hpp>
+#include <Phoenix/core/log.h>
 namespace Phoenix{
     OrthographicCamera::OrthographicCamera(float left, float right, float bottom, float top)
 		: _projectionMatrix(glm::ortho(left, right, bottom, top, -1.0f, 1.0f)), _viewMatrix(1.0f){
@@ -18,4 +19,9 @@ namespace Phoenix{
 		_viewMatrix = glm::inverse(transform);
 		_viewProjectionMatrix = _projectionMatrix * _viewMatrix;
 	}
+
+    void OrthographicCamera::SetViewportSize(uint32_t width, uint32_t height){
+        m_AspectRatio = (float)width / (float)height;
+        SetProjection(-m_AspectRatio, m_AspectRatio, -1, 1);
+    }
 }

@@ -191,18 +191,25 @@ namespace Phoenix{
 			ImGui::OpenPopup("AddComponent");
 
 		if (ImGui::BeginPopup("AddComponent")){
+            if (ImGui::MenuItem("Camera")){
+                if (!m_SelectedEntity.HasComponent<CameraComponent>())
+                    m_SelectedEntity.AddComponent<CameraComponent>();
+                else
+                    PHX_CORE_ASSERT("This entity already has the Cube Component!");
+                ImGui::CloseCurrentPopup();
+            }
             if (ImGui::MenuItem("Cube")){
                 if (!m_SelectedEntity.HasComponent<CubeComponent>())
                     m_SelectedEntity.AddComponent<CubeComponent>();
                 else
-                PHX_CORE_ASSERT("This entity already has the Cube Component!");
+                    PHX_CORE_ASSERT("This entity already has the Cube Component!");
                 ImGui::CloseCurrentPopup();
             }
             if (ImGui::MenuItem("Origin")){
                 if (!m_SelectedEntity.HasComponent<OriginComponent>())
                     m_SelectedEntity.AddComponent<OriginComponent>();
                 else
-                PHX_CORE_ASSERT("This entity already has the Cube Component!");
+                    PHX_CORE_ASSERT("This entity already has the Cube Component!");
                 ImGui::CloseCurrentPopup();
             }
 				// if (ImGui::MenuItem("Camera")){
@@ -239,6 +246,10 @@ namespace Phoenix{
 		});
         DrawComponent<OriginComponent>("Origin", entity, [](auto& component){
 			ImGui::Checkbox("Enable", &component.m_Enabled);
+		});
+        DrawComponent<CameraComponent>("Origin", entity, [](auto& component){
+            ImGui::Checkbox("Primary", &component.primaryCamera);
+			DrawVec3Control("Position", component.camera._position);
 		});
 
 		// DrawComponent<CameraComponent>("Camera", entity, [](auto& component){

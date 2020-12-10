@@ -4,7 +4,7 @@
 #include <Phoenix/event/event.h>
 #include <Phoenix/imGui/imgui_internal.h>
 MainLayer::MainLayer(const std::string& name): Layer(name), 
-        m_MainCamera(1280.0f / 720.0f, glm::radians(45.0), 0.1, 100.0)
+        m_MainCamera(1280.0f / 720.0f)
     { }
 
 void MainLayer::OnAttach() {
@@ -21,6 +21,7 @@ void MainLayer::OnAttach() {
 
     m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
 }
+
 void MainLayer::OnDetach() {
     PHX_INFO("{0} detached.", this->layer_name);
 }
@@ -34,6 +35,7 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
         (spec.Width != m_ViewportSize.x || spec.Height != m_ViewportSize.y)){
         m_Framebuffer->Resize((uint32_t)m_ViewportSize.x, (uint32_t)m_ViewportSize.y);
         m_MainCamera.OnResize(m_ViewportSize.x, m_ViewportSize.y);
+        m_Scene->OnResize((uint32_t)m_ViewportSize.x, (uint32_t)m_ViewportSize.y);
     }
 
     // Update
@@ -47,7 +49,7 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
     Phoenix::RenderCommand::Clear();
     
     glm::mat4 projection = m_MainCamera.GetCamera().GetViewProjectionMatrix();
-    m_Scene->OnUpdate(m_MainCamera.GetCamera(), ts);
+    m_Scene->OnUpdate(projection, ts);
     
     m_Framebuffer->Unbind();
 }
@@ -55,10 +57,11 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
 
 void MainLayer::OnEvent(Phoenix::Event& e) {
     if (m_ViewportFocused){
-        m_MainCamera.OnEvent(e);
+        // m_MainCamera.OnEvent(e);
     }
     
     EventDispatcher dispacher(e);
+    dispacher.Dispatch<WindowResizeEvent>(BIND_EVENT_FN(MainLayer::OnResize));
     dispacher.Dispatch<KeyPressedEvent>([](KeyPressedEvent& e){
         if (e.GetKeyCode() == Phoenix::Key::Escape){
             Phoenix::Application::Get().Close();

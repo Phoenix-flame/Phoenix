@@ -16,9 +16,9 @@ namespace Phoenix{
 	};
 
     struct CameraComponent{
-        PerspectiveCamera camera;
-
-        CameraComponent() = default;
+        OrthographicCamera camera;
+        bool primaryCamera = false;
+        CameraComponent(): camera(-16.0/9.0, 16.0/9.0, -1, 1) {};
         CameraComponent(const CameraComponent& other) = default;
     };
 

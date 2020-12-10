@@ -30,6 +30,8 @@ namespace Phoenix{
         float _pitch = 0.0f;
         float _radius = 5.0f;
     };
+
+    class SceneEditor;
     class OrthographicCamera{
     public:
         OrthographicCamera(float left, float right, float bottom, float top);
@@ -41,6 +43,8 @@ namespace Phoenix{
 
 		float GetRotation() const { return _rotation; }
 		void SetRotation(float rotation) { _rotation = rotation; RecalculateViewMatrix(); }
+        
+        void SetViewportSize(uint32_t width, uint32_t height);
 
 		const glm::mat4& GetProjectionMatrix() const { return _projectionMatrix; }
 		const glm::mat4& GetViewMatrix() const { return _viewMatrix; }
@@ -52,8 +56,10 @@ namespace Phoenix{
 		glm::mat4 _projectionMatrix;
 		glm::mat4 _viewMatrix;
 		glm::mat4 _viewProjectionMatrix;
-
+        float m_AspectRatio;
 		glm::vec3 _position = { 0.0f, 0.0f, 0.0f };
 		float _rotation = 0.0f;
+
+        friend class SceneEditor;
     };
 }
