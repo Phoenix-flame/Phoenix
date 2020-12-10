@@ -3,7 +3,73 @@
 #include <glm/glm.hpp>
 
 
+
 namespace Phoenix{
+    class SceneEditor;
+    class Timestep;
+    class Event;
+    class MouseScrolledEvent;
+    class WindowResizeEvent;
+
+    class Camera{
+	public:
+		Camera() = default;
+		Camera(const glm::mat4& projection)
+			: m_Projection(projection) {}
+
+		virtual ~Camera() = default;
+
+		const glm::mat4& GetProjection() const { return m_Projection; }
+	protected:
+		glm::mat4 m_Projection = glm::mat4(1.0f);
+	};
+
+
+    class EditorCamera: public Camera{
+    public:
+        EditorCamera() = default;
+
+        void OnUpdate(Timestep ts);
+        void OnEvent(Event& e);
+        void OnResize(float width, float height);
+
+        void SetRadius(float radius);
+        void Rotate(float xoffset, float yoffset);
+        void Pan(float xoffset, float yoffset);
+        const glm::mat4& GetProjectionMatrix() const { return m_ProjectionMatrix; }
+		const glm::mat4& GetViewMatrix() const { return m_ViewMatrix; }
+        const glm::mat4& GetViewProjectionMatrix() const { return m_ViewProjectionMatrix; }
+        
+        void SetFOV(float fov);
+        const float GetFOV() const { return m_FOV; }
+    
+    private:
+        void UpdateProjection(float fov, float aspect, float near, float far);
+        void RecalculateViewMatrix();
+        bool OnMouseScrolled(MouseScrolledEvent& e);
+		bool OnWindowResized(WindowResizeEvent& e);
+
+    private:
+        glm::vec3 m_Position;
+        glm::vec3 m_Up;
+        glm::vec3 m_Right;
+        glm::vec3 m_Target;
+        glm::mat4 m_ProjectionMatrix;
+		glm::mat4 m_ViewMatrix;
+		glm::mat4 m_ViewProjectionMatrix;
+        const glm::vec3 m_WorldUp = glm::vec3(0.0, 1.0, 0.0);
+        float m_Yaw = 0.0f;
+        float m_Pitch = 0.0f;
+        float m_Radius = 5.0f;
+        float m_FOV = 45.0f;
+        float m_AspectRatio = 1.0f;
+        float m_NearClip = 0.001f;
+        float m_FarClip = 1000.0f;
+
+        friend class SceneEditor;
+    };
+
+
     class PerspectiveCamera{
     public:
         PerspectiveCamera(float fov, float aspect, float near, float far, const glm::vec3& pos = glm::vec3(0, 0, -5));
@@ -31,7 +97,7 @@ namespace Phoenix{
         float _radius = 5.0f;
     };
 
-    class SceneEditor;
+    
     class OrthographicCamera{
     public:
         OrthographicCamera(float left, float right, float bottom, float top);

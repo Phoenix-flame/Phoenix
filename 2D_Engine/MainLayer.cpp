@@ -5,7 +5,7 @@
 #include <Phoenix/imGui/imgui_internal.h>
 #include <Phoenix/Scene/Component.h>
 MainLayer::MainLayer(const std::string& name): Layer(name), 
-        m_MainCamera(1280.0f / 720.0f)
+        m_MainCamera()
     { }
 
 void MainLayer::OnAttach() {
@@ -57,7 +57,7 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
     Phoenix::RenderCommand::SetClearColor(glm::vec4(m_BackgroundColor, 1.0));
     Phoenix::RenderCommand::Clear();
     
-    glm::mat4 projection = m_MainCamera.GetCamera().GetViewProjectionMatrix();
+    glm::mat4 projection = m_MainCamera.GetViewProjectionMatrix();
     m_Scene->OnUpdate(projection, ts);
     
     m_Framebuffer->Unbind();
