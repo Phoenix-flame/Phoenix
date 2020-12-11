@@ -52,10 +52,11 @@ namespace Phoenix{
     }
     
     void EditorCamera::Pan(float xoffset, float yoffset){
-        m_Target.x -= (yoffset * 0.1) * sinf(m_Yaw*(M_PI/180));
-        m_Target.z -= (yoffset * 0.1) * cosf(m_Yaw*(M_PI/180));
-        m_Target.x += (xoffset * 0.1) * cosf(m_Yaw*(M_PI/180));
-        m_Target.z += (xoffset * 0.1) * sinf(m_Yaw*(M_PI/180));
+        m_Target.x -= m_Right.x * (xoffset * 0.1);
+        m_Target.z -= m_Right.z * (xoffset * 0.1);
+       
+        m_Target.x -= m_Up.x * (yoffset * 0.1);
+        m_Target.z -= m_Up.z * (yoffset * 0.1);
         RecalculateViewMatrix();
     }
 
