@@ -17,7 +17,7 @@ namespace Phoenix{
         
         xoffset *= 0.2f;
         yoffset *= 0.2f;
-        if (Input::IsMouseButtonPressed(Mouse::Button0)){
+        if (Input::IsMouseButtonPressed(Mouse::Button0) && Input::IsKeyPressed(Key::LeftControl)){
             Rotate(xoffset, yoffset);
         }
     }
