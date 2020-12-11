@@ -11,6 +11,8 @@ file(GLOB core_src
     "src/opengl/*.cpp"
     "src/renderer/*.cpp"
     "src/Scene/*.cpp"
+    "src/Math/*.cpp"
+    "src/vendor/ImGuizmo/*.cpp"
 )
 
 add_library(
@@ -37,8 +39,7 @@ target_compile_features(${APP_TARGET}
     cxx_std_17
 )
 
-#find_package(SDL2 REQUIRED)
-#include_directories(${APP_TARGET} ${SDL2_INCLUDE_DIRS})
+
 find_package(glfw3 3.3 REQUIRED)
 find_package(OpenGL REQUIRED)
 include_directories(${APP_TARGET} ${OPENGL_INCLUDE_DIR})

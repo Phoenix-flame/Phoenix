@@ -7,6 +7,7 @@
 #include <Phoenix/renderer/Framebuffer.h>
 #include <Phoenix/renderer/renderer_command.h>
 #include <Phoenix/Scene/Scene.h>
+#include <Phoenix/event/keyEvent.h>
 #include "SceneEditor.h"
 
 
@@ -29,6 +30,7 @@ private:
         m_ViewportSize.y = (float)e.GetHeight();
         return false;
     }
+    bool OnKeyPressed(KeyPressedEvent& e);
 
 private:
     bool vsync = true;
@@ -46,5 +48,7 @@ private:
     Entity m_CubeEntity;
 
     bool m_OverlayEnabled = true;
+
+    int m_GizmoType = -1;
 
 };

@@ -4,7 +4,6 @@
 #include <Phoenix/Scene/Entity.h>
 #include <glm/glm.hpp>
 
-
 namespace Phoenix{
     class SceneEditor{
     public:
@@ -19,6 +18,7 @@ namespace Phoenix{
         void ScenePanel();
         void EntityPanel();
         void EntityNode(Entity entity);
+        Entity& GetSelectedEntity() { return m_SelectedEntity; }
         
     private:
         void DrawComponents(Entity entity);
