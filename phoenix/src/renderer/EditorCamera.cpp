@@ -20,6 +20,9 @@ namespace Phoenix{
         if (Input::IsMouseButtonPressed(Mouse::Button0) && Input::IsKeyPressed(Key::LeftControl)){
             Rotate(xoffset, yoffset);
         }
+        else if (Input::IsMouseButtonPressed(Mouse::Button1) && Input::IsKeyPressed(Key::LeftControl)){
+            Pan(xoffset, yoffset);
+        }
     }
 
     void EditorCamera::OnEvent(Event& e){
@@ -49,7 +52,11 @@ namespace Phoenix{
     }
     
     void EditorCamera::Pan(float xoffset, float yoffset){
-        
+        m_Target.x -= (yoffset * 0.1) * sinf(m_Yaw*(M_PI/180));
+        m_Target.z -= (yoffset * 0.1) * cosf(m_Yaw*(M_PI/180));
+        m_Target.x += (xoffset * 0.1) * cosf(m_Yaw*(M_PI/180));
+        m_Target.z += (xoffset * 0.1) * sinf(m_Yaw*(M_PI/180));
+        RecalculateViewMatrix();
     }
 
     void EditorCamera::SetFOV(float fov){
@@ -63,7 +70,7 @@ namespace Phoenix{
         float camY = -m_Radius * sinf((m_Pitch)*(M_PI/180));
         float camZ = -m_Radius * cosf((m_Yaw)*(M_PI/180)) * cosf((m_Pitch)*(M_PI/180));
 
-        m_Position = glm::vec3(camX, camY, camZ);
+        m_Position = glm::vec3(camX, camY, camZ) + m_Target;
 	    glm::vec3 cameraDirection = glm::normalize(m_Position - m_Target);
         m_Right = glm::normalize(glm::cross(m_WorldUp, cameraDirection));
         m_Up = glm::cross(cameraDirection, m_Right);
