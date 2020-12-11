@@ -49,6 +49,4 @@ private:
 
     bool m_OverlayEnabled = true;
 
-    int m_GizmoType = -1;
-
 };
