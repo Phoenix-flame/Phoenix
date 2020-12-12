@@ -30,6 +30,7 @@ namespace Phoenix{
             }
         }
 
+        DrawPlatform(sceneCameraProjection);
 
         {
             PHX_PROFILE("Scene Components");
@@ -43,13 +44,19 @@ namespace Phoenix{
                 }
             }
         }
-        
 
-        auto origins = m_Registry.view<OriginComponent>();
-        for (auto o:origins){
-            auto origin = origins.get<OriginComponent>(o);
-            origin.Draw(sceneCameraProjection);
-        }
+    }
+
+    void Scene::DrawPlatform(const glm::mat4& projection){
+        m_Shader->Bind();
+        m_Shader->SetMat4("model", glm::mat4(1.0));
+        m_Shader->SetMat4("projection", projection);
+        m_Vertex_array->Bind();
+        glLineWidth(1.0);
+        uint32_t count = m_Vertex_array->GetIndexBuffer()->GetCount();
+        glDrawElements(GL_LINES, count, GL_UNSIGNED_INT, 0);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        m_Shader->Unbind();
     }
 
 
