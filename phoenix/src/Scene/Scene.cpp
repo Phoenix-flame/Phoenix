@@ -24,7 +24,7 @@ namespace Phoenix{
         for (auto cam:cameras){
             auto camera = cameras.get<CameraComponent>(cam);
             auto transform = cameras.get<TransformComponent>(cam);
-            if (camera.primaryCamera){
+            if (camera.primary){
                 sceneCameraProjection = camera.camera.RecalculateProjection().GetProjection() * glm::inverse(transform.GetTransform());
                 break;
             }

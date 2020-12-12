@@ -17,10 +17,16 @@ namespace Phoenix{
 
     struct CameraComponent{
         SceneCamera camera;
-        bool primaryCamera = false;
+        bool primary = false;
         CameraComponent() = default;
         CameraComponent(const CameraComponent& other) = default;
     };
+
+    struct MeshComponent{
+        MeshComponent() = default;
+        MeshComponent(const MeshComponent& other) = default;
+    };
+
 
 
     struct CubeComponent{
@@ -103,6 +109,7 @@ namespace Phoenix{
         };  
     };
 
+    
     struct OriginComponent{
         Ref<VertexArray> m_Vertex_array;
         Ref<Shader> m_Shader;

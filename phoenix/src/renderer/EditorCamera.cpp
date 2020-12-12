@@ -32,6 +32,8 @@ namespace Phoenix{
     }
 
     void EditorCamera::OnResize(float width, float height){
+        m_ViewportWidth = width;
+        m_ViewportHeight = height;
         m_AspectRatio = width / height;
 		UpdateProjection(m_FOV, m_AspectRatio, m_NearClip, m_FarClip);
     }
@@ -52,11 +54,16 @@ namespace Phoenix{
     }
     
     void EditorCamera::Pan(float xoffset, float yoffset){
-        m_Target.x -= m_Right.x * (xoffset * 0.1);
-        m_Target.z -= m_Right.z * (xoffset * 0.1);
+        float x = std::min(m_ViewportWidth / 1000.0f, 2.4f); // max = 2.4f
+		float xFactor = 0.0366f * (x * x) - 0.1778f * x + 0.3021f;
+
+		float y = std::min(m_ViewportHeight / 1000.0f, 2.4f); // max = 2.4f
+		float yFactor = 0.0366f * (y * y) - 0.1778f * y + 0.3021f;
+        m_Target.x -= m_Right.x * (xoffset * xFactor);
+        m_Target.z -= m_Right.z * (xoffset * xFactor);
        
-        m_Target.x -= m_Up.x * (yoffset * 0.1);
-        m_Target.z -= m_Up.z * (yoffset * 0.1);
+        m_Target.x -= m_Up.x * (yoffset * yFactor);
+        m_Target.z -= m_Up.z * (yoffset * yFactor);
         RecalculateViewMatrix();
     }
 

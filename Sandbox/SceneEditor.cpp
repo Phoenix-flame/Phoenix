@@ -243,7 +243,7 @@ namespace Phoenix{
 		DrawComponent<CameraComponent>("Camera", entity, [](auto& component){
 			auto& camera = component.camera;
 
-			ImGui::Checkbox("Primary", &component.primaryCamera);
+			ImGui::Checkbox("Primary", &component.primary);
 
 			const char* projectionTypeStrings[] = { "Perspective", "Orthographic" };
 			const char* currentProjectionTypeString = projectionTypeStrings[(int)camera.GetProjectionType()];

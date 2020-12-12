@@ -65,6 +65,8 @@ namespace Phoenix{
         float m_AspectRatio = 1.0f;
         float m_NearClip = 0.001f;
         float m_FarClip = 1000.0f;
+        
+        float m_ViewportWidth, m_ViewportHeight;
 
         friend class SceneEditor;
     };
