@@ -121,7 +121,7 @@ namespace Phoenix{
 
         static void Flush();
 
-		static void Submit(const glm::mat4& transform = glm::mat4(1.0f));
+		static void SubmitCube(const glm::mat4& transform = glm::mat4(1.0f));
 
 		static RendererAPI::API GetAPI() { return RendererAPI::GetAPI(); }
 	private:

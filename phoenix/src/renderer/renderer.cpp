@@ -17,7 +17,7 @@ namespace Phoenix{
 		RenderCommand::SetViewport(0, 0, width, height);
 	}
 
-    void Renderer::Submit(const glm::mat4& transform){
+    void Renderer::SubmitCube(const glm::mat4& transform){
         if ((int)(*s_RenderCube) >= 1000) { Flush(); }
         s_RenderCube->m_Transformations.push_back(transform);
         

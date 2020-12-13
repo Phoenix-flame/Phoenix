@@ -55,11 +55,11 @@ namespace Phoenix{
             Renderer::BeginScene(sceneCameraProjection, sceneCameraView);
             auto view = m_Registry.view<CubeComponent, TransformComponent>();
             for (auto entity : view) {
-                auto cube = view.get<CubeComponent>(entity);
+                // auto cube = view.get<CubeComponent>(entity);
                 auto transform = view.get<TransformComponent>(entity);
                 // Render
                 {
-                    Renderer::Submit(transform.GetTransform());
+                    Renderer::SubmitCube(transform.GetTransform());
                 }
             }
             Renderer::EndScene();
