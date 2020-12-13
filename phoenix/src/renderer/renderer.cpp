@@ -4,10 +4,10 @@
 
 namespace Phoenix{
     Scope<Renderer::SceneData> Renderer::s_SceneData = CreateScope<Renderer::SceneData>();
-    Ref<Shader> Renderer::s_Shader;
+    Scope<RenderCube> Renderer::s_RenderCube;
 	void Renderer::Init(){
 		RenderCommand::Init();
-        s_Shader = Shader::Create("/home/alireza/Programming/C++/MyGameEngineProject/Sandbox/assets/shaders/basic.glsl");
+        s_RenderCube = CreateScope<RenderCube>();
 	}
 
 	void Renderer::Shutdown(){
@@ -17,22 +17,35 @@ namespace Phoenix{
 		RenderCommand::SetViewport(0, 0, width, height);
 	}
 
-    void Renderer::Submit(const Ref<VertexArray>& vertexArray, const glm::mat4& transform){
-        s_Shader->SetMat4("model", transform);
-        s_Shader->SetMat4("view", s_SceneData->ViewMatrix);
-        s_Shader->SetMat4("projection", s_SceneData->ProjectionMatrix);
-        vertexArray->Bind();
-        RenderCommand::DrawIndexed(vertexArray);
+    void Renderer::Submit(const glm::mat4& transform){
+        if ((int)(*s_RenderCube) >= 1000) { Flush(); }
+        s_RenderCube->m_Transformations.push_back(transform);
+        
+        // RenderCommand::DrawIndexed(s_RenderCube->m_Vertex_array);
     }
 
     void Renderer::BeginScene(const glm::mat4& projection, const glm::mat4& view){
+        s_RenderCube->Reset();
         s_SceneData->ProjectionMatrix = projection;
         s_SceneData->ViewMatrix = view;
-        s_Shader->Bind();
+        s_RenderCube->m_Shader->Bind();
+        s_RenderCube->m_Shader->SetMat4("view", s_SceneData->ViewMatrix);
+        s_RenderCube->m_Shader->SetMat4("projection", s_SceneData->ProjectionMatrix);
     }
 
+    void Renderer::Flush(){
+        s_RenderCube->vertexBufferTransformation->SetData(s_RenderCube->m_Transformations.data(), 
+            s_RenderCube->m_Transformations.size() * sizeof(glm::mat4));
+        s_RenderCube->m_Vertex_array->Bind();
+        glDrawElementsInstanced(GL_TRIANGLES, s_RenderCube->m_Vertex_array->GetIndexBuffer()->GetCount(),
+            GL_UNSIGNED_INT, 0, s_RenderCube->m_Transformations.size());
+    }
+
+
 	void Renderer::EndScene(){
-        s_Shader->Unbind();
+        Flush();
+
+        s_RenderCube->m_Shader->Unbind();
 	}
 
 }

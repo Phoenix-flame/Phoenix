@@ -85,6 +85,16 @@ void MainLayer::OnEvent(Phoenix::Event& e) {
             Phoenix::Application::Get().Close();
             return true;
         }
+        if (e.GetKeyCode() == Phoenix::Key::S){
+            for (unsigned int i = 0 ; i < 100; i++) {
+                std::string name = "cube" + std::to_string(i);
+                auto cube = m_Scene->CreateEntity(name);
+                cube.AddComponent<CubeComponent>();
+                auto& t = cube.GetComponent<TransformComponent>();
+                t.Translation.x = rand()%100;
+                t.Translation.z = rand()%100;
+            }
+        }
         return false;
     });
 }

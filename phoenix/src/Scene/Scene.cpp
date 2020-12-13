@@ -48,20 +48,23 @@ namespace Phoenix{
             }
         }
 
-        Renderer::BeginScene(sceneCameraProjection, sceneCameraView);
+        
         {
+            
             PHX_PROFILE("Scene Components");
+            Renderer::BeginScene(sceneCameraProjection, sceneCameraView);
             auto view = m_Registry.view<CubeComponent, TransformComponent>();
             for (auto entity : view) {
                 auto cube = view.get<CubeComponent>(entity);
                 auto transform = view.get<TransformComponent>(entity);
                 // Render
                 {
-                    Renderer::Submit(cube.m_Vertex_array, transform.GetTransform());
+                    Renderer::Submit(transform.GetTransform());
                 }
             }
+            Renderer::EndScene();
         }
-        Renderer::EndScene();
+        
 
     }
 

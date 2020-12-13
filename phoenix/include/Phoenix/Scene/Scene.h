@@ -31,12 +31,6 @@ namespace Phoenix{
         float m_ViewportWidth = 0, m_ViewportHeight = 0;
 
 
-        // Temporary
-        Ref<VertexArray> m_Vertex_array;
-        Ref<Shader> m_Shader;
-        void DrawPlatform(const glm::mat4& projection);
-
-
         friend class Entity;
         friend class SceneEditor;
         

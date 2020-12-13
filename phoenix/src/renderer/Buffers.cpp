@@ -3,6 +3,12 @@
 #include <GLFW/glfw3.h>
 
 namespace Phoenix{
+
+    VertexBuffer::VertexBuffer(int size){
+        glGenBuffers(1, &VBO);
+        glBindBuffer(GL_ARRAY_BUFFER, VBO);
+        glBufferData(GL_ARRAY_BUFFER, size, nullptr, GL_STATIC_DRAW);
+    }
     VertexBuffer::VertexBuffer(float* data, int size){
         glGenBuffers(1, &VBO);
         glBindBuffer(GL_ARRAY_BUFFER, VBO);
@@ -18,6 +24,11 @@ namespace Phoenix{
     void VertexBuffer::Unbind(){
         glBindBuffer(GL_ARRAY_BUFFER, 0);
     }
+
+    void VertexBuffer::SetData(const void* data, uint32_t size){
+		glBindBuffer(GL_ARRAY_BUFFER, VBO);
+		glBufferSubData(GL_ARRAY_BUFFER, 0, size, data);
+	}
 
     IndexBuffer::IndexBuffer(uint32_t* data, uint32_t size): _count(size){
         glGenBuffers(1, &EBO);

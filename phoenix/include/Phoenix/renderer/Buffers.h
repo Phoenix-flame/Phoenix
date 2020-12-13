@@ -90,12 +90,13 @@ namespace Phoenix{
 
     class VertexBuffer{
     public:
+        VertexBuffer(int size);
         VertexBuffer(float* data, int size);
         ~VertexBuffer();
         
         void Bind();
         void Unbind();
-
+        void SetData(const void* data, uint32_t size);
         const BufferLayout& GetLayout() const { return m_Layout; }
 		void SetLayout(const BufferLayout& layout) { m_Layout = layout; }
     private:
