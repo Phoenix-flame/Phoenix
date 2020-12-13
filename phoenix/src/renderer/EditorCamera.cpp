@@ -69,7 +69,7 @@ namespace Phoenix{
 
     void EditorCamera::SetFOV(float fov){
         m_FOV = fov;
-        m_ProjectionMatrix = glm::perspective(fov, m_AspectRatio, m_NearClip, m_FarClip);
+        m_Projection = glm::perspective(fov, m_AspectRatio, m_NearClip, m_FarClip);
         RecalculateViewMatrix();
     }
 
@@ -83,8 +83,8 @@ namespace Phoenix{
         m_Right = glm::normalize(glm::cross(m_WorldUp, cameraDirection));
         m_Up = glm::cross(cameraDirection, m_Right);
 
-        m_ViewMatrix = glm::lookAt(m_Position, m_Target, m_Up);
-        m_ViewProjectionMatrix = m_ProjectionMatrix * m_ViewMatrix;
+        m_View = glm::lookAt(m_Position, m_Target, m_Up);
+        // m_ViewProjectionMatrix = m_ProjectionMatrix * m_ViewMatrix;
     }
 
     void EditorCamera::UpdateProjection(float fov, float aspect, float near, float far){
@@ -93,7 +93,7 @@ namespace Phoenix{
         m_FarClip = far;
         m_NearClip = near;
 
-        m_ProjectionMatrix = glm::perspective(fov, aspect, near, far);
+        m_Projection = glm::perspective(fov, aspect, near, far);
         RecalculateViewMatrix();
     }
 

@@ -99,8 +99,10 @@ namespace Phoenix{
 				ImGui::TreePop();
 			}
 
-			if (removeComponent)
-				entity.RemoveComponent<T>();
+			if (removeComponent){
+                entity.RemoveComponent<T>();
+            }
+				
 		}
 	}
 

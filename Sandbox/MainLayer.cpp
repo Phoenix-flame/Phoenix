@@ -65,7 +65,7 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
     glm::mat4 projection = m_MainCamera.GetViewProjectionMatrix();
     {
         PHX_PROFILE("Scene Update");
-        m_Scene->OnUpdate(projection, ts);
+        m_Scene->OnUpdate(m_MainCamera, ts);
     }
 
     m_Framebuffer->Unbind();
@@ -80,7 +80,7 @@ void MainLayer::OnEvent(Phoenix::Event& e) {
     EventDispatcher dispacher(e);
     dispacher.Dispatch<WindowResizeEvent>(BIND_EVENT_FN(MainLayer::OnResize));
     dispacher.Dispatch<KeyPressedEvent>(BIND_EVENT_FN(MainLayer::OnKeyPressed));
-    dispacher.Dispatch<KeyPressedEvent>([](KeyPressedEvent& e){
+    dispacher.Dispatch<KeyPressedEvent>([this](KeyPressedEvent& e){
         if (e.GetKeyCode() == Phoenix::Key::Escape){
             Phoenix::Application::Get().Close();
             return true;

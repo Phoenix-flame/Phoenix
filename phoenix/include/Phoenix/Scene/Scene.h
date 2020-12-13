@@ -14,46 +14,10 @@ namespace Phoenix{
     class SceneEditor;
     class Scene{
     public:
-        Scene() {
-            m_Shader = Shader::Create("/home/alireza/Programming/C++/MyGameEngineProject/Example/assets/shaders/basic.glsl");
-            m_Vertex_array = CreateRef<VertexArray>();
-            m_Vertex_array->Bind();
-            std::vector<float> vertices;
-            std::vector<uint32_t> indices;
-            int count = 0;
-            for (float i = -5 ; i <= 5 ; i+=0.5){
-                vertices.push_back(i); indices.push_back(count++);
-                vertices.push_back(0.0f);
-                vertices.push_back(5.0f);
-                vertices.push_back(0.0f);vertices.push_back(0.0f);vertices.push_back(0.0f);
-                vertices.push_back(i);indices.push_back(count++);
-                vertices.push_back(0.0f);
-                vertices.push_back(-5.0f);
-                vertices.push_back(0.0f);vertices.push_back(0.0f);vertices.push_back(0.0f);
-            }
-            for (float i = -5 ; i <= 5 ; i+=0.5){
-                vertices.push_back(5.0f); indices.push_back(count++);
-                vertices.push_back(0.0f);
-                vertices.push_back(i);
-                vertices.push_back(0.0f);vertices.push_back(0.0f);vertices.push_back(0.0f);
-                vertices.push_back(-5.0f); indices.push_back(count++);
-                vertices.push_back(0.0f);
-                vertices.push_back(i);
-                vertices.push_back(0.0f);vertices.push_back(0.0f);vertices.push_back(0.0f);
-            }
-            Ref<VertexBuffer> vertexBuffer = CreateRef<VertexBuffer>(vertices.data(), vertices.size()*sizeof(float));
-            BufferLayout layout = {
-                { ShaderDataType::Float3, "a_Position" },
-                { ShaderDataType::Float3, "a_Color" }
-            };
-            vertexBuffer->SetLayout(layout);
-            m_Vertex_array->AddVertexBuffer(vertexBuffer);
-            Ref<IndexBuffer> indexBuffer = CreateRef<IndexBuffer>(indices.data(), indices.size());
-            m_Vertex_array->SetIndexBuffer(indexBuffer);
-        };
+        Scene() = default;
         ~Scene() = default;
 
-        void OnUpdate(const glm::mat4& projection, Timestep ts);
+        void OnUpdate(EditorCamera& editorCamera, Timestep ts);
         Entity CreateEntity(const std::string& name);
         void DestroyEntity(Entity entity);
         void OnResize(float width, float height);

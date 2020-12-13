@@ -20,8 +20,10 @@ namespace Phoenix{
 		virtual ~Camera() = default;
 
 		const glm::mat4& GetProjection() const { return m_Projection; }
+        const glm::mat4& GetView() const { return m_View; }
 	protected:
 		glm::mat4 m_Projection = glm::mat4(1.0f);
+        glm::mat4 m_View = glm::mat4(1.0f);
 	};
 
 
@@ -36,8 +38,6 @@ namespace Phoenix{
         void SetRadius(float radius);
         void Rotate(float xoffset, float yoffset);
         void Pan(float xoffset, float yoffset);
-        const glm::mat4& GetProjectionMatrix() const { return m_ProjectionMatrix; }
-		const glm::mat4& GetViewMatrix() const { return m_ViewMatrix; }
         const glm::mat4& GetViewProjectionMatrix() const { return m_ViewProjectionMatrix; }
         
         void SetFOV(float fov);
@@ -54,8 +54,6 @@ namespace Phoenix{
         glm::vec3 m_Up;
         glm::vec3 m_Right;
         glm::vec3 m_Target;
-        glm::mat4 m_ProjectionMatrix;
-		glm::mat4 m_ViewMatrix;
 		glm::mat4 m_ViewProjectionMatrix;
         const glm::vec3 m_WorldUp = glm::vec3(0.0, 1.0, 0.0);
         float m_Yaw = 0.0f;

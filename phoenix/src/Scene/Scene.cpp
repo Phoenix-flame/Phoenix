@@ -18,20 +18,37 @@ namespace Phoenix{
         m_Registry.destroy(entity);
     }
 
-    void Scene::OnUpdate(const glm::mat4& projection, Timestep ts){
+    void Scene::OnUpdate(EditorCamera& editorCamera, Timestep ts){
+
+        {
+			m_Registry.view<NativeScriptComponent>().each([=](auto entity, auto& nsc)
+			{
+				if (!nsc.Instance)
+				{
+					nsc.Instance = nsc.InstantiateScript();
+					nsc.Instance->m_Entity = Entity{ entity, this };
+					nsc.Instance->OnCreate();
+				}
+
+				nsc.Instance->OnUpdate(ts);
+			});
+		}
+
+
         auto cameras = m_Registry.view<TransformComponent,CameraComponent>();
-        glm::mat4 sceneCameraProjection = projection;
+        glm::mat4 sceneCameraProjection = editorCamera.GetProjection();
+        glm::mat4 sceneCameraView = editorCamera.GetView();
         for (auto cam:cameras){
             auto camera = cameras.get<CameraComponent>(cam);
             auto transform = cameras.get<TransformComponent>(cam);
             if (camera.primary){
-                sceneCameraProjection = camera.camera.RecalculateProjection().GetProjection() * glm::inverse(transform.GetTransform());
+                sceneCameraProjection = camera.camera.GetProjection();
+                sceneCameraView = glm::inverse(transform.GetTransform());
                 break;
             }
         }
 
-        DrawPlatform(sceneCameraProjection);
-
+        Renderer::BeginScene(sceneCameraProjection, sceneCameraView);
         {
             PHX_PROFILE("Scene Components");
             auto view = m_Registry.view<CubeComponent, TransformComponent>();
@@ -40,24 +57,14 @@ namespace Phoenix{
                 auto transform = view.get<TransformComponent>(entity);
                 // Render
                 {
-                    Renderer::Submit(cube.m_Shader, cube.m_Vertex_array, sceneCameraProjection, transform.GetTransform());
+                    Renderer::Submit(cube.m_Vertex_array, transform.GetTransform());
                 }
             }
         }
+        Renderer::EndScene();
 
     }
 
-    void Scene::DrawPlatform(const glm::mat4& projection){
-        m_Shader->Bind();
-        m_Shader->SetMat4("model", glm::mat4(1.0));
-        m_Shader->SetMat4("projection", projection);
-        m_Vertex_array->Bind();
-        glLineWidth(1.0);
-        uint32_t count = m_Vertex_array->GetIndexBuffer()->GetCount();
-        glDrawElements(GL_LINES, count, GL_UNSIGNED_INT, 0);
-        glBindTexture(GL_TEXTURE_2D, 0);
-        m_Shader->Unbind();
-    }
 
 
     void Scene::OnResize(float width, float height){
@@ -89,6 +96,10 @@ namespace Phoenix{
 
     template<>
 	void Scene::OnComponentAdded<TagComponent>(Entity entity, TagComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<NativeScriptComponent>(Entity entity, NativeScriptComponent& component){
 	}
 
 

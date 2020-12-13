@@ -5,6 +5,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <Phoenix/renderer/shader.h>
 #include <Phoenix/renderer/VertexArray.h>
+#include <Phoenix/Scene/ScriptableEntity.h>
 namespace Phoenix{
 
     struct TagComponent{
@@ -31,7 +32,6 @@ namespace Phoenix{
 
     struct CubeComponent{
         CubeComponent(){
-            m_Shader = Shader::Create("/home/alireza/Programming/C++/MyGameEngineProject/Example/assets/shaders/basic.glsl");
             m_Vertex_array = CreateRef<VertexArray>();
             m_Vertex_array->Bind();
             Ref<VertexBuffer> vertexBuffer = CreateRef<VertexBuffer>(this->vertices, sizeof(this->vertices));
@@ -43,12 +43,8 @@ namespace Phoenix{
             m_Vertex_array->AddVertexBuffer(vertexBuffer);
             Ref<IndexBuffer> indexBuffer = CreateRef<IndexBuffer>(indices, sizeof(indices) / sizeof(unsigned int));
             m_Vertex_array->SetIndexBuffer(indexBuffer);
-            
         }
-
-
         Ref<VertexArray> m_Vertex_array;
-        Ref<Shader> m_Shader;
 
         float vertices[218] = {
             -0.5f, -0.5f, -0.5f,  0.4f,  0.4f,  1.0f,
@@ -175,6 +171,20 @@ namespace Phoenix{
 			return glm::translate(glm::mat4(1.0f), Translation)
 				* rotation
 				* glm::scale(glm::mat4(1.0f), Scale);
+		}
+    };
+
+
+    struct NativeScriptComponent{
+        ScriptableEntity* Instance = nullptr;
+
+		ScriptableEntity*(*InstantiateScript)();
+		void (*DestroyScript)(NativeScriptComponent*);
+
+		template<typename T>
+		void Bind(){
+			InstantiateScript = []() { return static_cast<ScriptableEntity*>(new T()); };
+			DestroyScript = [](NativeScriptComponent* nsc) { delete nsc->Instance; nsc->Instance = nullptr; };
 		}
     };
 }
