@@ -107,7 +107,8 @@ namespace Phoenix{
 	}
 
 
-    static void DrawVec3Control(const std::string& label, glm::vec3& values, float resetValue = 0.0f, float columnWidth = 100.0f){
+    static void DrawVec3Control(const std::string& label, glm::vec3& values, float resetValue = 0.0f, float columnWidth = 100.0f
+            ,std::string label1="X", std::string label2="Y", std::string label3="Z"){
         ImGuiIO& io = ImGui::GetIO();
         auto boldFont = io.Fonts->Fonts[0];
 
@@ -128,13 +129,13 @@ namespace Phoenix{
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.9f, 0.2f, 0.2f, 1.0f });
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 0.8f, 0.1f, 0.15f, 1.0f });
         ImGui::PushFont(boldFont);
-        if (ImGui::Button("X", buttonSize))
+        if (ImGui::Button(label1.c_str(), buttonSize))
             values.x = resetValue;
         ImGui::PopFont();
         ImGui::PopStyleColor(3);
 
         ImGui::SameLine();
-        ImGui::DragFloat("##X", &values.x, 0.1f, 0.0f, 0.0f, "%.2f");
+        ImGui::DragFloat((std::string("##") + label1).c_str(), &values.x, 0.1f, 0.0f, 0.0f, "%.2f");
         ImGui::PopItemWidth();
         ImGui::SameLine();
 
@@ -142,13 +143,13 @@ namespace Phoenix{
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.3f, 0.8f, 0.3f, 1.0f });
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 0.2f, 0.7f, 0.2f, 1.0f });
         ImGui::PushFont(boldFont);
-        if (ImGui::Button("Y", buttonSize))
+        if (ImGui::Button(label2.c_str(), buttonSize))
             values.y = resetValue;
         ImGui::PopFont();
         ImGui::PopStyleColor(3);
 
         ImGui::SameLine();
-        ImGui::DragFloat("##Y", &values.y, 0.1f, 0.0f, 0.0f, "%.2f");
+        ImGui::DragFloat((std::string("##") + label2).c_str(), &values.y, 0.1f, 0.0f, 0.0f, "%.2f");
         ImGui::PopItemWidth();
         ImGui::SameLine();
 
@@ -156,13 +157,13 @@ namespace Phoenix{
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.2f, 0.35f, 0.9f, 1.0f });
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 0.1f, 0.25f, 0.8f, 1.0f });
         ImGui::PushFont(boldFont);
-        if (ImGui::Button("Z", buttonSize))
+        if (ImGui::Button(label3.c_str(), buttonSize))
             values.z = resetValue;
         ImGui::PopFont();
         ImGui::PopStyleColor(3);
 
         ImGui::SameLine();
-        ImGui::DragFloat("##Z", &values.z, 0.1f, 0.0f, 0.0f, "%.2f");
+        ImGui::DragFloat((std::string("##") + label3).c_str(), &values.z, 0.1f, 0.0f, 0.0f, "%.2f");
         ImGui::PopItemWidth();
 
         ImGui::PopStyleVar();
@@ -207,11 +208,11 @@ namespace Phoenix{
                     PHX_CORE_ASSERT("This entity already has the Cube Component!");
                 ImGui::CloseCurrentPopup();
             }
-            if (ImGui::MenuItem("Origin")){
-                if (!m_SelectedEntity.HasComponent<OriginComponent>())
-                    m_SelectedEntity.AddComponent<OriginComponent>();
+            if (ImGui::MenuItem("Light")){
+                if (!m_SelectedEntity.HasComponent<LightComponent>())
+                    m_SelectedEntity.AddComponent<LightComponent>();
                 else
-                    PHX_CORE_ASSERT("This entity already has the Origin Component!");
+                    PHX_CORE_ASSERT("This entity already has the Cube Component!");
                 ImGui::CloseCurrentPopup();
             }
 
@@ -236,12 +237,49 @@ namespace Phoenix{
 			component.Rotation = glm::radians(rotation);
 			DrawVec3Control("Scale", component.Scale, 1.0f);
 		});
-        DrawComponent<CubeComponent>("Cube", entity, [](auto& component){
-			ImGui::Text("It has a cube");
+        DrawComponent<CubeComponent>("Cube", entity, [](CubeComponent& component){
+            float ambient[] = {component.ambient.x, component.ambient.y, component.ambient.z};
+            if (ImGui::ColorEdit3("Ambient", ambient)){
+                component.ambient.x = ambient[0];
+                component.ambient.y = ambient[1];
+                component.ambient.z = ambient[2];
+            }
+            float diffuse[] = {component.diffuse.x, component.diffuse.y, component.diffuse.z};
+            if (ImGui::ColorEdit3("Diffuse", diffuse)){
+                component.diffuse.x = diffuse[0];
+                component.diffuse.y = diffuse[1];
+                component.diffuse.z = diffuse[2];
+            }
+            float specular[] = {component.specular.x, component.specular.y, component.specular.z};
+            if (ImGui::ColorEdit3("Specular", specular)){
+                component.specular.x = specular[0];
+                component.specular.y = specular[1];
+                component.specular.z = specular[2];
+            }
+            ImGui::DragFloat("Shininess", &component.shininess, 1.0f, 0.0f, 128.0f);
 		});
-        DrawComponent<OriginComponent>("Origin", entity, [](auto& component){
-			ImGui::Checkbox("Enabled", &component.m_Enabled);
+
+        DrawComponent<LightComponent>("Light", entity, [](auto& component){
+			float ambient[] = {component.ambient.x, component.ambient.y, component.ambient.z};
+            if (ImGui::ColorEdit3("Ambient", ambient)){
+                component.ambient.x = ambient[0];
+                component.ambient.y = ambient[1];
+                component.ambient.z = ambient[2];
+            }
+            float diffuse[] = {component.diffuse.x, component.diffuse.y, component.diffuse.z};
+            if (ImGui::ColorEdit3("Diffuse", diffuse)){
+                component.diffuse.x = diffuse[0];
+                component.diffuse.y = diffuse[1];
+                component.diffuse.z = diffuse[2];
+            }
+            float specular[] = {component.specular.x, component.specular.y, component.specular.z};
+            if (ImGui::ColorEdit3("Specular", specular)){
+                component.specular.x = specular[0];
+                component.specular.y = specular[1];
+                component.specular.z = specular[2];
+            }
 		});
+
 		DrawComponent<CameraComponent>("Camera", entity, [](auto& component){
 			auto& camera = component.camera;
 

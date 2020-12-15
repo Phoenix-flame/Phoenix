@@ -38,28 +38,42 @@ namespace Phoenix{
         auto cameras = m_Registry.view<TransformComponent,CameraComponent>();
         glm::mat4 sceneCameraProjection = editorCamera.GetProjection();
         glm::mat4 sceneCameraView = editorCamera.GetView();
+        glm::vec3 cameraPos = editorCamera.GetPosition();
         for (auto cam:cameras){
             auto camera = cameras.get<CameraComponent>(cam);
             auto transform = cameras.get<TransformComponent>(cam);
             if (camera.primary){
                 sceneCameraProjection = camera.camera.GetProjection();
                 sceneCameraView = glm::inverse(transform.GetTransform());
+                cameraPos = transform.Translation;
                 break;
             }
         }
 
-        
+        glm::vec3 lightPos = glm::vec3(0.0f);
+        LightComponent lightComponent;
+        auto lightsView = m_Registry.view<TransformComponent,LightComponent>();
+        for(auto entity:lightsView){
+            auto light = lightsView.get<LightComponent>(entity);
+            auto transform = lightsView.get<TransformComponent>(entity);
+            lightComponent = light;
+            lightPos = transform.Translation;
+        }
+
+
         {
-            
             PHX_PROFILE("Scene Components");
             Renderer::BeginScene(sceneCameraProjection, sceneCameraView);
             auto view = m_Registry.view<CubeComponent, TransformComponent>();
             for (auto entity : view) {
-                // auto cube = view.get<CubeComponent>(entity);
+                auto cube = view.get<CubeComponent>(entity);
                 auto transform = view.get<TransformComponent>(entity);
                 // Render
                 {
-                    Renderer::SubmitCube(transform.GetTransform());
+                    Renderer::SubmitLightCube(cameraPos, lightPos, cube.ambient, cube.diffuse,
+                        cube.specular, cube.shininess, lightComponent.ambient,
+                         lightComponent.diffuse, lightComponent.specular, transform.GetTransform());
+                    // Renderer::SubmitCube(transform.GetTransform());
                 }
             }
             Renderer::EndScene();
@@ -93,9 +107,7 @@ namespace Phoenix{
 	void Scene::OnComponentAdded<CubeComponent>(Entity entity, CubeComponent& component){
 	}
 
-    template<>
-	void Scene::OnComponentAdded<OriginComponent>(Entity entity, OriginComponent& component){
-	}
+
 
     template<>
 	void Scene::OnComponentAdded<TagComponent>(Entity entity, TagComponent& component){
@@ -104,6 +116,11 @@ namespace Phoenix{
     template<>
 	void Scene::OnComponentAdded<NativeScriptComponent>(Entity entity, NativeScriptComponent& component){
 	}
+
+    template<>
+	void Scene::OnComponentAdded<LightComponent>(Entity entity, LightComponent& component){
+	}
+
 
 
     template<>

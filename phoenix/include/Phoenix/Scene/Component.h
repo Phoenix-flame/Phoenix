@@ -30,12 +30,24 @@ namespace Phoenix{
 
 
     struct CubeComponent{
-        glm::vec3 color;
+        glm::vec3 ambient = glm::vec3(1.0f, 0.5f, 0.31f);
+        glm::vec3 diffuse = glm::vec3(1.0f, 0.5f, 0.31f);
+        glm::vec3 specular = glm::vec3(0.5f, 0.5f, 0.5f);
+        float shininess = 32.0f;
         CubeComponent() = default;
         CubeComponent(const CubeComponent&) = default;
     };
 
     
+    struct LightComponent{
+        glm::vec3 ambient = glm::vec3(1.0f);
+        glm::vec3 diffuse = glm::vec3(0.2f) * ambient;
+        glm::vec3 specular = glm::vec3(1.0f);
+        LightComponent() = default;
+        LightComponent(const LightComponent&) = default;
+    };
+
+
     struct TransformComponent{
         glm::vec3 Translation = {0.0f, 0.0f, 0.0f};
         glm::vec3 Rotation = {0.0f, 0.0f, 0.0f};

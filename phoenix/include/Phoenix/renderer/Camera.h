@@ -21,6 +21,7 @@ namespace Phoenix{
 
 		const glm::mat4& GetProjection() const { return m_Projection; }
         const glm::mat4& GetView() const { return m_View; }
+        
 	protected:
 		glm::mat4 m_Projection = glm::mat4(1.0f);
         glm::mat4 m_View = glm::mat4(1.0f);
@@ -42,6 +43,8 @@ namespace Phoenix{
         
         void SetFOV(float fov);
         const float GetFOV() const { return m_FOV; }
+
+        const glm::vec3& GetPosition() const { return m_Position; }
     
     private:
         void UpdateProjection(float fov, float aspect, float near, float far);
@@ -50,7 +53,7 @@ namespace Phoenix{
 		bool OnWindowResized(WindowResizeEvent& e);
 
     private:
-        glm::vec3 m_Position;
+        glm::vec3 m_Position = glm::vec3(0.0f);
         glm::vec3 m_Up;
         glm::vec3 m_Right;
         glm::vec3 m_Target;
