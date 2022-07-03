@@ -5,7 +5,10 @@
             "includePath": [
                 "${default}",
                 "${workspaceFolder}/phoenix/include",
-                "/usr/local/include/entt"
+                "/usr/local/include/entt",
+                "/usr/include/glm",
+                "/usr/include/GLFW",
+                "/usr/include"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/gcc",

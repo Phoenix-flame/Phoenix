@@ -8,7 +8,7 @@ namespace Phoenix{
     struct RenderLightCube{
         RenderLightCube() = default;
         void Init(){
-            m_Shader = Shader::Create("/home/alireza/Programming/C++/MyGameEngineProject/Sandbox/assets/shaders/lighting.glsl");
+            m_Shader = Shader::Create("/home/alireza/Programming/Phoenix/Sandbox/assets/shaders/lighting.glsl");
             m_Vertex_array = CreateRef<VertexArray>();
             m_Vertex_array->Bind();
             Ref<VertexBuffer> vertexBuffer = CreateRef<VertexBuffer>(this->vertices, sizeof(this->vertices));
@@ -91,7 +91,7 @@ namespace Phoenix{
             Init();
         }
         void Init(){
-            m_Shader = Shader::Create("/home/alireza/Programming/C++/MyGameEngineProject/Sandbox/assets/shaders/basic.glsl");
+            m_Shader = Shader::Create("/home/alireza/Programming/Phoenix/Sandbox/assets/shaders/basic.glsl");
             m_Vertex_array = CreateRef<VertexArray>();
             m_Vertex_array->Bind();
             Ref<VertexBuffer> vertexBuffer = CreateRef<VertexBuffer>(this->vertices, sizeof(this->vertices));
