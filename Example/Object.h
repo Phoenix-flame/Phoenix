@@ -14,7 +14,7 @@ public:
 
     virtual void Draw(const glm::mat4& projection){
         if (!m_Enabled) return;
-        Phoenix::Renderer::Submit(m_Shader, m_Vertex_array, projection, m_Transform);
+        // Phoenix::Renderer::Submit(m_Shader, m_Vertex_array, projection, m_Transform);
     }
 
     void SetPosition(const glm::vec3 new_pos) {

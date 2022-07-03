@@ -51,9 +51,11 @@ include_directories(${APP_TARGET} ${GLEW_INCLUDE_DIRS})
 find_package(EnTT REQUIRED)
 include_directories(${APP_TARGET} ${EnTT_INCLUDE_DIRS})
 
+find_package(fmt REQUIRED)
 find_package(spdlog REQUIRED)
 
 #target_link_libraries(${APP_TARGET} ${SDL2_LIBRARIES})
+target_link_libraries(${APP_TARGET} fmt)
 target_link_libraries(${APP_TARGET} glfw)
 target_link_libraries(${APP_TARGET} OpenGL::GL ${GLEW_LIBRARIES})
 target_link_libraries(${APP_TARGET} ${SPDLOG_LIBRARIES}  ${EnTT_LIBRARIES})

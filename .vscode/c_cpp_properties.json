@@ -4,7 +4,8 @@
             "name": "Linux",
             "includePath": [
                 "${default}",
-                "${workspaceFolder}/phoenix/include"
+                "${workspaceFolder}/phoenix/include",
+                "/usr/local/include/entt"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/gcc",
