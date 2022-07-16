@@ -3,8 +3,8 @@
         {
             "name": "Linux",
             "includePath": [
-                "${default}",
                 "${workspaceFolder}/phoenix/include",
+                "${workspaceFolder}/phoenix/include/Phoenix",
                 "/usr/local/include/entt",
                 "/usr/include/glm",
                 "/usr/include/GLFW",
@@ -12,8 +12,8 @@
             ],
             "defines": [],
             "compilerPath": "/usr/bin/gcc",
-            "cStandard": "gnu17",
-            "cppStandard": "gnu++14",
+            "cStandard": "c17",
+            "cppStandard": "c++17",
             "intelliSenseMode": "gcc-x64"
         }
     ],

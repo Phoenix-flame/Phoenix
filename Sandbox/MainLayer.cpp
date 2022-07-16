@@ -5,10 +5,16 @@
 #include <Phoenix/imGui/imgui_internal.h>
 #include <Phoenix/Scene/Component.h>
 #include <Phoenix/core/Profiler.h>
+
+#include <Phoenix/core/application.h>
+#include <Phoenix/Scene/Scene.h>
+
+#include <Phoenix/renderer/Framebuffer.h>
+#include <Phoenix/core/log.h>
 #include <vendor/ImGuizmo/ImGuizmo.h>
 #include <Phoenix/core/Input.h>
 #include <Phoenix/Math/Math.h>
-MainLayer::MainLayer(const std::string& name): Layer(name), 
+MainLayer::MainLayer(const std::string& name): Phoenix::Layer(name), 
         m_MainCamera()
     { }
 

@@ -20,8 +20,8 @@ public:
     virtual void OnAttach() override;
     virtual void OnDetach() override;
 
-    virtual void OnUpdate(Timestep ts) override;
-    virtual void OnEvent(Event& e) override;
+    virtual void OnUpdate(Phoenix::Timestep ts) override;
+    virtual void OnEvent(Phoenix::Event& e) override;
     virtual void OnImGuiRender() override;
 
 private:
@@ -41,11 +41,11 @@ private:
     
     glm::vec3 m_BackgroundColor = { 0.28, 0.65, 0.87 };
     EditorCamera m_MainCamera;
-    Ref<SceneEditor> m_SceneEditor;
+    Ref<Phoenix::SceneEditor> m_SceneEditor;
     Ref<Phoenix::Scene> m_Scene;
 
-    Entity m_CameraEntity;
-    Entity m_CubeEntity;
+    Phoenix::Entity m_CameraEntity;
+    Phoenix::Entity m_CubeEntity;
 
     bool m_OverlayEnabled = true;
 

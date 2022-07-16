@@ -67,7 +67,10 @@
         "forward_list": "cpp",
         "unordered_set": "cpp",
         "future": "cpp",
-        "any": "cpp"
+        "any": "cpp",
+        "ranges": "cpp",
+        "compare": "cpp",
+        "concepts": "cpp",
+        "stop_token": "cpp"
     },
-    "C_Cpp.errorSquiggles": "Disabled"
 }
