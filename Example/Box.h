@@ -4,7 +4,7 @@
 class Box: public Object{
 public:
     Box(std::string name, const glm::vec3& pos = glm::vec3(0.0f, 0.0f, 0.0f)): Object(pos, name){
-        m_Shader = Phoenix::Shader::Create("/home/alireza/Programming/C++/MyGameEngineProject/Example/assets/shaders/basic.glsl");
+        m_Shader = Phoenix::Shader::Create("/home/alireza/Programming/C++/MyGameEngineProject/Example/assets/shaders/lighting.glsl");
         m_Vertex_array = Phoenix::CreateRef<Phoenix::VertexArray>();
         m_Vertex_array->Bind();
         Phoenix::Ref<Phoenix::VertexBuffer> vertexBuffer = Phoenix::CreateRef<Phoenix::VertexBuffer>(this->vertices, sizeof(this->vertices));

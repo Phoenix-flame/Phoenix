@@ -17,6 +17,7 @@ namespace Phoenix{
         
         xoffset *= 0.2f;
         yoffset *= 0.2f;
+
         if (Input::IsMouseButtonPressed(Mouse::Button0) && Input::IsKeyPressed(Key::LeftControl)){
             Rotate(xoffset, yoffset);
         }
@@ -84,7 +85,7 @@ namespace Phoenix{
         m_Up = glm::cross(cameraDirection, m_Right);
 
         m_View = glm::lookAt(m_Position, m_Target, m_Up);
-        // m_ViewProjectionMatrix = m_ProjectionMatrix * m_ViewMatrix;
+        m_ViewProjectionMatrix = m_Projection * m_View;
     }
 
     void EditorCamera::UpdateProjection(float fov, float aspect, float near, float far){
