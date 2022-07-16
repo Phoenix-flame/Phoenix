@@ -7,29 +7,28 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 namespace Phoenix{
-    // EditorCamera::EditorCamera(){
-
-    // }
-
     void EditorCamera::OnUpdate(Timestep ts){
-        float xoffset = Input::GetMouseDelta().x;
-        float yoffset = -Input::GetMouseDelta().y; 
-        
-        xoffset *= 0.2f;
-        yoffset *= 0.2f;
+        if (m_IsActivated)
+        {
+            float xoffset = Input::GetMouseDelta().x;
+            float yoffset = -Input::GetMouseDelta().y; 
+            
+            xoffset *= 0.2f;
+            yoffset *= 0.2f;
 
-        if (Input::IsMouseButtonPressed(Mouse::Button0) && Input::IsKeyPressed(Key::LeftControl)){
-            Rotate(xoffset, yoffset);
-        }
-        else if (Input::IsMouseButtonPressed(Mouse::Button1) && Input::IsKeyPressed(Key::LeftControl)){
-            Pan(xoffset, yoffset);
+            if (Input::IsMouseButtonPressed(Mouse::Button0) && Input::IsKeyPressed(Key::LeftControl)){
+                Rotate(xoffset, yoffset);
+            }
+            else if (Input::IsMouseButtonPressed(Mouse::Button1) && Input::IsKeyPressed(Key::LeftControl)){
+                Pan(xoffset, yoffset);
+            }
         }
     }
 
     void EditorCamera::OnEvent(Event& e){
         EventDispatcher dispatcher(e);
-		dispatcher.Dispatch<MouseScrolledEvent>(BIND_EVENT_FN(EditorCamera::OnMouseScrolled));
-		dispatcher.Dispatch<WindowResizeEvent>(BIND_EVENT_FN(EditorCamera::OnWindowResized));
+        dispatcher.Dispatch<MouseScrolledEvent>(BIND_EVENT_FN(EditorCamera::OnMouseScrolled));
+        dispatcher.Dispatch<WindowResizeEvent>(BIND_EVENT_FN(EditorCamera::OnWindowResized));
     }
 
     void EditorCamera::OnResize(float width, float height){

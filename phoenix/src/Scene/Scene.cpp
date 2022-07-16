@@ -39,17 +39,23 @@ namespace Phoenix{
         glm::mat4 sceneCameraProjection = editorCamera.GetProjection();
         glm::mat4 sceneCameraView = editorCamera.GetView();
         glm::vec3 cameraPos = editorCamera.GetPosition();
+        bool anyActiveCamera = false;
         for (auto cam:cameras){
             auto camera = cameras.get<CameraComponent>(cam);
             auto transform = cameras.get<TransformComponent>(cam);
             if (camera.primary){
+                editorCamera.SetState(false);
+                anyActiveCamera = true;
                 sceneCameraProjection = camera.camera.GetProjection();
                 sceneCameraView = glm::inverse(transform.GetTransform());
                 cameraPos = transform.Translation;
                 break;
             }
         }
-
+        if (!anyActiveCamera)
+        {
+            editorCamera.SetState(true);
+        }
         glm::vec3 lightPos = glm::vec3(0.0f);
         LightComponent lightComponent;
         auto lightsView = m_Registry.view<TransformComponent,LightComponent>();

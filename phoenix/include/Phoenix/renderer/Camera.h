@@ -45,7 +45,10 @@ namespace Phoenix{
         const float GetFOV() const { return m_FOV; }
 
         const glm::vec3& GetPosition() const { return m_Position; }
-    
+
+        operator bool() { return m_IsActivated; }
+        void SetState(bool enabled) { m_IsActivated = enabled; }
+
     private:
         void UpdateProjection(float fov, float aspect, float near, float far);
         void RecalculateViewMatrix();
@@ -68,6 +71,9 @@ namespace Phoenix{
         float m_FarClip = 1000.0f;
         
         float m_ViewportWidth, m_ViewportHeight;
+
+        bool m_IsActivated = false;
+
 
         friend class SceneEditor;
     };
