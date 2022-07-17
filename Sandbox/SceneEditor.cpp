@@ -19,7 +19,7 @@ namespace Phoenix{
 		}
 
 		// Right-click on blank space
-		if (ImGui::BeginPopupContextWindow(0, 1, false)){
+		if (ImGui::BeginPopupContextWindow(NULL, ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)){
 			if (ImGui::MenuItem("Create Empty Entity"))
 				m_ActiveScene->CreateEntity("Empty Entity");
 
