@@ -26,47 +26,60 @@ namespace Phoenix{
 
     void Renderer::SubmitLightCube(
             const glm::vec3& cameraPos,
+            Material material,
+            bool dirLightExists,
+            DirLightComponent dirLight,
             const glm::vec3& lightPos,
-            const glm::vec3& materialAmbient,
-            const glm::vec3& materialDiffuse,
-            const glm::vec3& materialSpecular,
-            float materialShininess,
-            const glm::vec3& lightAmbient,
-            const glm::vec3& lightDiffuse,
-            const glm::vec3& lightSpecular,
+            PointLightComponent pointLight[],
+            const glm::vec3 pointLightPos[],
+            int numOfPointLight,
             const glm::mat4& transform ){
-        s_RenderLightCube->m_Shader->SetFloat3("dirLight.ambient", lightAmbient);
-        s_RenderLightCube->m_Shader->SetFloat3("dirLight.diffuse", lightDiffuse);
-        s_RenderLightCube->m_Shader->SetFloat3("dirLight.specular", lightSpecular);
 
-        // s_RenderLightCube->m_Shader->SetFloat("pointLights[0].constant", 0.1f);
-        // s_RenderLightCube->m_Shader->SetFloat("pointLights[1].constant", 0.2f);
-        // s_RenderLightCube->m_Shader->SetFloat("pointLights[2].constant", 0.1f);
-        // s_RenderLightCube->m_Shader->SetFloat("pointLights[3].constant", 0.1f);
-        // s_RenderLightCube->m_Shader->SetFloat3("pointLights[0].ambient", lightAmbient);
-        // // s_RenderLightCube->m_Shader->SetFloat3("pointLights[1].ambient", lightAmbient);
-        // // s_RenderLightCube->m_Shader->SetFloat3("pointLights[2].ambient", lightAmbient);
-        // // s_RenderLightCube->m_Shader->SetFloat3("pointLights[3].ambient", lightAmbient);
-        // s_RenderLightCube->m_Shader->SetFloat3("pointLights[0].diffuse", lightDiffuse);
-        // // s_RenderLightCube->m_Shader->SetFloat3("pointLights[1].diffuse", lightDiffuse);
-        // // s_RenderLightCube->m_Shader->SetFloat3("pointLights[2].diffuse", lightDiffuse);
-        // // s_RenderLightCube->m_Shader->SetFloat3("pointLights[3].diffuse", lightDiffuse);
-        // s_RenderLightCube->m_Shader->SetFloat3("pointLights[0].specular", lightSpecular);
-        // // s_RenderLightCube->m_Shader->SetFloat3("pointLights[1].specular", lightSpecular);
-        // // s_RenderLightCube->m_Shader->SetFloat3("pointLights[2].specular", lightSpecular);
-        // // s_RenderLightCube->m_Shader->SetFloat3("pointLights[3].specular", lightSpecular);
-        // s_RenderLightCube->m_Shader->SetFloat3("pointLights[0].position", glm::vec3( 0.7f,  0.2f,  2.0f));
-        // s_RenderLightCube->m_Shader->SetFloat3("pointLights[1].position", glm::vec3( 2.3f, -3.3f, -4.0f));
-        // s_RenderLightCube->m_Shader->SetFloat3("pointLights[2].position", glm::vec3(-4.0f,  2.0f, -12.0f));
-        // s_RenderLightCube->m_Shader->SetFloat3("pointLights[3].position", glm::vec3( 0.0f,  0.0f, -3.0f));
+        if (dirLightExists)
+        {
+            s_RenderLightCube->m_Shader->SetFloat3("dirLight.ambient", dirLight.ambient);
+            s_RenderLightCube->m_Shader->SetFloat3("dirLight.diffuse", dirLight.diffuse);
+            s_RenderLightCube->m_Shader->SetFloat3("dirLight.specular", dirLight.specular);
+            s_RenderLightCube->m_Shader->SetFloat3("dirLight.position", lightPos);
+        }
+        else {
+            s_RenderLightCube->m_Shader->SetFloat3("dirLight.ambient", glm::vec3(0.0, 0.0, 0.0));
+            s_RenderLightCube->m_Shader->SetFloat3("dirLight.diffuse", glm::vec3(0.0, 0.0, 0.0));
+            s_RenderLightCube->m_Shader->SetFloat3("dirLight.specular", glm::vec3(0.0, 0.0, 0.0));
+            s_RenderLightCube->m_Shader->SetFloat3("dirLight.position", glm::vec3(0.0, 0.0, 0.0));
+        }
 
-        s_RenderLightCube->m_Shader->SetFloat3("material.ambient", materialAmbient);
-        s_RenderLightCube->m_Shader->SetFloat3("material.diffuse", materialDiffuse);
-        s_RenderLightCube->m_Shader->SetFloat3("material.specular", materialSpecular);
-        s_RenderLightCube->m_Shader->SetFloat("material.shininess", materialShininess);
+        for (int i = 0 ; i < 4 ; i ++)
+        {
+            if (i < numOfPointLight)
+            {
+                s_RenderLightCube->m_Shader->SetFloat("pointLights[" + std::to_string(i) + "].constant", pointLight[i].constant);
+                s_RenderLightCube->m_Shader->SetFloat("pointLights[" + std::to_string(i) + "].linear", pointLight[i].linear);
+                s_RenderLightCube->m_Shader->SetFloat("pointLights[" + std::to_string(i) + "].quadratic", pointLight[i].quadratic);
+                s_RenderLightCube->m_Shader->SetFloat3("pointLights[" + std::to_string(i) + "].ambient", pointLight[i].ambient);
+                s_RenderLightCube->m_Shader->SetFloat3("pointLights[" + std::to_string(i) + "].diffuse", pointLight[i].diffuse);
+                s_RenderLightCube->m_Shader->SetFloat3("pointLights[" + std::to_string(i) + "].specular", pointLight[i].specular);
+                s_RenderLightCube->m_Shader->SetFloat3("pointLights[" + std::to_string(i) + "].position", pointLightPos[i]);
+            }
+            else{
+                s_RenderLightCube->m_Shader->SetFloat("pointLights[" + std::to_string(i) + "].constant", 0.0f);
+                s_RenderLightCube->m_Shader->SetFloat("pointLights[" + std::to_string(i) + "].linear", 0.0f);
+                s_RenderLightCube->m_Shader->SetFloat("pointLights[" + std::to_string(i) + "].quadratic", 0.0f);
+                s_RenderLightCube->m_Shader->SetFloat3("pointLights[" + std::to_string(i) + "].ambient", glm::vec3(0.0, 0.0, 0.0));
+                s_RenderLightCube->m_Shader->SetFloat3("pointLights[" + std::to_string(i) + "].diffuse", glm::vec3(0.0, 0.0, 0.0));
+                s_RenderLightCube->m_Shader->SetFloat3("pointLights[" + std::to_string(i) + "].specular", glm::vec3(0.0, 0.0, 0.0));
+                s_RenderLightCube->m_Shader->SetFloat3("pointLights[" + std::to_string(i) + "].position", glm::vec3(0.0, 0.0, 0.0));
+            }
+        }
+      
+
+        s_RenderLightCube->m_Shader->SetFloat3("material.ambient", material.ambient);
+        s_RenderLightCube->m_Shader->SetFloat3("material.diffuse", material.diffuse);
+        s_RenderLightCube->m_Shader->SetFloat3("material.specular", material.specular);
+        s_RenderLightCube->m_Shader->SetFloat("material.shininess", material.shininess);
 
         s_RenderLightCube->m_Shader->SetFloat3("cameraPos", cameraPos);
-        s_RenderLightCube->m_Shader->SetFloat3("dirLight.position", lightPos);
+
         s_RenderLightCube->m_Shader->SetMat4("model", transform);
         s_RenderLightCube->m_Shader->SetMat4("view", s_SceneData->ViewMatrix);
         s_RenderLightCube->m_Shader->SetMat4("projection", s_SceneData->ProjectionMatrix);

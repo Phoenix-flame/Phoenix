@@ -23,11 +23,19 @@ namespace Phoenix{
 			if (ImGui::MenuItem("Create Empty Entity"))
 				m_ActiveScene->CreateEntity("Empty Entity");
 
+			if (ImGui::MenuItem("Create Point Light"))
+				m_ActiveScene->CreatePointLightEntity("Point Light");
+			
+			if (ImGui::MenuItem("Create Directional Light"))
+				m_ActiveScene->CreateDirLightEntity("Directional Light");
+
 			ImGui::EndPopup();
 		}
 
         ImGui::End();
     }
+
+
     void SceneEditor::EntityPanel(){
         ImGui::Begin("Properties");
 		if (m_SelectedEntity){
@@ -219,9 +227,16 @@ namespace Phoenix{
                     PHX_CORE_ASSERT("This entity already has the Cube Component!");
                 ImGui::CloseCurrentPopup();
             }
-            if (ImGui::MenuItem("Light")){
-                if (!m_SelectedEntity.HasComponent<LightComponent>())
-                    m_SelectedEntity.AddComponent<LightComponent>();
+            // if (ImGui::MenuItem("Directional Light")){
+            //     if (!m_SelectedEntity.HasComponent<DirLightComponent>())
+            //         m_SelectedEntity.AddComponent<DirLightComponent>();
+            //     else
+            //         PHX_CORE_ASSERT("This entity already has the Cube Component!");
+            //     ImGui::CloseCurrentPopup();
+            // }
+			if (ImGui::MenuItem("Point Light")){
+                if (!m_SelectedEntity.HasComponent<PointLightComponent>())
+                    m_SelectedEntity.AddComponent<PointLightComponent>();
                 else
                     PHX_CORE_ASSERT("This entity already has the Cube Component!");
                 ImGui::CloseCurrentPopup();
@@ -249,28 +264,28 @@ namespace Phoenix{
 			DrawVec3Control("Scale", component.Scale, 1.0f);
 		});
         DrawComponent<CubeComponent>("Cube", entity, [](CubeComponent& component){
-            float ambient[] = {component.ambient.x, component.ambient.y, component.ambient.z};
+            float ambient[] = {component.material.ambient.x, component.material.ambient.y, component.material.ambient.z};
             if (ImGui::ColorEdit3("Ambient", ambient)){
-                component.ambient.x = ambient[0];
-                component.ambient.y = ambient[1];
-                component.ambient.z = ambient[2];
+                component.material.ambient.x = ambient[0];
+                component.material.ambient.y = ambient[1];
+                component.material.ambient.z = ambient[2];
             }
-            float diffuse[] = {component.diffuse.x, component.diffuse.y, component.diffuse.z};
+            float diffuse[] = {component.material.diffuse.x, component.material.diffuse.y, component.material.diffuse.z};
             if (ImGui::ColorEdit3("Diffuse", diffuse)){
-                component.diffuse.x = diffuse[0];
-                component.diffuse.y = diffuse[1];
-                component.diffuse.z = diffuse[2];
+                component.material.diffuse.x = diffuse[0];
+                component.material.diffuse.y = diffuse[1];
+                component.material.diffuse.z = diffuse[2];
             }
-            float specular[] = {component.specular.x, component.specular.y, component.specular.z};
+            float specular[] = {component.material.specular.x, component.material.specular.y, component.material.specular.z};
             if (ImGui::ColorEdit3("Specular", specular)){
-                component.specular.x = specular[0];
-                component.specular.y = specular[1];
-                component.specular.z = specular[2];
+                component.material.specular.x = specular[0];
+                component.material.specular.y = specular[1];
+                component.material.specular.z = specular[2];
             }
-            ImGui::DragFloat("Shininess", &component.shininess, 1.0f, 0.0f, 128.0f);
+            ImGui::DragFloat("Shininess", &component.material.shininess, 1.0f, 0.0f, 128.0f);
 		});
 
-        DrawComponent<LightComponent>("Light", entity, [](auto& component){
+        DrawComponent<DirLightComponent>("Directional Light", entity, [](auto& component){
 			float ambient[] = {component.ambient.x, component.ambient.y, component.ambient.z};
             if (ImGui::ColorEdit3("Ambient", ambient)){
                 component.ambient.x = ambient[0];
@@ -289,6 +304,34 @@ namespace Phoenix{
                 component.specular.y = specular[1];
                 component.specular.z = specular[2];
             }
+		});
+
+		DrawComponent<PointLightComponent>("Point Light", entity, [](auto& component){
+			float ambient[] = {component.ambient.x, component.ambient.y, component.ambient.z};
+            if (ImGui::ColorEdit3("Ambient", ambient)){
+                component.ambient.x = ambient[0];
+                component.ambient.y = ambient[1];
+                component.ambient.z = ambient[2];
+            }
+            float diffuse[] = {component.diffuse.x, component.diffuse.y, component.diffuse.z};
+            if (ImGui::ColorEdit3("Diffuse", diffuse)){
+                component.diffuse.x = diffuse[0];
+                component.diffuse.y = diffuse[1];
+                component.diffuse.z = diffuse[2];
+            }
+            float specular[] = {component.specular.x, component.specular.y, component.specular.z};
+            if (ImGui::ColorEdit3("Specular", specular)){
+                component.specular.x = specular[0];
+                component.specular.y = specular[1];
+                component.specular.z = specular[2];
+            }
+			float constant = component.constant, linear = component.linear, quadratic = component.quadratic;
+			if (ImGui::DragFloat("Constnat", &(constant)))
+				component.SetConstant(constant);
+			if (ImGui::DragFloat("Linear", &(linear)))
+				component.SetLinear(linear);
+			if (ImGui::DragFloat("Quadratic", &(quadratic)))
+				component.SetQuadratic(quadratic);
 		});
 
 		DrawComponent<CameraComponent>("Camera", entity, [](auto& component){

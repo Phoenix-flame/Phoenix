@@ -14,7 +14,36 @@ namespace Phoenix{
         return entity;
     }
 
+    Entity Scene::CreatePointLightEntity(const std::string& name)
+    {
+        Entity entity = { m_Registry.create(), this };
+        entity.AddComponent<TransformComponent>();
+        entity.AddComponent<PointLightComponent>();
+        auto& tag = entity.AddComponent<TagComponent>();
+		tag.Tag = name.empty() ? "Entity" : name;
+        m_NumPointLights ++;
+        return entity;
+    }
+
+    Entity Scene::CreateDirLightEntity(const std::string& name)
+    {
+        Entity entity = { m_Registry.create(), this };
+        entity.AddComponent<TransformComponent>();
+        entity.AddComponent<CubeComponent>();
+        entity.GetComponent<TransformComponent>().Scale.x = 0.2;
+        entity.GetComponent<TransformComponent>().Scale.y = 0.2;
+        entity.GetComponent<TransformComponent>().Scale.z = 0.2;
+        entity.AddComponent<DirLightComponent>();
+        auto& tag = entity.AddComponent<TagComponent>();
+		tag.Tag = name.empty() ? "Entity" : name;
+        return entity;
+    }
+
     void Scene::DestroyEntity(Entity entity){
+        if (entity.HasComponent<PointLightComponent>())
+        {
+            m_NumPointLights --;
+        }
         m_Registry.destroy(entity);
     }
 
@@ -57,15 +86,28 @@ namespace Phoenix{
             editorCamera.SetState(true);
         }
         glm::vec3 lightPos = glm::vec3(0.0f);
-        LightComponent lightComponent;
-        auto lightsView = m_Registry.view<TransformComponent,LightComponent>();
+        DirLightComponent lightComponent;
+        bool dirLightExists = false;
+        auto lightsView = m_Registry.view<TransformComponent,DirLightComponent>();
         for(auto entity:lightsView){
-            auto light = lightsView.get<LightComponent>(entity);
+            auto light = lightsView.get<DirLightComponent>(entity);
             auto transform = lightsView.get<TransformComponent>(entity);
             lightComponent = light;
             lightPos = transform.Translation;
+            dirLightExists = true;
         }
 
+        glm::vec3 pointLightPos[4] = {glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(0.0f)};
+        PointLightComponent pLightComponent[4];
+        int numPointLight = 0;
+        auto pLightsView = m_Registry.view<TransformComponent,PointLightComponent>();
+        for(auto entity:pLightsView){
+            auto light = pLightsView.get<PointLightComponent>(entity);
+            auto transform = pLightsView.get<TransformComponent>(entity);
+            pLightComponent[numPointLight] = light;
+            pointLightPos[numPointLight] = transform.Translation;
+            numPointLight ++;
+        }
 
         {
             PHX_PROFILE("Scene Components");
@@ -76,10 +118,7 @@ namespace Phoenix{
                 auto transform = view.get<TransformComponent>(entity);
                 // Render
                 {
-                    Renderer::SubmitLightCube(cameraPos, lightPos, cube.ambient, cube.diffuse,
-                        cube.specular, cube.shininess, lightComponent.ambient,
-                         lightComponent.diffuse, lightComponent.specular, transform.GetTransform());
-                    // Renderer::SubmitCube(transform.GetTransform());
+                    Renderer::SubmitLightCube(cameraPos, cube.material, dirLightExists, lightComponent, lightPos, pLightComponent, pointLightPos, numPointLight, transform.GetTransform());
                 }
             }
             Renderer::EndScene();
@@ -124,7 +163,11 @@ namespace Phoenix{
 	}
 
     template<>
-	void Scene::OnComponentAdded<LightComponent>(Entity entity, LightComponent& component){
+	void Scene::OnComponentAdded<DirLightComponent>(Entity entity, DirLightComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<PointLightComponent>(Entity entity, PointLightComponent& component){
 	}
 
 

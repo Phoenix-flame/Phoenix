@@ -2,6 +2,7 @@
 #include <Phoenix/renderer/renderer_api.h>
 #include <Phoenix/renderer/shader.h>
 #include <Phoenix/renderer/Camera.h>
+#include <Phoenix/Scene/Component.h>
 
 namespace Phoenix{
 
@@ -204,14 +205,13 @@ namespace Phoenix{
 		static void SubmitCube(const glm::mat4& transform = glm::mat4(1.0f));
         static void SubmitLightCube(
             const glm::vec3& cameraPos,
+            Material material,
+            bool dirLightExists,
+            DirLightComponent dirLight,
             const glm::vec3& lightPos,
-            const glm::vec3& materialAmbient,
-            const glm::vec3& materialDiffuse,
-            const glm::vec3& materialSpecular,
-            float materialShininess,
-            const glm::vec3& lightAmbient,
-            const glm::vec3& lightDiffuse,
-            const glm::vec3& lightSpecular,
+            PointLightComponent pointLight[],
+            const glm::vec3 pointLightPos[],
+            int numOfPointLight,
             const glm::mat4& transform = glm::mat4(1.0f));
 
 		static RendererAPI::API GetAPI() { return RendererAPI::GetAPI(); }

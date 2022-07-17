@@ -19,9 +19,13 @@ namespace Phoenix{
 
         void OnUpdate(EditorCamera& editorCamera, Timestep ts);
         Entity CreateEntity(const std::string& name);
+        Entity CreatePointLightEntity(const std::string& name);
+        Entity CreateDirLightEntity(const std::string& name);
+
+
         void DestroyEntity(Entity entity);
         void OnResize(float width, float height);
-
+        int GetNumberOfPointLights() { return m_NumPointLights; }
     private:
 		template<typename T>
 		void OnComponentAdded(Entity entity, T& component);
@@ -33,7 +37,9 @@ namespace Phoenix{
 
         friend class Entity;
         friend class SceneEditor;
-        
+    
+    private:
+        int m_NumPointLights = 0;
     };
 
 }
