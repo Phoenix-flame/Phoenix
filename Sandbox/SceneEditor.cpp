@@ -14,7 +14,9 @@ namespace Phoenix{
 		});
 
         if (ImGui::IsMouseDown(0) && ImGui::IsWindowHovered())
+		{
 			m_SelectedEntity = {};
+		}
 
 		// Right-click on blank space
 		if (ImGui::BeginPopupContextWindow(0, 1, false)){
@@ -38,19 +40,28 @@ namespace Phoenix{
     void SceneEditor::EntityNode(Entity entity){
         auto& tag = entity.GetComponent<TagComponent>().Tag;
 		
-		ImGuiTreeNodeFlags flags = ((m_SelectedEntity == entity) ? ImGuiTreeNodeFlags_Selected : 0) | ImGuiTreeNodeFlags_OpenOnArrow;
-		flags |= ImGuiTreeNodeFlags_SpanAvailWidth;
-		bool opened = ImGui::TreeNodeEx((void*)(uint64_t)(uint32_t)entity, flags, tag.c_str());
+		ImGuiTreeNodeFlags flags = ((m_SelectedEntity == entity) ? ImGuiTreeNodeFlags_Selected : 0) | ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
+
+		bool opened = ImGui::TreeNodeEx((void*)(uint32_t)entity, flags, tag.c_str());
 		if (ImGui::IsItemClicked()){
 			m_SelectedEntity = entity;
 		}
+		
 
 		bool entityDeleted = false;
 		if (ImGui::BeginPopupContextItem()){
 			if (ImGui::MenuItem("Delete Entity"))
 				entityDeleted = true;
 
-			ImGui::EndPopup();
+			ImGui::EndPopup();	
+		}
+
+		if (m_SelectedEntity == entity && (!entityDeleted))
+		{
+			if (ImGui::IsKeyPressed(ImGuiKey_Delete))
+			{
+				entityDeleted = true;
+			}
 		}
 
 		if (opened){
