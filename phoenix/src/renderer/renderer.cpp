@@ -35,9 +35,9 @@ namespace Phoenix{
             const glm::vec3& lightDiffuse,
             const glm::vec3& lightSpecular,
             const glm::mat4& transform ){
-        s_RenderLightCube->m_Shader->SetFloat3("light.ambient", lightAmbient);
-        s_RenderLightCube->m_Shader->SetFloat3("light.diffuse", lightDiffuse);
-        s_RenderLightCube->m_Shader->SetFloat3("light.specular", lightSpecular);
+        s_RenderLightCube->m_Shader->SetFloat3("dirLight.ambient", lightAmbient);
+        s_RenderLightCube->m_Shader->SetFloat3("dirLight.diffuse", lightDiffuse);
+        s_RenderLightCube->m_Shader->SetFloat3("dirLight.specular", lightSpecular);
 
         s_RenderLightCube->m_Shader->SetFloat3("material.ambient", materialAmbient);
         s_RenderLightCube->m_Shader->SetFloat3("material.diffuse", materialDiffuse);
@@ -45,7 +45,7 @@ namespace Phoenix{
         s_RenderLightCube->m_Shader->SetFloat("material.shininess", materialShininess);
 
         s_RenderLightCube->m_Shader->SetFloat3("cameraPos", cameraPos);
-        s_RenderLightCube->m_Shader->SetFloat3("light.position", lightPos);
+        s_RenderLightCube->m_Shader->SetFloat3("dirLight.position", lightPos);
         s_RenderLightCube->m_Shader->SetMat4("model", transform);
         s_RenderLightCube->m_Shader->SetMat4("view", s_SceneData->ViewMatrix);
         s_RenderLightCube->m_Shader->SetMat4("projection", s_SceneData->ProjectionMatrix);
