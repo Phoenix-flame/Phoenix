@@ -66,7 +66,6 @@ namespace Phoenix{
 				case ShaderDataType::Mat4:{
 					uint8_t count = element.GetComponentCount();
 					for (uint8_t i = 0; i < count; i++){
-                        PHX_CORE_TRACE("{0}", _vertexBufferIndex);
 						glEnableVertexAttribArray(_vertexBufferIndex);
 						glVertexAttribPointer(_vertexBufferIndex,
 							count,
