@@ -39,6 +39,27 @@ namespace Phoenix{
         s_RenderLightCube->m_Shader->SetFloat3("dirLight.diffuse", lightDiffuse);
         s_RenderLightCube->m_Shader->SetFloat3("dirLight.specular", lightSpecular);
 
+        // s_RenderLightCube->m_Shader->SetFloat("pointLights[0].constant", 0.1f);
+        // s_RenderLightCube->m_Shader->SetFloat("pointLights[1].constant", 0.2f);
+        // s_RenderLightCube->m_Shader->SetFloat("pointLights[2].constant", 0.1f);
+        // s_RenderLightCube->m_Shader->SetFloat("pointLights[3].constant", 0.1f);
+        // s_RenderLightCube->m_Shader->SetFloat3("pointLights[0].ambient", lightAmbient);
+        // // s_RenderLightCube->m_Shader->SetFloat3("pointLights[1].ambient", lightAmbient);
+        // // s_RenderLightCube->m_Shader->SetFloat3("pointLights[2].ambient", lightAmbient);
+        // // s_RenderLightCube->m_Shader->SetFloat3("pointLights[3].ambient", lightAmbient);
+        // s_RenderLightCube->m_Shader->SetFloat3("pointLights[0].diffuse", lightDiffuse);
+        // // s_RenderLightCube->m_Shader->SetFloat3("pointLights[1].diffuse", lightDiffuse);
+        // // s_RenderLightCube->m_Shader->SetFloat3("pointLights[2].diffuse", lightDiffuse);
+        // // s_RenderLightCube->m_Shader->SetFloat3("pointLights[3].diffuse", lightDiffuse);
+        // s_RenderLightCube->m_Shader->SetFloat3("pointLights[0].specular", lightSpecular);
+        // // s_RenderLightCube->m_Shader->SetFloat3("pointLights[1].specular", lightSpecular);
+        // // s_RenderLightCube->m_Shader->SetFloat3("pointLights[2].specular", lightSpecular);
+        // // s_RenderLightCube->m_Shader->SetFloat3("pointLights[3].specular", lightSpecular);
+        // s_RenderLightCube->m_Shader->SetFloat3("pointLights[0].position", glm::vec3( 0.7f,  0.2f,  2.0f));
+        // s_RenderLightCube->m_Shader->SetFloat3("pointLights[1].position", glm::vec3( 2.3f, -3.3f, -4.0f));
+        // s_RenderLightCube->m_Shader->SetFloat3("pointLights[2].position", glm::vec3(-4.0f,  2.0f, -12.0f));
+        // s_RenderLightCube->m_Shader->SetFloat3("pointLights[3].position", glm::vec3( 0.0f,  0.0f, -3.0f));
+
         s_RenderLightCube->m_Shader->SetFloat3("material.ambient", materialAmbient);
         s_RenderLightCube->m_Shader->SetFloat3("material.diffuse", materialDiffuse);
         s_RenderLightCube->m_Shader->SetFloat3("material.specular", materialSpecular);
