@@ -102,6 +102,7 @@ namespace Phoenix{
         auto lightsView = m_Registry.view<TransformComponent,DirLightComponent>();
         for(auto entity:lightsView){
             auto light = lightsView.get<DirLightComponent>(entity);
+            if (!light.isActive) { continue; }
             auto transform = lightsView.get<TransformComponent>(entity);
             lightComponent = light;
             lightPos = transform.Translation;
@@ -114,6 +115,7 @@ namespace Phoenix{
         auto pLightsView = m_Registry.view<TransformComponent,PointLightComponent>();
         for(auto entity:pLightsView){
             auto light = pLightsView.get<PointLightComponent>(entity);
+            if (!light.isActive) { continue; }
             auto transform = pLightsView.get<TransformComponent>(entity);
             pLightComponent[numPointLight] = light;
             pointLightPos[numPointLight] = transform.Translation;

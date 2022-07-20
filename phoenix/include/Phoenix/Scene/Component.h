@@ -47,6 +47,7 @@ namespace Phoenix{
         glm::vec3 ambient = glm::vec3(1.0f);
         glm::vec3 diffuse = glm::vec3(0.2f) * ambient;
         glm::vec3 specular = glm::vec3(1.0f);
+        bool isActive = true;
         DirLightComponent() = default;
         DirLightComponent(const DirLightComponent&) = default;
     };

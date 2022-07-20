@@ -297,6 +297,8 @@ namespace Phoenix{
 		});
 
         DrawComponent<DirLightComponent>("Directional Light", entity, [](auto& component){
+			ImGui::Checkbox("Active", &component.isActive);
+
 			float ambient[] = {component.ambient.x, component.ambient.y, component.ambient.z};
             if (ImGui::ColorEdit3("Ambient", ambient)){
                 component.ambient.x = ambient[0];
@@ -318,6 +320,7 @@ namespace Phoenix{
 		});
 
 		DrawComponent<PointLightComponent>("Point Light", entity, [](auto& component){
+			ImGui::Checkbox("Active", &component.isActive);
 			float ambient[] = {component.ambient.x, component.ambient.y, component.ambient.z};
             if (ImGui::ColorEdit3("Ambient", ambient)){
                 component.ambient.x = ambient[0];
