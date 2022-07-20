@@ -24,7 +24,18 @@ namespace Phoenix{
 				m_ActiveScene->CreateEntity("Empty Entity");
 
 			if (ImGui::MenuItem("Create Point Light"))
-				m_ActiveScene->CreatePointLightEntity("Point Light");
+			{
+				try
+				{
+					m_ActiveScene->CreatePointLightEntity("Point Light");
+				}
+				catch(const std::exception& e)
+				{
+					PHX_ERROR(e.what());
+				}
+				
+			}
+				
 			
 			if (ImGui::MenuItem("Create Directional Light"))
 				m_ActiveScene->CreateDirLightEntity("Directional Light");

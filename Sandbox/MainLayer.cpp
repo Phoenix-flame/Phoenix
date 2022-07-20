@@ -37,7 +37,7 @@ void MainLayer::OnAttach() {
 
     m_CubeEntity = m_Scene->CreateEntity("Cube");
     m_CubeEntity.AddComponent<CubeComponent>();
-
+    
     m_Scene->CreatePointLightEntity("Point Light 1");
 
     m_SceneEditor = CreateRef<SceneEditor>(m_Scene);

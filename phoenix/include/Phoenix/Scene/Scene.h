@@ -40,6 +40,7 @@ namespace Phoenix{
     
     private:
         int m_NumPointLights = 0;
+        const int MAX_NUM_POINT_LIGHTS = 4;
     };
 
 }

@@ -16,6 +16,10 @@ namespace Phoenix{
 
     Entity Scene::CreatePointLightEntity(const std::string& name)
     {
+        if (m_NumPointLights == MAX_NUM_POINT_LIGHTS)
+        {
+            throw std::runtime_error("Reached maximum number of point lights");
+        }
         Entity entity = { m_Registry.create(), this };
         entity.AddComponent<TransformComponent>();
         entity.GetComponent<TransformComponent>().Scale.x = 0.1;
