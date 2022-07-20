@@ -31,7 +31,7 @@ struct Material {
 }; 
 
 struct DirLight {
-    vec3 position;
+    vec3 direction;
 
     vec3 ambient;
     vec3 diffuse;
@@ -69,19 +69,16 @@ uniform DirLight dirLight;
 
 vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir)
 {
-    // ambient
-    vec3 ambient = light.ambient * material.ambient;
-
-    // diffuse 
-    vec3 lightDir = normalize(light.position - FragPos);
+    vec3 lightDir = normalize(-light.direction);
+    // diffuse shading
     float diff = max(dot(normal, lightDir), 0.0);
-    vec3 diffuse = light.diffuse * (diff * material.diffuse);
-
-    // specular
-    vec3 reflectDir = reflect(-lightDir, normal);  
+    // specular shading
+    vec3 reflectDir = reflect(-lightDir, normal);
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), material.shininess);
-    vec3 specular = light.specular * (spec * material.specular); 
-
+    // combine results
+    vec3 ambient  = light.ambient  * material.diffuse;
+    vec3 diffuse  = light.diffuse  * diff * material.diffuse;
+    vec3 specular = light.specular * spec * material.specular;
     return (ambient + diffuse + specular);
 }  
 
@@ -112,9 +109,9 @@ void main()
     // properties
     vec3 norm = normalize(Normal);
     vec3 viewDir = normalize(cameraPos - FragPos);
-
+    vec3 result = vec3(0.0);
     // phase 1: Directional lighting
-    vec3 result = CalcDirLight(dirLight, norm, viewDir);
+    result += CalcDirLight(dirLight, norm, viewDir);
     // phase 2: Point lights
     for(int i = 0; i < NR_POINT_LIGHTS; i++)
         result += CalcPointLight(pointLights[i], norm, FragPos, viewDir);  

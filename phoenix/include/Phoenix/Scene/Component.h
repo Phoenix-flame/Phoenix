@@ -52,9 +52,9 @@ namespace Phoenix{
     };
 
     struct PointLightComponent: public DirLightComponent{
-        float constant;
-        float linear;
-        float quadratic; 
+        float constant = 1.0f;
+        float linear = 0.02f;
+        float quadratic = 0.099f; 
         void SetConstant(float constant) { this->constant = constant;} 
         void SetLinear(float linear) { this->linear = linear;} 
         void SetQuadratic(float quadratic) { this->quadratic = quadratic;} 

@@ -18,6 +18,13 @@ namespace Phoenix{
     {
         Entity entity = { m_Registry.create(), this };
         entity.AddComponent<TransformComponent>();
+        entity.GetComponent<TransformComponent>().Scale.x = 0.1;
+        entity.GetComponent<TransformComponent>().Scale.y = 0.1;
+        entity.GetComponent<TransformComponent>().Scale.z = 0.1;
+        entity.AddComponent<CubeComponent>();
+        entity.GetComponent<CubeComponent>().material.ambient = glm::vec3(255, 255, 255);
+        entity.GetComponent<CubeComponent>().material.diffuse = glm::vec3(255, 255, 255);
+
         entity.AddComponent<PointLightComponent>();
         auto& tag = entity.AddComponent<TagComponent>();
 		tag.Tag = name.empty() ? "Entity" : name;

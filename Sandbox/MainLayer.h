@@ -39,7 +39,7 @@ private:
     bool m_ViewportFocused = false, m_ViewportHovered = false;
     glm::vec2 m_ViewportSize = { 0.0f, 0.0f };
     
-    glm::vec3 m_BackgroundColor = { 0.28, 0.65, 0.87 };
+    glm::vec3 m_BackgroundColor = { 0.0, 0.0, 0.0 };
     EditorCamera m_MainCamera;
     Ref<Phoenix::SceneEditor> m_SceneEditor;
     Ref<Phoenix::Scene> m_Scene;

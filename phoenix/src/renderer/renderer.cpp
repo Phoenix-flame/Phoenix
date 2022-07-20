@@ -40,13 +40,13 @@ namespace Phoenix{
             s_RenderLightCube->m_Shader->SetFloat3("dirLight.ambient", dirLight.ambient);
             s_RenderLightCube->m_Shader->SetFloat3("dirLight.diffuse", dirLight.diffuse);
             s_RenderLightCube->m_Shader->SetFloat3("dirLight.specular", dirLight.specular);
-            s_RenderLightCube->m_Shader->SetFloat3("dirLight.position", lightPos);
+            s_RenderLightCube->m_Shader->SetFloat3("dirLight.direction", lightPos);
         }
         else {
             s_RenderLightCube->m_Shader->SetFloat3("dirLight.ambient", glm::vec3(0.0, 0.0, 0.0));
             s_RenderLightCube->m_Shader->SetFloat3("dirLight.diffuse", glm::vec3(0.0, 0.0, 0.0));
             s_RenderLightCube->m_Shader->SetFloat3("dirLight.specular", glm::vec3(0.0, 0.0, 0.0));
-            s_RenderLightCube->m_Shader->SetFloat3("dirLight.position", glm::vec3(0.0, 0.0, 0.0));
+            s_RenderLightCube->m_Shader->SetFloat3("dirLight.direction", glm::vec3(0.0, 0.0, 0.0));
         }
 
         for (int i = 0 ; i < 4 ; i ++)
@@ -62,9 +62,9 @@ namespace Phoenix{
                 s_RenderLightCube->m_Shader->SetFloat3("pointLights[" + std::to_string(i) + "].position", pointLightPos[i]);
             }
             else{
-                s_RenderLightCube->m_Shader->SetFloat("pointLights[" + std::to_string(i) + "].constant", 0.0f);
-                s_RenderLightCube->m_Shader->SetFloat("pointLights[" + std::to_string(i) + "].linear", 0.0f);
-                s_RenderLightCube->m_Shader->SetFloat("pointLights[" + std::to_string(i) + "].quadratic", 0.0f);
+                s_RenderLightCube->m_Shader->SetFloat("pointLights[" + std::to_string(i) + "].constant", 1.0f);
+                s_RenderLightCube->m_Shader->SetFloat("pointLights[" + std::to_string(i) + "].linear", 0.03f);
+                s_RenderLightCube->m_Shader->SetFloat("pointLights[" + std::to_string(i) + "].quadratic", 0.099f);
                 s_RenderLightCube->m_Shader->SetFloat3("pointLights[" + std::to_string(i) + "].ambient", glm::vec3(0.0, 0.0, 0.0));
                 s_RenderLightCube->m_Shader->SetFloat3("pointLights[" + std::to_string(i) + "].diffuse", glm::vec3(0.0, 0.0, 0.0));
                 s_RenderLightCube->m_Shader->SetFloat3("pointLights[" + std::to_string(i) + "].specular", glm::vec3(0.0, 0.0, 0.0));
