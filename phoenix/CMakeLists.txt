@@ -13,6 +13,7 @@ file(GLOB core_src
     "src/Scene/*.cpp"
     "src/Math/*.cpp"
     "src/vendor/ImGuizmo/*.cpp"
+    "src/vendor/ImFileDialog/*.cpp"
 )
 
 add_library(
@@ -58,4 +59,4 @@ find_package(spdlog REQUIRED)
 target_link_libraries(${APP_TARGET} fmt)
 target_link_libraries(${APP_TARGET} glfw)
 target_link_libraries(${APP_TARGET} OpenGL::GL ${GLEW_LIBRARIES})
-target_link_libraries(${APP_TARGET} ${SPDLOG_LIBRARIES}  ${EnTT_LIBRARIES})
+target_link_libraries(${APP_TARGET} ${SPDLOG_LIBRARIES}  ${EnTT_LIBRARIES} ${CMAKE_DL_LIBS})

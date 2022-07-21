@@ -109,6 +109,30 @@ void MainLayer::OnEvent(Phoenix::Event& e) {
 
 
 void MainLayer::OnImGuiRender(){
+    if (ImGui::BeginMainMenuBar())
+    {
+        if (ImGui::BeginMenu("File"))
+        {
+            if (ImGui::MenuItem("Import Scene")) {}
+            if (ImGui::MenuItem("Export Scene")) {}
+            ImGui::Separator();
+            if (ImGui::MenuItem("Import Shader")) {}
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Edit"))
+        {
+            if (ImGui::MenuItem("Undo", "CTRL+Z")) {}
+            if (ImGui::MenuItem("Redo", "CTRL+Y", false, false)) {}  // Disabled item
+            ImGui::Separator();
+            if (ImGui::MenuItem("Cut", "CTRL+X")) {}
+            if (ImGui::MenuItem("Copy", "CTRL+C")) {}
+            if (ImGui::MenuItem("Paste", "CTRL+V")) {}
+            ImGui::EndMenu();
+        }
+        ImGui::EndMainMenuBar();
+    }
+
+
     ImGui::Begin("Settings", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
 	ImGui::Text("Metrics");
     ImGuiContext& g = *GImGui;
@@ -128,7 +152,7 @@ void MainLayer::OnImGuiRender(){
 	ImGui::End();
 
     ImGui::Begin("Profiler", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
+    // ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
     ImGui::Columns(2);
     ImGui::Separator();
     int id = 0;
@@ -145,11 +169,11 @@ void MainLayer::OnImGuiRender(){
     }
     ImGui::Columns(1);
     ImGui::Separator();
-    ImGui::PopStyleVar();
+    // ImGui::PopStyleVar();
     ImGui::End();
 
 
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 0, 0 });
+    // ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 0, 0 });
     ImGui::Begin("Viewport");
 
     m_ViewportFocused = ImGui::IsWindowFocused();
@@ -165,7 +189,7 @@ void MainLayer::OnImGuiRender(){
 
 
     ImGui::End();
-    ImGui::PopStyleVar();
+    // ImGui::PopStyleVar();
     m_SceneEditor->OnImGuiRender();
 
     

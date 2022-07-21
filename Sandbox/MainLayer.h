@@ -47,6 +47,8 @@ private:
     Phoenix::Entity m_CameraEntity;
     Phoenix::Entity m_CubeEntity;
 
+    Phoenix::ShaderLibrary shaderLibrary;
+
     bool m_OverlayEnabled = true;
 
 };

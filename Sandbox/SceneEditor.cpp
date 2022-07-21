@@ -108,11 +108,11 @@ namespace Phoenix{
 			auto& component = entity.GetComponent<T>();
 			ImVec2 contentRegionAvailable = ImGui::GetContentRegionAvail();
 
-			ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{ 4, 4 });
+			// ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{ 4, 4 });
 			float lineHeight = ImGui::GetIO().FontDefault->FontSize + ImGui::GetStyle().FramePadding.y * 2.0;
 			ImGui::Separator();
 			bool open = ImGui::TreeNodeEx((void*)typeid(T).hash_code(), treeNodeFlags, name.c_str());
-			ImGui::PopStyleVar();
+			// ImGui::PopStyleVar();
 			ImGui::SameLine(contentRegionAvailable.x - lineHeight * 0.5f);
 			if (ImGui::Button("+", ImVec2{ lineHeight, lineHeight })){
 				ImGui::OpenPopup("ComponentSettings");
@@ -152,7 +152,7 @@ namespace Phoenix{
         ImGui::NextColumn();
         ImGui::PushMultiItemsWidths(3, ImGui::CalcItemWidth());
 
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{ 0, 0 });
+        // ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{ 0, 0 });
 
         float lineHeight = ImGui::GetIO().FontDefault->FontSize + ImGui::GetStyle().FramePadding.y * 2.0;
         ImVec2 buttonSize = { lineHeight + 3.0f, lineHeight };
@@ -198,7 +198,7 @@ namespace Phoenix{
         ImGui::DragFloat((std::string("##") + label3).c_str(), &values.z, 0.1f, 0.0f, 0.0f, "%.2f");
         ImGui::PopItemWidth();
 
-        ImGui::PopStyleVar();
+        // ImGui::PopStyleVar();
 
         ImGui::Columns(1);
 

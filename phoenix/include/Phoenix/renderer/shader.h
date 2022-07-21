@@ -54,8 +54,13 @@ namespace Phoenix{
 		uint32_t _rendererID;
 		std::string _name;
 	};
+
+
+
     class ShaderLibrary{
     public:
+		ShaderLibrary() = default;
+		~ShaderLibrary() = default;
         void Add(const std::string& name, const Ref<Shader>& shader);
         void Add(const Ref<Shader>& shader);
         Ref<Shader> Load(const std::string& filepath);
