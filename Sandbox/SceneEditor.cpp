@@ -21,13 +21,15 @@ namespace Phoenix{
 		// Right-click on blank space
 		if (ImGui::BeginPopupContextWindow(NULL, ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)){
 			if (ImGui::MenuItem("Create Empty Entity"))
-				m_ActiveScene->CreateEntity("Empty Entity");
+			{
+				m_SelectedEntity = m_ActiveScene->CreateEntity("Empty Entity");
+			}
 
 			if (ImGui::MenuItem("Create Point Light"))
 			{
 				try
 				{
-					m_ActiveScene->CreatePointLightEntity("Point Light");
+					m_SelectedEntity = m_ActiveScene->CreatePointLightEntity("Point Light");
 				}
 				catch(const std::exception& e)
 				{
@@ -38,7 +40,7 @@ namespace Phoenix{
 				
 			
 			if (ImGui::MenuItem("Create Directional Light"))
-				m_ActiveScene->CreateDirLightEntity("Directional Light");
+				m_SelectedEntity = m_ActiveScene->CreateDirLightEntity("Directional Light");
 
 			ImGui::EndPopup();
 		}
