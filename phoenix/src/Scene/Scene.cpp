@@ -26,8 +26,8 @@ namespace Phoenix{
         entity.GetComponent<TransformComponent>().Scale.y = 0.1;
         entity.GetComponent<TransformComponent>().Scale.z = 0.1;
         entity.AddComponent<CubeComponent>();
-        entity.GetComponent<CubeComponent>().material.ambient = glm::vec3(255, 255, 255);
-        entity.GetComponent<CubeComponent>().material.diffuse = glm::vec3(255, 255, 255);
+        entity.GetComponent<CubeComponent>().material.ambient = glm::vec3(1.0f, 1.0f, 1.0f);
+        entity.GetComponent<CubeComponent>().material.diffuse = glm::vec3(1.0f, 1.0f, 1.0f);
 
         entity.AddComponent<PointLightComponent>();
         auto& tag = entity.AddComponent<TagComponent>();
