@@ -1,12 +1,15 @@
 project(Sandbox)
 
 # Add sub directories
-include_directories(${PROJECT_SOURCE_DIR})
+include_directories(
+    ${PROJECT_SOURCE_DIR}
+    ${PROJECT_SOURCE_DIR}/Panels
+)
 # Create the executable
 add_executable(${PROJECT_NAME} 
     main.cpp
     MainLayer.cpp
-    SceneEditor.cpp
+    Panels/SceneEditor.cpp
 )
 
 # Link the static library from subproject1 using it's alias sub::lib1

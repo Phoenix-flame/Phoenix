@@ -138,7 +138,7 @@ void MainLayer::OnImGuiRender(){
 
     if(file_dialog.showFileDialog("Import Shader", imgui_addons::ImGuiFileBrowser::DialogMode::OPEN, ImVec2(700, 310), ".glsl"))
     {
-        shaderLibrary.Add(Shader::Create(file_dialog.selected_path));
+        m_ShaderLibrary.Add(Shader::Create(file_dialog.selected_path));
         // std::cout << file_dialog.selected_fn << std::endl;      // The name of the selected file or directory in case of Select Directory dialog mode
         // std::cout << file_dialog.selected_path << std::endl;    // The absolute path to the selected file
     }
@@ -162,9 +162,8 @@ void MainLayer::OnImGuiRender(){
 	ImGui::End();
 
     ImGui::Begin("Profiler", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
-    // ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
     ImGui::Columns(2);
-    ImGui::Separator();
     int id = 0;
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_Bullet;
     for (auto p:Application::s_TimeContainer){
@@ -179,8 +178,15 @@ void MainLayer::OnImGuiRender(){
     }
     ImGui::Columns(1);
     ImGui::Separator();
-    // ImGui::PopStyleVar();
+    ImGui::PopStyleVar();
     ImGui::End();
+
+
+    ImGui::Begin("Shader Library", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
+    // for(auto i:shade)
+    // m_ShaderLibrary.
+    ImGui::End();
+
 
 
     // ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 0, 0 });
