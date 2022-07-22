@@ -109,6 +109,7 @@ void MainLayer::OnEvent(Phoenix::Event& e) {
 
 
 void MainLayer::OnImGuiRender(){
+    bool import_shader = false, save = false;
     if (ImGui::BeginMainMenuBar())
     {
         if (ImGui::BeginMenu("File"))
@@ -116,7 +117,7 @@ void MainLayer::OnImGuiRender(){
             if (ImGui::MenuItem("Import Scene")) {}
             if (ImGui::MenuItem("Export Scene")) {}
             ImGui::Separator();
-            if (ImGui::MenuItem("Import Shader")) {}
+            if (ImGui::MenuItem("Import Shader")) { import_shader = true; }
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Edit"))
@@ -132,6 +133,15 @@ void MainLayer::OnImGuiRender(){
         ImGui::EndMainMenuBar();
     }
 
+    if(import_shader)
+        ImGui::OpenPopup("Import Shader");
+
+    if(file_dialog.showFileDialog("Import Shader", imgui_addons::ImGuiFileBrowser::DialogMode::OPEN, ImVec2(700, 310), ".glsl"))
+    {
+        shaderLibrary.Add(Shader::Create(file_dialog.selected_path));
+        // std::cout << file_dialog.selected_fn << std::endl;      // The name of the selected file or directory in case of Select Directory dialog mode
+        // std::cout << file_dialog.selected_path << std::endl;    // The absolute path to the selected file
+    }
 
     ImGui::Begin("Settings", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
 	ImGui::Text("Metrics");

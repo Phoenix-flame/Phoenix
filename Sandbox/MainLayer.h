@@ -3,6 +3,7 @@
 #include <Phoenix/event/keyEvent.h>
 #include <Phoenix/core/application.h>
 #include <Phoenix/imGui/imgui.h>
+#include <vendor/imFileDialog/ImGuiFileBrowser.h>
 #include <Phoenix/renderer/CameraController.h>
 #include <Phoenix/renderer/Framebuffer.h>
 #include <Phoenix/renderer/renderer_command.h>
@@ -50,5 +51,8 @@ private:
     Phoenix::ShaderLibrary shaderLibrary;
 
     bool m_OverlayEnabled = true;
+
+private:
+    imgui_addons::ImGuiFileBrowser file_dialog;
 
 };

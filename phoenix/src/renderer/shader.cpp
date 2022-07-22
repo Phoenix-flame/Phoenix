@@ -235,6 +235,7 @@ namespace Phoenix{
 	void ShaderLibrary::Add(const std::string& name, const Ref<Shader>& shader){
 		PHX_CORE_ASSERT(!Exists(name), "Shader already exists!");
 		m_Shaders[name] = shader;
+		PHX_CORE_TRACE("{0} shader added to library.", name);
 	}
 
 	void ShaderLibrary::Add(const Ref<Shader>& shader){
