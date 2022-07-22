@@ -161,40 +161,52 @@ void MainLayer::OnImGuiRender(){
     }
 	ImGui::End();
 
-    ImGui::Begin("Profiler", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
-    ImGui::Columns(2);
-    int id = 0;
-    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_Bullet;
-    for (auto p:Application::s_TimeContainer){
-        ImGui::PushID(id++);
-        ImGui::AlignTextToFramePadding();
-        ImGui::Text((p.first).c_str(), nullptr);
-        ImGui::NextColumn();
-        ImGui::SetNextItemWidth(-1);
-        ImGui::Text((std::to_string(p.second) + " us").c_str(), nullptr);
-        ImGui::NextColumn();
-        ImGui::PopID();
-    }
-    ImGui::Columns(1);
-    ImGui::Separator();
-    ImGui::PopStyleVar();
-    ImGui::End();
-
-
-    ImGui::Begin("Shader Library", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
-    ShaderLibrary::ShaderMap::iterator iter;
-    std::cout << "iter->first" << std::endl;
-    for(iter = m_ShaderLibrary.GetBegin(); iter != m_ShaderLibrary.GetEnd() ; iter ++)
+    // Profiler
     {
-        std::cout << iter->first << std::endl;
+        ImGui::Begin("Profiler", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
+        ImGui::Columns(2);
+        int id = 0;
+        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_Bullet;
+        for (auto p:Application::s_TimeContainer){
+            ImGui::PushID(id++);
+            ImGui::AlignTextToFramePadding();
+            ImGui::Text((p.first).c_str(), nullptr);
+            ImGui::NextColumn();
+            ImGui::SetNextItemWidth(-1);
+            ImGui::Text((std::to_string(p.second) + " us").c_str(), nullptr);
+            ImGui::NextColumn();
+            ImGui::PopID();
+        }
+        ImGui::Columns(1);
+        ImGui::Separator();
+        ImGui::PopStyleVar();
+        ImGui::End();
     }
-    // m_ShaderLibrary.
-    ImGui::End();
+
+    // Shader Library
+    {
+        ImGui::Begin("Shader Library", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
+        ImGui::Columns(1);
+        ShaderLibrary::ShaderMap::iterator iter;
+        int id = 0;
+        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_Bullet;
+        for(iter = m_ShaderLibrary.GetBegin(); iter != m_ShaderLibrary.GetEnd() ; iter ++)
+        {
+            ImGui::PushID(id++);
+            ImGui::AlignTextToFramePadding();
+            ImGui::Text((iter->first).c_str(), nullptr);
+            ImGui::PopID();
+        }
+        ImGui::Separator();
+        ImGui::PopStyleVar();
+        ImGui::End();
+    }
 
 
 
-    // ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 0, 0 });
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 0, 0 });
     ImGui::Begin("Viewport");
 
     m_ViewportFocused = ImGui::IsWindowFocused();
@@ -210,7 +222,7 @@ void MainLayer::OnImGuiRender(){
 
 
     ImGui::End();
-    // ImGui::PopStyleVar();
+    ImGui::PopStyleVar();
     m_SceneEditor->OnImGuiRender();
 
     
