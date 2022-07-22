@@ -156,36 +156,39 @@ void MainLayer::OnImGuiRender(){
 
     style.WindowMinSize.x = minWinSizeX;
 
-    bool import_shader = false, save = false;
-    if (ImGui::BeginMainMenuBar())
+    // Main Menu
     {
-        if (ImGui::BeginMenu("File"))
+        bool import_shader = false, save = false;
+        if (ImGui::BeginMainMenuBar())
         {
-            if (ImGui::MenuItem("Import Scene")) {}
-            if (ImGui::MenuItem("Export Scene")) {}
-            ImGui::Separator();
-            if (ImGui::MenuItem("Import Shader")) { import_shader = true; }
-            ImGui::EndMenu();
+            if (ImGui::BeginMenu("File"))
+            {
+                if (ImGui::MenuItem("Import Scene")) {}
+                if (ImGui::MenuItem("Export Scene")) {}
+                ImGui::Separator();
+                if (ImGui::MenuItem("Import Shader")) { import_shader = true; }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Edit"))
+            {
+                if (ImGui::MenuItem("Undo", "CTRL+Z")) {}
+                if (ImGui::MenuItem("Redo", "CTRL+Y", false, false)) {}  // Disabled item
+                ImGui::Separator();
+                if (ImGui::MenuItem("Cut", "CTRL+X")) {}
+                if (ImGui::MenuItem("Copy", "CTRL+C")) {}
+                if (ImGui::MenuItem("Paste", "CTRL+V")) {}
+                ImGui::EndMenu();
+            }
+            ImGui::EndMainMenuBar();
         }
-        if (ImGui::BeginMenu("Edit"))
+
+        if(import_shader)
+            ImGui::OpenPopup("Import Shader");
+
+        if(file_dialog.showFileDialog("Import Shader", imgui_addons::ImGuiFileBrowser::DialogMode::OPEN, ImVec2(700, 310), ".glsl"))
         {
-            if (ImGui::MenuItem("Undo", "CTRL+Z")) {}
-            if (ImGui::MenuItem("Redo", "CTRL+Y", false, false)) {}  // Disabled item
-            ImGui::Separator();
-            if (ImGui::MenuItem("Cut", "CTRL+X")) {}
-            if (ImGui::MenuItem("Copy", "CTRL+C")) {}
-            if (ImGui::MenuItem("Paste", "CTRL+V")) {}
-            ImGui::EndMenu();
+            m_ShaderLibrary.Add(Shader::Create(file_dialog.selected_path));
         }
-        ImGui::EndMainMenuBar();
-    }
-
-    if(import_shader)
-        ImGui::OpenPopup("Import Shader");
-
-    if(file_dialog.showFileDialog("Import Shader", imgui_addons::ImGuiFileBrowser::DialogMode::OPEN, ImVec2(700, 310), ".glsl"))
-    {
-        m_ShaderLibrary.Add(Shader::Create(file_dialog.selected_path));
     }
 
     // Settings
