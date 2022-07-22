@@ -152,7 +152,7 @@ namespace Phoenix{
         ImGui::NextColumn();
         ImGui::PushMultiItemsWidths(3, ImGui::CalcItemWidth());
 
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{ 0, 0 });
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{ 4, 4 });
 
         float lineHeight = ImGui::GetIO().FontDefault->FontSize + ImGui::GetStyle().FramePadding.y * 2.0;
         ImVec2 buttonSize = { lineHeight + 3.0f, lineHeight };
@@ -208,24 +208,23 @@ namespace Phoenix{
 
 
     void SceneEditor::DrawComponents(Entity entity){
-		int total_w = ImGui::GetContentRegionAvail().x;
-		if (entity.HasComponent<TagComponent>()){
-			auto& tag = entity.GetComponent<TagComponent>().Tag;
-			char buffer[256];
-			memset(buffer, 0, sizeof(buffer));
-			std::strncpy(buffer, tag.c_str(), sizeof(buffer));
-			if (ImGui::InputText("##Tag", buffer, sizeof(buffer))){
-				tag = std::string(buffer);
+		{
+			int total_w = ImGui::GetContentRegionAvail().x;
+			if (entity.HasComponent<TagComponent>()){
+				auto& tag = entity.GetComponent<TagComponent>().Tag;
+				char buffer[256];
+				memset(buffer, 0, sizeof(buffer));
+				std::strncpy(buffer, tag.c_str(), sizeof(buffer));
+				if (ImGui::InputText("##Tag", buffer, sizeof(buffer))){
+					tag = std::string(buffer);
+				}
 			}
+			ImGui::SameLine(total_w - 90);
+			ImGui::PushItemWidth(-1);
+			ImGui::SetNextItemWidth(total_w);
+			if (ImGui::Button("Add Component"))
+				ImGui::OpenPopup("AddComponent");
 		}
-
-		ImGui::SameLine(total_w - 90);
-
-		ImGui::PushItemWidth(-1);
-		ImGui::SetNextItemWidth(total_w);
-		if (ImGui::Button("Add Component"))
-			ImGui::OpenPopup("AddComponent");
-		ImGui::PopStyleVar();
 
 		if (ImGui::BeginPopup("AddComponent")){
             if (ImGui::MenuItem("Camera")){
@@ -242,13 +241,6 @@ namespace Phoenix{
                     PHX_CORE_ASSERT("This entity already has the Cube Component!");
                 ImGui::CloseCurrentPopup();
             }
-            // if (ImGui::MenuItem("Directional Light")){
-            //     if (!m_SelectedEntity.HasComponent<DirLightComponent>())
-            //         m_SelectedEntity.AddComponent<DirLightComponent>();
-            //     else
-            //         PHX_CORE_ASSERT("This entity already has the Cube Component!");
-            //     ImGui::CloseCurrentPopup();
-            // }
 			if (ImGui::MenuItem("Point Light")){
                 if (!m_SelectedEntity.HasComponent<PointLightComponent>())
                     m_SelectedEntity.AddComponent<PointLightComponent>();
@@ -256,15 +248,6 @@ namespace Phoenix{
                     PHX_CORE_ASSERT("This entity already has the Cube Component!");
                 ImGui::CloseCurrentPopup();
             }
-
-				// if (ImGui::MenuItem("Sprite Renderer"))
-				// {
-				// 	if (!m_SelectedEntity.HasComponent<SpriteRendererComponent>())
-				// 		m_SelectedEntity.AddComponent<SpriteRendererComponent>();
-				// 	else
-				// 		PHX_CORE_ASSERT("This entity already has the Sprite Renderer Component!");
-				// 	ImGui::CloseCurrentPopup();
-				// }
 
 			ImGui::EndPopup();
 		}
