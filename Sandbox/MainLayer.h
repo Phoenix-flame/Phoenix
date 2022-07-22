@@ -45,7 +45,7 @@ private:
     Ref<Phoenix::SceneEditor> m_SceneEditor;
     Ref<Phoenix::Scene> m_Scene;
 
-    Phoenix::ShaderLibrary m_ShaderLibrary;
+    Scope<Phoenix::ShaderLibrary> m_ShaderLibrary;
 
     bool m_OverlayEnabled = true;
 

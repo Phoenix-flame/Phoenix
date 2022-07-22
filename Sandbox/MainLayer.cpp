@@ -36,6 +36,12 @@ void MainLayer::OnAttach() {
     m_Scene->CreateEntity("Cube").AddComponent<CubeComponent>();
     m_Scene->CreatePointLightEntity("Point Light");
 
+    m_ShaderLibrary = CreateScope<ShaderLibrary>();
+    m_ShaderLibrary->Add(Shader::Create("/home/alireza/Programming/Phoenix/Sandbox/assets/shaders/basic.glsl"));
+    m_ShaderLibrary->Add(Shader::Create("/home/alireza/Programming/Phoenix/Sandbox/assets/shaders/lighting.glsl"));
+    m_ShaderLibrary->Add(Shader::Create("/home/alireza/Programming/Phoenix/Sandbox/assets/shaders/texture.glsl"));
+    
+
     m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
 }
 
@@ -187,7 +193,7 @@ void MainLayer::OnImGuiRender(){
 
         if(file_dialog.showFileDialog("Import Shader", imgui_addons::ImGuiFileBrowser::DialogMode::OPEN, ImVec2(700, 310), ".glsl"))
         {
-            m_ShaderLibrary.Add(Shader::Create(file_dialog.selected_path));
+            m_ShaderLibrary->Add(Shader::Create(file_dialog.selected_path));
         }
     }
 
@@ -216,6 +222,13 @@ void MainLayer::OnImGuiRender(){
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 20);
         ImGui::Columns(2);
+
+        ImGui::Text("Scope");
+        ImGui::NextColumn();
+        ImGui::Text("Elapsed Time (µs)");
+        ImGui::NextColumn();
+        ImGui::Separator();
+
         int id = 0;
         ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_Bullet;
         for (auto p:Application::s_TimeContainer){
@@ -224,7 +237,7 @@ void MainLayer::OnImGuiRender(){
             ImGui::Text((p.first).c_str(), nullptr);
             ImGui::NextColumn();
             ImGui::SetNextItemWidth(-1);
-            ImGui::Text((std::to_string(p.second) + " us").c_str(), nullptr);
+            ImGui::Text((std::to_string(p.second) + " µs").c_str(), nullptr);
             ImGui::NextColumn();
             ImGui::PopID();
         }
@@ -240,16 +253,23 @@ void MainLayer::OnImGuiRender(){
         ImGui::Begin("Shader Library", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
         ImGui::Columns(2);
+        ImGui::Text("Name");
+        ImGui::NextColumn();
+        ImGui::Text("Number of usage");
+        ImGui::NextColumn();
+        ImGui::Separator();
+
         ShaderLibrary::ShaderMap::iterator iter;
         int id = 0;
         ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_Bullet;
-        for(iter = m_ShaderLibrary.GetBegin(); iter != m_ShaderLibrary.GetEnd() ; iter ++)
+        for(iter = m_ShaderLibrary->GetBegin(); iter != m_ShaderLibrary->GetEnd() ; iter ++)
         {
             ImGui::PushID(id++);
             ImGui::AlignTextToFramePadding();
             ImGui::Text((iter->first).c_str(), nullptr);
             ImGui::NextColumn();
-            ImGui::Text("This is a shader");
+            ImGui::Text("0");
+            ImGui::NextColumn();
             ImGui::PopID();
         }
         ImGui::Columns(1);
