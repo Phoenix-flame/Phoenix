@@ -5,11 +5,7 @@
 #define GL_GLEXT_PROTOTYPES
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
-
-
-
 #include <Phoenix/core/application.h>
-
 
 namespace Phoenix{
     ImGuiLayer::ImGuiLayer(): Layer("ImGuiLayer"){}
@@ -22,10 +18,9 @@ namespace Phoenix{
 		//io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
 		io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
         io.ConfigWindowsMoveFromTitleBarOnly = true;
-		// io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;         // Enable Multi-Viewport / Platform Windows
+		//io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;       // Enable Multi-Viewport / Platform Windows
 		//io.ConfigFlags |= ImGuiConfigFlags_ViewportsNoTaskBarIcons;
 		//io.ConfigFlags |= ImGuiConfigFlags_ViewportsNoMerge;
-		io.Fonts->AddFontFromFileTTF("assets/fonts/Roboto-Regular.ttf", 15.0f);
 		io.Fonts->AddFontFromFileTTF("assets/fonts/Roboto-Bold.ttf", 15.0f);
 		io.FontDefault = io.Fonts->AddFontFromFileTTF("assets/fonts/Roboto-Regular.ttf", 15.0f);
 	

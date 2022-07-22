@@ -8,7 +8,8 @@
                 "/usr/local/include/entt",
                 "/usr/include/glm",
                 "/usr/include/GLFW",
-                "/usr/include"
+                "/usr/include",
+                "${workspaceFolder}/phoenix/include/Phoenix/imGui"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/gcc",

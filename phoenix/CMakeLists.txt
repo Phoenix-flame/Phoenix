@@ -23,6 +23,7 @@ add_library(
 # add_library(phoenix ALIAS ${APP_TARGET})
 include_directories(
     ${PROJECT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/include/Phoenix/imGui
 )
 target_include_directories(
     ${APP_TARGET}

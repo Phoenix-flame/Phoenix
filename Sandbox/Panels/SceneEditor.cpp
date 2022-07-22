@@ -142,7 +142,7 @@ namespace Phoenix{
     static void DrawVec3Control(const std::string& label, glm::vec3& values, float resetValue = 0.0f, float columnWidth = 100.0f
             ,std::string label1="X", std::string label2="Y", std::string label3="Z"){
         ImGuiIO& io = ImGui::GetIO();
-        auto boldFont = io.Fonts->Fonts[1];
+        auto boldFont = io.Fonts->Fonts[0];
 
         ImGui::PushID(label.c_str());
 
