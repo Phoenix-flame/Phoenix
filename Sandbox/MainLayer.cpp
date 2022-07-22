@@ -188,12 +188,11 @@ void MainLayer::OnImGuiRender(){
         m_ShaderLibrary.Add(Shader::Create(file_dialog.selected_path));
     }
 
+    // Settings
     {
         ImGui::Begin("Settings", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
         ImGui::Text("Metrics");
-        ImGuiContext& g = *GImGui;
-        ImGuiIO& io = g.IO;
-        ImGuiMetricsConfig* cfg = &g.DebugMetricsConfig;
+        ImGuiIO& io = ImGui::GetIO();
 
         // Basic info
         ImGui::Text("Dear ImGui %s", ImGui::GetVersion());
