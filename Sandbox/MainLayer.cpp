@@ -188,17 +188,20 @@ void MainLayer::OnImGuiRender(){
     {
         ImGui::Begin("Shader Library", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
-        ImGui::Columns(1);
+        ImGui::Columns(2);
         ShaderLibrary::ShaderMap::iterator iter;
         int id = 0;
-        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_Bullet;
+        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_Bullet;
         for(iter = m_ShaderLibrary.GetBegin(); iter != m_ShaderLibrary.GetEnd() ; iter ++)
         {
             ImGui::PushID(id++);
             ImGui::AlignTextToFramePadding();
             ImGui::Text((iter->first).c_str(), nullptr);
+            ImGui::NextColumn();
+            ImGui::Text("This is a shader");
             ImGui::PopID();
         }
+        ImGui::Columns(1);
         ImGui::Separator();
         ImGui::PopStyleVar();
         ImGui::End();
