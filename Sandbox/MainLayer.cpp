@@ -169,10 +169,10 @@ void MainLayer::OnImGuiRender(){
     for (auto p:Application::s_TimeContainer){
         ImGui::PushID(id++);
         ImGui::AlignTextToFramePadding();
-        ImGui::Text((p.first).c_str());
+        ImGui::Text((p.first).c_str(), nullptr);
         ImGui::NextColumn();
         ImGui::SetNextItemWidth(-1);
-        ImGui::Text((std::to_string(p.second) + " us").c_str());
+        ImGui::Text((std::to_string(p.second) + " us").c_str(), nullptr);
         ImGui::NextColumn();
         ImGui::PopID();
     }
@@ -183,7 +183,12 @@ void MainLayer::OnImGuiRender(){
 
 
     ImGui::Begin("Shader Library", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
-    // for(auto i:shade)
+    ShaderLibrary::ShaderMap::iterator iter;
+    std::cout << "iter->first" << std::endl;
+    for(iter = m_ShaderLibrary.GetBegin(); iter != m_ShaderLibrary.GetEnd() ; iter ++)
+    {
+        std::cout << iter->first << std::endl;
+    }
     // m_ShaderLibrary.
     ImGui::End();
 

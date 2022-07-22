@@ -58,6 +58,8 @@ namespace Phoenix{
 
 
     class ShaderLibrary{
+	public:
+		using ShaderMap = std::unordered_map<std::string, Ref<Shader>>;
     public:
 		ShaderLibrary() = default;
 		~ShaderLibrary() = default;
@@ -67,10 +69,19 @@ namespace Phoenix{
         Ref<Shader> Load(const std::string& name, const std::string& filepath);
 
         Ref<Shader> Get(const std::string& name);
-		
+
         bool Exists(const std::string& name) const;
+
+		ShaderMap::iterator GetBegin()
+		{
+			return m_Shaders.begin();
+		}
+		ShaderMap::iterator GetEnd()
+		{
+			return m_Shaders.end();
+		}
     private:
-        std::unordered_map<std::string, Ref<Shader>> m_Shaders;
+        ShaderMap m_Shaders;
     };
 }
 
