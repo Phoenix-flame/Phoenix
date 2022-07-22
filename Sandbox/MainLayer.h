@@ -9,7 +9,7 @@
 #include <Phoenix/renderer/renderer_command.h>
 #include <Phoenix/Scene/Scene.h>
 #include <Phoenix/event/keyEvent.h>
-#include "SceneEditor.h"
+#include "Panels/SceneEditor.h"
 
 
 using namespace Phoenix;
@@ -44,9 +44,6 @@ private:
     EditorCamera m_MainCamera;
     Ref<Phoenix::SceneEditor> m_SceneEditor;
     Ref<Phoenix::Scene> m_Scene;
-
-    Phoenix::Entity m_CameraEntity;
-    Phoenix::Entity m_CubeEntity;
 
     Phoenix::ShaderLibrary m_ShaderLibrary;
 

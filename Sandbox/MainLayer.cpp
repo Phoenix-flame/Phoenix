@@ -32,13 +32,9 @@ void MainLayer::OnAttach() {
 
     m_Scene->OnResize(m_Framebuffer->GetSpecification().Width, m_Framebuffer->GetSpecification().Height);
 
-    m_CameraEntity = m_Scene->CreateEntity("Camera");
-    m_CameraEntity.AddComponent<CameraComponent>();
-
-    m_CubeEntity = m_Scene->CreateEntity("Cube");
-    m_CubeEntity.AddComponent<CubeComponent>();
-    
-    m_Scene->CreatePointLightEntity("Point Light 1");
+    m_Scene->CreateEntity("Camera").AddComponent<CameraComponent>();
+    m_Scene->CreateEntity("Cube").AddComponent<CubeComponent>();
+    m_Scene->CreatePointLightEntity("Point Light");
 
     m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
 }
@@ -109,6 +105,57 @@ void MainLayer::OnEvent(Phoenix::Event& e) {
 
 
 void MainLayer::OnImGuiRender(){
+    // Note: Switch this to true to enable dockspace
+    static bool dockspaceOpen = true;
+    static bool opt_fullscreen_persistant = true;
+    bool opt_fullscreen = opt_fullscreen_persistant;
+    static ImGuiDockNodeFlags dockspace_flags = ImGuiDockNodeFlags_None;
+
+    // We are using the ImGuiWindowFlags_NoDocking flag to make the parent window not dockable into,
+    // because it would be confusing to have two docking targets within each others.
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
+    if (opt_fullscreen)
+    {
+        ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(viewport->Pos);
+        ImGui::SetNextWindowSize(viewport->Size);
+        // PHX_TRACE("Position: [{0}, {1}] , Size: [{2}, {3}]", viewport->Pos.x, viewport->Pos.y, viewport->Size.x, viewport->Size.y);
+        ImGui::SetNextWindowViewport(viewport->ID);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        window_flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+        window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+    }
+
+    // When using ImGuiDockNodeFlags_PassthruCentralNode, DockSpace() will render our background and handle the pass-thru hole, so we ask Begin() to not render a background.
+    if (dockspace_flags & ImGuiDockNodeFlags_PassthruCentralNode)
+        window_flags |= ImGuiWindowFlags_NoBackground;
+
+    // Important: note that we proceed even if Begin() returns false (aka window is collapsed).
+    // This is because we want to keep our DockSpace() active. If a DockSpace() is inactive, 
+    // all active windows docked into it will lose their parent and become undocked.
+    // We cannot preserve the docking relationship between an active window and an inactive docking, otherwise 
+    // any change of dockspace/settings would lead to windows being stuck in limbo and never being visible.
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGui::Begin("DockSpace Demo", &dockspaceOpen, window_flags);
+    ImGui::PopStyleVar();
+
+    if (opt_fullscreen)
+        ImGui::PopStyleVar(2);
+
+    // DockSpace
+    ImGuiIO& io = ImGui::GetIO();
+    ImGuiStyle& style = ImGui::GetStyle();
+    float minWinSizeX = style.WindowMinSize.x;
+    style.WindowMinSize.x = 370.0f;
+    if (io.ConfigFlags & ImGuiConfigFlags_DockingEnable)
+    {
+        ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
+        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags);
+    }
+
+    style.WindowMinSize.x = minWinSizeX;
+
     bool import_shader = false, save = false;
     if (ImGui::BeginMainMenuBar())
     {
@@ -139,32 +186,33 @@ void MainLayer::OnImGuiRender(){
     if(file_dialog.showFileDialog("Import Shader", imgui_addons::ImGuiFileBrowser::DialogMode::OPEN, ImVec2(700, 310), ".glsl"))
     {
         m_ShaderLibrary.Add(Shader::Create(file_dialog.selected_path));
-        // std::cout << file_dialog.selected_fn << std::endl;      // The name of the selected file or directory in case of Select Directory dialog mode
-        // std::cout << file_dialog.selected_path << std::endl;    // The absolute path to the selected file
     }
 
-    ImGui::Begin("Settings", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
-	ImGui::Text("Metrics");
-    ImGuiContext& g = *GImGui;
-    ImGuiIO& io = g.IO;
-    ImGuiMetricsConfig* cfg = &g.DebugMetricsConfig;
+    {
+        ImGui::Begin("Settings", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
+        ImGui::Text("Metrics");
+        ImGuiContext& g = *GImGui;
+        ImGuiIO& io = g.IO;
+        ImGuiMetricsConfig* cfg = &g.DebugMetricsConfig;
 
-    // Basic info
-    ImGui::Text("Dear ImGui %s", ImGui::GetVersion());
-    ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
-    ImGui::Text("%d vertices, %d indices (%d triangles)", io.MetricsRenderVertices, io.MetricsRenderIndices, io.MetricsRenderIndices / 3);
-    ImGui::Separator();
+        // Basic info
+        ImGui::Text("Dear ImGui %s", ImGui::GetVersion());
+        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
+        ImGui::Text("%d vertices, %d indices (%d triangles)", io.MetricsRenderVertices, io.MetricsRenderIndices, io.MetricsRenderIndices / 3);
+        ImGui::Separator();
 
-    ImGui::ColorEdit3("Background Color", glm::value_ptr(m_BackgroundColor));
-    if (ImGui::Checkbox("VSync", &vsync)){
-        Application::Get().GetWindow().SetVSync(vsync);
+        ImGui::ColorEdit3("Background Color", glm::value_ptr(m_BackgroundColor));
+        if (ImGui::Checkbox("VSync", &vsync)){
+            Application::Get().GetWindow().SetVSync(vsync);
+        }
+        ImGui::End();
     }
-	ImGui::End();
 
     // Profiler
     {
         ImGui::Begin("Profiler", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 20);
         ImGui::Columns(2);
         int id = 0;
         ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_Bullet;
@@ -180,6 +228,7 @@ void MainLayer::OnImGuiRender(){
         }
         ImGui::Columns(1);
         ImGui::Separator();
+        ImGui::PopStyleVar();
         ImGui::PopStyleVar();
         ImGui::End();
     }
@@ -226,9 +275,10 @@ void MainLayer::OnImGuiRender(){
 
     ImGui::End();
     ImGui::PopStyleVar();
+
     m_SceneEditor->OnImGuiRender();
 
-    
+    ImGui::End();
 
 }
 
