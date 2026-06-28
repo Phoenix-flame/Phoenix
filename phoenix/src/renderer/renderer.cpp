@@ -1,15 +1,18 @@
 #include <Phoenix/renderer/renderer.h>
 #include <Phoenix/renderer/renderer_command.h>
 #include <Phoenix/core/base.h>
+#include <cmath>
 
 namespace Phoenix{
     Scope<Renderer::SceneData> Renderer::s_SceneData = CreateScope<Renderer::SceneData>();
     Scope<RenderLightCube> Renderer::s_RenderLightCube = CreateScope<RenderLightCube>();
+    Scope<RenderCameraGizmo> Renderer::s_CameraGizmo = CreateScope<RenderCameraGizmo>();
     Ref<Shader> Renderer::s_OutlineShader;
 
 	void Renderer::Init(){
 		RenderCommand::Init();
         s_RenderLightCube->Init();
+        s_CameraGizmo->Init();
         s_OutlineShader = Shader::Create(std::string(PHX_PROJECT_DIR) + "/Sandbox/assets/shaders/outline.glsl");
 	}
 
@@ -145,6 +148,26 @@ namespace Phoenix{
 
     void Renderer::DrawOutlineCube(const glm::mat4& transform, const glm::vec3& color){
         DrawOutline({ s_RenderLightCube->m_Vertex_array }, transform, color);
+    }
+
+    void Renderer::DrawCameraGizmo(const glm::mat4& transform, float verticalFov, float aspect, const glm::vec3& color){
+        // Shape the unit frustum (base half-size 1 at z=-1) to the camera's FOV/aspect.
+        const float length = 1.5f;
+        float halfHeight = length * std::tan(verticalFov * 0.5f);
+        float halfWidth = halfHeight * aspect;
+        glm::mat4 model = transform * glm::scale(glm::mat4(1.0f), glm::vec3(halfWidth, halfHeight, length));
+
+        s_OutlineShader->Bind();
+        s_OutlineShader->SetMat4("view", s_SceneData->ViewMatrix);
+        s_OutlineShader->SetMat4("projection", s_SceneData->ProjectionMatrix);
+        s_OutlineShader->SetMat4("model", model);
+        s_OutlineShader->SetFloat3("u_Color", color);
+
+        s_CameraGizmo->m_Vertex_array->Bind();
+        glLineWidth(2.0f);
+        glDrawElements(GL_LINES, 16, GL_UNSIGNED_INT, 0);
+
+        s_OutlineShader->Unbind();
     }
 
 	void Renderer::EndScene(){

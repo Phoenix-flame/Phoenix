@@ -267,7 +267,18 @@ namespace Phoenix{
             }
         }
 
-
+        // Camera frustum gizmos so camera entities show their position and view angle.
+        {
+            auto cameraView = m_Registry.view<CameraComponent, TransformComponent>();
+            for (auto entity : cameraView){
+                auto& cameraComponent = cameraView.get<CameraComponent>(entity);
+                auto& transform = cameraView.get<TransformComponent>(entity);
+                float fov = cameraComponent.camera.GetPerspectiveVerticalFOV();
+                float aspect = cameraComponent.camera.GetOrthographicAcpectRatio();
+                if (aspect <= 0.0f) { aspect = 16.0f / 9.0f; }
+                Renderer::DrawCameraGizmo(transform.GetTransform(), fov, aspect, glm::vec3(0.3f, 0.7f, 1.0f));
+            }
+        }
     }
 
 

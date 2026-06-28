@@ -89,6 +89,35 @@ namespace Phoenix{
     };
 
 
+    // Wireframe frustum pyramid drawn as GL_LINES to visualize a camera in the scene.
+    // Unit shape: apex at the origin, square base of half-size 1 at z = -1 (looking -Z).
+    struct RenderCameraGizmo{
+        void Init(){
+            m_Vertex_array = CreateRef<VertexArray>();
+            m_Vertex_array->Bind();
+            Ref<VertexBuffer> vertexBuffer = CreateRef<VertexBuffer>(vertices, sizeof(vertices));
+            BufferLayout layout = { { ShaderDataType::Float3, "a_Position" } };
+            vertexBuffer->SetLayout(layout);
+            m_Vertex_array->AddVertexBuffer(vertexBuffer);
+            Ref<IndexBuffer> indexBuffer = CreateRef<IndexBuffer>(indices, sizeof(indices) / sizeof(unsigned int));
+            m_Vertex_array->SetIndexBuffer(indexBuffer);
+        }
+
+        Ref<VertexArray> m_Vertex_array;
+        float vertices[15] = {
+             0.0f,  0.0f,  0.0f, // apex (camera position)
+            -1.0f, -1.0f, -1.0f,
+             1.0f, -1.0f, -1.0f,
+             1.0f,  1.0f, -1.0f,
+            -1.0f,  1.0f, -1.0f
+        };
+        unsigned int indices[16] = {
+            0,1, 0,2, 0,3, 0,4, // apex to base corners
+            1,2, 2,3, 3,4, 4,1  // base square
+        };
+    };
+
+
     class Renderer{
 	public:
 		static void Init();
@@ -123,6 +152,10 @@ namespace Phoenix{
 		static void DrawOutline(const std::vector<Ref<VertexArray>>& vertexArrays, const glm::mat4& transform, const glm::vec3& color);
 		static void DrawOutlineCube(const glm::mat4& transform, const glm::vec3& color);
 
+		// Draw a wireframe camera frustum at the given transform. verticalFov is in
+		// radians; aspect is width/height. Depth-tested so scene geometry occludes it.
+		static void DrawCameraGizmo(const glm::mat4& transform, float verticalFov, float aspect, const glm::vec3& color);
+
 		static RendererAPI::API GetAPI() { return RendererAPI::GetAPI(); }
 	private:
 		struct SceneData{
@@ -132,6 +165,7 @@ namespace Phoenix{
 		};
 		static Scope<SceneData> s_SceneData;
         static Scope<RenderLightCube> s_RenderLightCube;
+        static Scope<RenderCameraGizmo> s_CameraGizmo;
         static Ref<Shader> s_OutlineShader;
 	};
 }
