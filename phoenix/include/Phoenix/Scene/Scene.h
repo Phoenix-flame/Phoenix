@@ -15,7 +15,7 @@ namespace Phoenix{
     class PhysicsWorld;
     class Scene{
     public:
-        Scene() = default;
+        Scene();
         ~Scene();
 
         void OnUpdate(EditorCamera& editorCamera, Timestep ts);

@@ -7,6 +7,7 @@
 #include <Phoenix/core/Profiler.h>
 #include <Phoenix/Physics/Physics.h>
 namespace Phoenix{
+    Scene::Scene() = default;
     Scene::~Scene() = default;
 
     void Scene::OnRuntimeStart(){
