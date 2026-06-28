@@ -102,7 +102,7 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
     glm::mat4 projection = m_MainCamera.GetViewProjectionMatrix();
     {
         PHX_PROFILE("Scene Update");
-        m_Scene->OnUpdate(m_MainCamera, ts);
+        m_Scene->OnUpdate(m_MainCamera, ts, m_SceneEditor->GetSelectedEntity());
     }
 
     m_Framebuffer->Unbind();

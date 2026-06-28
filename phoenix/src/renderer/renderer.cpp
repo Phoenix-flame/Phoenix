@@ -5,10 +5,12 @@
 namespace Phoenix{
     Scope<Renderer::SceneData> Renderer::s_SceneData = CreateScope<Renderer::SceneData>();
     Scope<RenderLightCube> Renderer::s_RenderLightCube = CreateScope<RenderLightCube>();
+    Ref<Shader> Renderer::s_OutlineShader;
 
 	void Renderer::Init(){
 		RenderCommand::Init();
         s_RenderLightCube->Init();
+        s_OutlineShader = Shader::Create(std::string(PHX_PROJECT_DIR) + "/Sandbox/assets/shaders/outline.glsl");
 	}
 
 	void Renderer::Shutdown(){
@@ -104,6 +106,45 @@ namespace Phoenix{
 
     void Renderer::SubmitCube(const Material& material, const glm::mat4& transform){
         Submit(s_RenderLightCube->m_Vertex_array, material, transform);
+    }
+
+    void Renderer::DrawOutline(const std::vector<Ref<VertexArray>>& vertexArrays, const glm::mat4& transform, const glm::vec3& color){
+        if (vertexArrays.empty()) { return; }
+
+        s_OutlineShader->Bind();
+        s_OutlineShader->SetMat4("view", s_SceneData->ViewMatrix);
+        s_OutlineShader->SetMat4("projection", s_SceneData->ProjectionMatrix);
+        s_OutlineShader->SetFloat3("u_Color", color);
+
+        glEnable(GL_STENCIL_TEST);
+        glClear(GL_STENCIL_BUFFER_BIT);
+        glDisable(GL_DEPTH_TEST); // keep the outline visible even when occluded
+
+        // Pass 1: mark the silhouette (stencil = 1), writing neither colour nor depth.
+        glStencilFunc(GL_ALWAYS, 1, 0xFF);
+        glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+        glStencilMask(0xFF);
+        glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+        s_OutlineShader->SetMat4("model", transform);
+        for (const auto& va : vertexArrays){ va->Bind(); RenderCommand::DrawIndexed(va); }
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+
+        // Pass 2: draw the enlarged object only OUTSIDE the silhouette -> a thin border.
+        glStencilFunc(GL_NOTEQUAL, 1, 0xFF);
+        glStencilMask(0x00);
+        s_OutlineShader->SetMat4("model", transform * glm::scale(glm::mat4(1.0f), glm::vec3(1.03f)));
+        for (const auto& va : vertexArrays){ va->Bind(); RenderCommand::DrawIndexed(va); }
+
+        // Restore state.
+        glStencilMask(0xFF);
+        glStencilFunc(GL_ALWAYS, 0, 0xFF);
+        glDisable(GL_STENCIL_TEST);
+        glEnable(GL_DEPTH_TEST);
+        s_OutlineShader->Unbind();
+    }
+
+    void Renderer::DrawOutlineCube(const glm::mat4& transform, const glm::vec3& color){
+        DrawOutline({ s_RenderLightCube->m_Vertex_array }, transform, color);
     }
 
 	void Renderer::EndScene(){

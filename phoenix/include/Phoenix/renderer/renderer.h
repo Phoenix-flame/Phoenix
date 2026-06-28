@@ -4,6 +4,7 @@
 #include <Phoenix/renderer/Camera.h>
 #include <Phoenix/renderer/Texture.h>
 #include <Phoenix/Scene/Component.h>
+#include <vector>
 
 namespace Phoenix{
 
@@ -115,6 +116,13 @@ namespace Phoenix{
 		// Convenience: draw the built-in unit cube.
 		static void SubmitCube(const Material& material, const glm::mat4& transform = glm::mat4(1.0f));
 
+		// Selection outline: stencils the object's silhouette, then draws a slightly
+		// enlarged flat-color version only where the stencil is unset, leaving a thin
+		// border line around the outer edge. Pass all of an object's sub-VAOs together
+		// so they share one silhouette. Uses the camera state from the last BeginScene.
+		static void DrawOutline(const std::vector<Ref<VertexArray>>& vertexArrays, const glm::mat4& transform, const glm::vec3& color);
+		static void DrawOutlineCube(const glm::mat4& transform, const glm::vec3& color);
+
 		static RendererAPI::API GetAPI() { return RendererAPI::GetAPI(); }
 	private:
 		struct SceneData{
@@ -124,5 +132,6 @@ namespace Phoenix{
 		};
 		static Scope<SceneData> s_SceneData;
         static Scope<RenderLightCube> s_RenderLightCube;
+        static Ref<Shader> s_OutlineShader;
 	};
 }

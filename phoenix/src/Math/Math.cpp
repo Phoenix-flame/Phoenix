@@ -2,6 +2,7 @@
 #include <Phoenix/Math/Math.h>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/matrix_decompose.hpp>
+#include <glm/gtx/euler_angles.hpp>
 
 namespace Phoenix::Math{
     bool DecomposeTransform(const glm::mat4& transform, glm::vec3& translation, glm::vec3& rotation, glm::vec3& scale){
@@ -60,16 +61,16 @@ namespace Phoenix::Math{
 		}
 #endif
 
-		rotation.y = asin(-Row[0][2]);
-		if (cos(rotation.y) != 0) {
-			rotation.x = atan2(Row[1][2], Row[2][2]);
-			rotation.z = atan2(Row[0][1], Row[0][0]);
-		}
-		else {
-			rotation.x = atan2(-Row[2][0], Row[1][1]);
-			rotation.z = 0;
-		}
-
+		// Extract XYZ Euler angles with the SAME convention as
+		// TransformComponent::GetTransform (Rx * Ry * Rz == glm::eulerAngleXYZ).
+		// The previous hand-rolled extraction used a different convention, so the
+		// decompose/compose round-trip diverged for combined rotations and made the
+		// ImGuizmo rotate gizmo spin out of control.
+		glm::mat4 rotationMatrix(1.0f);
+		rotationMatrix[0] = glm::vec4(Row[0], 0.0f);
+		rotationMatrix[1] = glm::vec4(Row[1], 0.0f);
+		rotationMatrix[2] = glm::vec4(Row[2], 0.0f);
+		glm::extractEulerAngleXYZ(rotationMatrix, rotation.x, rotation.y, rotation.z);
 
 		return true;
 	}

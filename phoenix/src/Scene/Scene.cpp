@@ -140,7 +140,7 @@ namespace Phoenix{
         m_Registry.destroy(entity);
     }
 
-    void Scene::OnUpdate(EditorCamera& editorCamera, Timestep ts){
+    void Scene::OnUpdate(EditorCamera& editorCamera, Timestep ts, Entity selectedEntity){
 
         // Physics: step the simulation and copy body transforms back to entities.
         if (m_PhysicsWorld){
@@ -246,7 +246,27 @@ namespace Phoenix{
             }
             Renderer::EndScene();
         }
-        
+
+        // Selection outline (drawn over the scene, using this frame's camera state).
+        if (selectedEntity && selectedEntity.HasComponent<TransformComponent>()){
+            const glm::vec3 outlineColor = { 1.0f, 0.5f, 0.1f };
+            glm::mat4 transform = selectedEntity.GetComponent<TransformComponent>().GetTransform();
+
+            if (selectedEntity.HasComponent<CubeComponent>()){
+                Renderer::DrawOutlineCube(transform, outlineColor);
+            }
+            if (selectedEntity.HasComponent<MeshComponent>()){
+                auto& mesh = selectedEntity.GetComponent<MeshComponent>();
+                if (mesh.model){
+                    std::vector<Ref<VertexArray>> vertexArrays;
+                    for (const auto& subMesh : mesh.model->GetMeshes()){
+                        vertexArrays.push_back(subMesh->GetVertexArray());
+                    }
+                    Renderer::DrawOutline(vertexArrays, transform, outlineColor);
+                }
+            }
+        }
+
 
     }
 

@@ -18,7 +18,7 @@ namespace Phoenix{
         Scene();
         ~Scene();
 
-        void OnUpdate(EditorCamera& editorCamera, Timestep ts);
+        void OnUpdate(EditorCamera& editorCamera, Timestep ts, Entity selectedEntity);
         Entity CreateEntity(const std::string& name);
         Entity CreatePointLightEntity(const std::string& name);
         Entity CreateDirLightEntity(const std::string& name);
