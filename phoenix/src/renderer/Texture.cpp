@@ -3,14 +3,27 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <Phoenix/Utils/stb_image.h>
 
+#include <unordered_map>
+#include <string>
+
 
 namespace Phoenix{
     Ref<Texture2D> Texture2D::Create(uint32_t width, uint32_t height){
         return CreateRef<Texture2D>(width, height);
 	}
 
+	// Cache loaded textures by path so a model whose many sub-meshes share one
+	// material (e.g. the backpack: 79 meshes, one 4K diffuse map) decodes/uploads
+	// each unique image only once.
 	Ref<Texture2D> Texture2D::Create(const std::string& path){
-		return CreateRef<Texture2D>(path);
+		static std::unordered_map<std::string, Ref<Texture2D>> s_Cache;
+		auto it = s_Cache.find(path);
+		if (it != s_Cache.end())
+			return it->second;
+
+		Ref<Texture2D> texture = CreateRef<Texture2D>(path);
+		s_Cache[path] = texture;
+		return texture;
 	}
 
 

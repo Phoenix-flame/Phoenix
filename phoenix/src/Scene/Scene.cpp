@@ -6,6 +6,9 @@
 #include <Phoenix/core/log.h>
 #include <Phoenix/core/Profiler.h>
 #include <Phoenix/Physics/Physics.h>
+#include <limits>
+#include <cmath>
+#include <algorithm>
 namespace Phoenix{
     Scene::Scene() = default;
     Scene::~Scene() = default;
@@ -32,6 +35,57 @@ namespace Phoenix{
             view.get<RigidBodyComponent>(entity).runtimeBodyID = 0xffffffff;
         }
         m_PhysicsWorld.reset();
+    }
+
+    // Slab-method ray vs axis-aligned box. Returns true and the entry distance if hit.
+    static bool RayAABB(const glm::vec3& origin, const glm::vec3& dir,
+                        const glm::vec3& boxMin, const glm::vec3& boxMax, float& outT){
+        float tMin = 0.0f;
+        float tMax = std::numeric_limits<float>::max();
+        for (int i = 0; i < 3; i++){
+            if (std::abs(dir[i]) < 1e-8f){
+                if (origin[i] < boxMin[i] || origin[i] > boxMax[i]) { return false; }
+            }
+            else{
+                float inv = 1.0f / dir[i];
+                float t1 = (boxMin[i] - origin[i]) * inv;
+                float t2 = (boxMax[i] - origin[i]) * inv;
+                if (t1 > t2) { std::swap(t1, t2); }
+                tMin = std::max(tMin, t1);
+                tMax = std::min(tMax, t2);
+                if (tMin > tMax) { return false; }
+            }
+        }
+        outT = tMin;
+        return true;
+    }
+
+    Entity Scene::PickEntity(const glm::vec3& rayOrigin, const glm::vec3& rayDirection){
+        float nearest = std::numeric_limits<float>::max();
+        Entity result;
+
+        auto view = m_Registry.view<TransformComponent>();
+        for (auto entity : view){
+            auto& transform = view.get<TransformComponent>(entity);
+            glm::mat4 model = transform.GetTransform();
+
+            // World-space AABB enclosing the unit cube under this transform.
+            glm::vec3 boxMin(std::numeric_limits<float>::max());
+            glm::vec3 boxMax(-std::numeric_limits<float>::max());
+            for (int i = 0; i < 8; i++){
+                glm::vec3 corner((i & 1) ? 0.5f : -0.5f, (i & 2) ? 0.5f : -0.5f, (i & 4) ? 0.5f : -0.5f);
+                glm::vec3 world = glm::vec3(model * glm::vec4(corner, 1.0f));
+                boxMin = glm::min(boxMin, world);
+                boxMax = glm::max(boxMax, world);
+            }
+
+            float t;
+            if (RayAABB(rayOrigin, rayDirection, boxMin, boxMax, t) && t < nearest){
+                nearest = t;
+                result = Entity{ entity, this };
+            }
+        }
+        return result;
     }
 
     Entity Scene::CreateEntity(const std::string& name){

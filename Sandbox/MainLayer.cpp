@@ -341,6 +341,8 @@ void MainLayer::OnImGuiRender(){
     ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
     m_ViewportSize = { viewportPanelSize.x, viewportPanelSize.y };
 
+    // Top-left of the rendered image in screen space (used for the gizmo rect and picking).
+    ImVec2 imageMin = ImGui::GetCursorScreenPos();
     uint64_t textureID = m_Framebuffer->GetColorAttachmentRendererID();
     ImGui::Image(reinterpret_cast<void*>(textureID), ImVec2{ m_ViewportSize.x, m_ViewportSize.y }, ImVec2{ 0, 1 }, ImVec2{ 1, 0 });
 
@@ -350,8 +352,7 @@ void MainLayer::OnImGuiRender(){
     {
         ImGuizmo::SetOrthographic(false);
         ImGuizmo::SetDrawlist();
-        ImVec2 windowPos = ImGui::GetWindowPos();
-        ImGuizmo::SetRect(windowPos.x, windowPos.y, m_ViewportSize.x, m_ViewportSize.y);
+        ImGuizmo::SetRect(imageMin.x, imageMin.y, m_ViewportSize.x, m_ViewportSize.y);
 
         const glm::mat4& cameraProjection = m_MainCamera.GetProjection();
         glm::mat4 cameraView = m_MainCamera.GetView();
@@ -372,6 +373,32 @@ void MainLayer::OnImGuiRender(){
                 tc.Rotation += deltaRotation;
                 tc.Scale = scale;
             }
+        }
+    }
+
+    // Click-to-select: cast a ray from the cursor and pick the nearest entity.
+    // Skipped while interacting with the gizmo or orbiting the camera.
+    if (m_ViewportHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
+        && !ImGuizmo::IsUsing() && !ImGuizmo::IsOver())
+    {
+        ImVec2 mouse = ImGui::GetMousePos();
+        float mx = mouse.x - imageMin.x;
+        float my = mouse.y - imageMin.y;
+        if (mx >= 0.0f && my >= 0.0f && mx < m_ViewportSize.x && my < m_ViewportSize.y)
+        {
+            float ndcX = (mx / m_ViewportSize.x) * 2.0f - 1.0f;
+            float ndcY = 1.0f - (my / m_ViewportSize.y) * 2.0f;
+
+            glm::mat4 invViewProj = glm::inverse(m_MainCamera.GetProjection() * m_MainCamera.GetView());
+            glm::vec4 nearPoint = invViewProj * glm::vec4(ndcX, ndcY, -1.0f, 1.0f);
+            glm::vec4 farPoint  = invViewProj * glm::vec4(ndcX, ndcY,  1.0f, 1.0f);
+            nearPoint /= nearPoint.w;
+            farPoint  /= farPoint.w;
+
+            glm::vec3 rayOrigin = glm::vec3(nearPoint);
+            glm::vec3 rayDir = glm::normalize(glm::vec3(farPoint) - glm::vec3(nearPoint));
+
+            m_SceneEditor->SetSelectedEntity(m_Scene->PickEntity(rayOrigin, rayDir));
         }
     }
 

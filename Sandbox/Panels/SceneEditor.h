@@ -19,7 +19,8 @@ namespace Phoenix{
         void EntityPanel();
         void EntityNode(Entity entity);
         Entity& GetSelectedEntity() { return m_SelectedEntity; }
-        
+        void SetSelectedEntity(Entity entity) { m_SelectedEntity = entity; }
+
     private:
         void DrawComponents(Entity entity);
     private:

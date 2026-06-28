@@ -28,6 +28,10 @@ namespace Phoenix{
         void OnResize(float width, float height);
         int GetNumberOfPointLights() { return m_NumPointLights; }
 
+        // Returns the nearest entity whose (unit-cube) bounds the ray hits, or an
+        // empty entity if none. Used for click-to-select in the viewport.
+        Entity PickEntity(const glm::vec3& rayOrigin, const glm::vec3& rayDirection);
+
         // Physics runtime: start creates Jolt bodies from RigidBody/BoxCollider
         // entities; while running, OnUpdate steps the simulation and writes the
         // resulting transforms back to the entities.
