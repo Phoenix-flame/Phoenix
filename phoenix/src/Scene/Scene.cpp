@@ -5,7 +5,34 @@
 #include <Phoenix/renderer/renderer.h>
 #include <Phoenix/core/log.h>
 #include <Phoenix/core/Profiler.h>
+#include <Phoenix/Physics/Physics.h>
 namespace Phoenix{
+    Scene::~Scene() = default;
+
+    void Scene::OnRuntimeStart(){
+        m_PhysicsWorld = CreateScope<PhysicsWorld>();
+
+        auto view = m_Registry.view<RigidBodyComponent, BoxColliderComponent, TransformComponent>();
+        for (auto entity : view){
+            auto& rb = view.get<RigidBodyComponent>(entity);
+            auto& collider = view.get<BoxColliderComponent>(entity);
+            auto& transform = view.get<TransformComponent>(entity);
+
+            glm::vec3 halfExtents = collider.halfExtents * transform.Scale;
+            PhysicsWorld::BodyType type = (PhysicsWorld::BodyType)(int)rb.type;
+            rb.runtimeBodyID = m_PhysicsWorld->CreateBox(transform.Translation, transform.Rotation, halfExtents, type);
+        }
+        m_PhysicsWorld->OptimizeBroadPhase();
+    }
+
+    void Scene::OnRuntimeStop(){
+        auto view = m_Registry.view<RigidBodyComponent>();
+        for (auto entity : view){
+            view.get<RigidBodyComponent>(entity).runtimeBodyID = 0xffffffff;
+        }
+        m_PhysicsWorld.reset();
+    }
+
     Entity Scene::CreateEntity(const std::string& name){
         Entity entity = { m_Registry.create(), this };
         entity.AddComponent<TransformComponent>();
@@ -59,6 +86,22 @@ namespace Phoenix{
     }
 
     void Scene::OnUpdate(EditorCamera& editorCamera, Timestep ts){
+
+        // Physics: step the simulation and copy body transforms back to entities.
+        if (m_PhysicsWorld){
+            PHX_PROFILE("Physics Step");
+            m_PhysicsWorld->Step((float)ts);
+            auto view = m_Registry.view<RigidBodyComponent, TransformComponent>();
+            for (auto entity : view){
+                auto& rb = view.get<RigidBodyComponent>(entity);
+                if (rb.runtimeBodyID == 0xffffffff) { continue; }
+                auto& transform = view.get<TransformComponent>(entity);
+                glm::vec3 position, rotation;
+                m_PhysicsWorld->GetBodyTransform(rb.runtimeBodyID, position, rotation);
+                transform.Translation = position;
+                transform.Rotation = rotation;
+            }
+        }
 
         {
 			m_Registry.view<NativeScriptComponent>().each([=](auto entity, auto& nsc)
@@ -141,6 +184,7 @@ namespace Phoenix{
                 auto& mesh = meshView.get<MeshComponent>(entity);
                 auto transform = meshView.get<TransformComponent>(entity);
                 if (!mesh.model) { continue; }
+                mesh.model->Update(); // completes async GPU upload once parsing finishes
                 for (const auto& subMesh : mesh.model->GetMeshes()) {
                     Renderer::Submit(subMesh->GetVertexArray(), mesh.material, transform.GetTransform(), subMesh->GetDiffuseMap());
                 }
@@ -178,6 +222,14 @@ namespace Phoenix{
 
     template<>
 	void Scene::OnComponentAdded<MeshComponent>(Entity entity, MeshComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<RigidBodyComponent>(Entity entity, RigidBodyComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<BoxColliderComponent>(Entity entity, BoxColliderComponent& component){
 	}
 
 

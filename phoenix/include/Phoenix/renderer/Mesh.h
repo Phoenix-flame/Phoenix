@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 #include <vector>
 #include <string>
+#include <future>
 
 namespace Phoenix{
 
@@ -12,6 +13,13 @@ namespace Phoenix{
         glm::vec3 Position;
         glm::vec3 Normal;
         glm::vec2 TexCoords;
+    };
+
+    // CPU-side data for one mesh, produced on a worker thread (no GL calls).
+    struct MeshData{
+        std::vector<Vertex> vertices;
+        std::vector<uint32_t> indices;
+        std::string diffusePath; // absolute path; empty if the mesh has no diffuse map
     };
 
     // A single drawable chunk of geometry: an interleaved vertex buffer
@@ -31,17 +39,25 @@ namespace Phoenix{
         Ref<Texture2D> m_DiffuseMap;
     };
 
-    // A model loaded from disk (via Assimp): one or more meshes. Assimp types are
-    // kept out of this header; all of that lives in Mesh.cpp.
+    // A model loaded from disk (via Assimp). Parsing runs on a background thread;
+    // GPU resources are created lazily on the main thread in Update(). Until the
+    // load completes GetMeshes() is empty, so nothing is drawn for it.
     class Model{
     public:
         Model(const std::string& path);
+        ~Model();
+
+        // Must be called on the main (render) thread each frame. Once the worker
+        // has finished parsing, this uploads the geometry/textures to the GPU.
+        void Update();
+        bool IsReady() const { return m_Uploaded; }
 
         const std::vector<Ref<Mesh>>& GetMeshes() const { return m_Meshes; }
         const std::string& GetPath() const { return m_Path; }
-        bool IsLoaded() const { return !m_Meshes.empty(); }
     private:
-        std::vector<Ref<Mesh>> m_Meshes;
         std::string m_Path;
+        std::vector<Ref<Mesh>> m_Meshes;
+        std::future<std::vector<MeshData>> m_Future;
+        bool m_Uploaded = false;
     };
 }

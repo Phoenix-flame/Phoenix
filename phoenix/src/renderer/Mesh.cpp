@@ -5,6 +5,8 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
+#include <chrono>
+
 namespace Phoenix{
 
     Mesh::Mesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices){
@@ -28,10 +30,11 @@ namespace Phoenix{
         m_VertexArray->SetIndexBuffer(indexBuffer);
     }
 
-    static Ref<Mesh> ProcessMesh(aiMesh* mesh, const aiScene* scene, const std::string& directory){
-        std::vector<Vertex> vertices;
-        std::vector<uint32_t> indices;
-        vertices.reserve(mesh->mNumVertices);
+    // ---- Worker-thread parsing (no GL calls) ----
+
+    static void ProcessMeshData(aiMesh* mesh, const aiScene* scene, const std::string& directory, std::vector<MeshData>& out){
+        MeshData data;
+        data.vertices.reserve(mesh->mNumVertices);
 
         for (unsigned int i = 0; i < mesh->mNumVertices; i++){
             Vertex vertex;
@@ -47,40 +50,38 @@ namespace Phoenix{
             else
                 vertex.TexCoords = { 0.0f, 0.0f };
 
-            vertices.push_back(vertex);
+            data.vertices.push_back(vertex);
         }
 
         for (unsigned int i = 0; i < mesh->mNumFaces; i++){
             const aiFace& face = mesh->mFaces[i];
             for (unsigned int j = 0; j < face.mNumIndices; j++)
-                indices.push_back(face.mIndices[j]);
+                data.indices.push_back(face.mIndices[j]);
         }
 
-        Ref<Mesh> result = CreateRef<Mesh>(vertices, indices);
-
-        // Diffuse texture (map_Kd), resolved relative to the model file's directory.
         if (mesh->mMaterialIndex >= 0){
             aiMaterial* material = scene->mMaterials[mesh->mMaterialIndex];
             if (material->GetTextureCount(aiTextureType_DIFFUSE) > 0){
                 aiString name;
                 material->GetTexture(aiTextureType_DIFFUSE, 0, &name);
-                std::string texPath = directory + "/" + std::string(name.C_Str());
-                result->SetDiffuseMap(Texture2D::Create(texPath));
+                data.diffusePath = directory + "/" + std::string(name.C_Str());
             }
         }
 
-        return result;
+        out.push_back(std::move(data));
     }
 
-    static void ProcessNode(aiNode* node, const aiScene* scene, const std::string& directory, std::vector<Ref<Mesh>>& meshes){
+    static void ProcessNodeData(aiNode* node, const aiScene* scene, const std::string& directory, std::vector<MeshData>& out){
         for (unsigned int i = 0; i < node->mNumMeshes; i++)
-            meshes.push_back(ProcessMesh(scene->mMeshes[node->mMeshes[i]], scene, directory));
+            ProcessMeshData(scene->mMeshes[node->mMeshes[i]], scene, directory, out);
 
         for (unsigned int i = 0; i < node->mNumChildren; i++)
-            ProcessNode(node->mChildren[i], scene, directory, meshes);
+            ProcessNodeData(node->mChildren[i], scene, directory, out);
     }
 
-    Model::Model(const std::string& path) : m_Path(path){
+    static std::vector<MeshData> ParseModel(std::string path){
+        std::vector<MeshData> meshes;
+
         Assimp::Importer importer;
         const aiScene* scene = importer.ReadFile(path,
             aiProcess_Triangulate
@@ -90,11 +91,37 @@ namespace Phoenix{
 
         if (!scene || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) || !scene->mRootNode){
             PHX_CORE_ERROR("Assimp failed to load '{0}': {1}", path, importer.GetErrorString());
-            return;
+            return meshes;
         }
 
         std::string directory = path.substr(0, path.find_last_of('/'));
-        ProcessNode(scene->mRootNode, scene, directory, m_Meshes);
-        PHX_CORE_INFO("Loaded model '{0}' ({1} meshes)", path, m_Meshes.size());
+        ProcessNodeData(scene->mRootNode, scene, directory, meshes);
+        return meshes;
+    }
+
+    // ---- Main-thread model handle ----
+
+    Model::Model(const std::string& path) : m_Path(path){
+        m_Future = std::async(std::launch::async, ParseModel, path);
+    }
+
+    Model::~Model() = default;
+
+    void Model::Update(){
+        if (m_Uploaded || !m_Future.valid())
+            return;
+        if (m_Future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+            return;
+
+        std::vector<MeshData> data = m_Future.get();
+        for (auto& md : data){
+            Ref<Mesh> mesh = CreateRef<Mesh>(md.vertices, md.indices);
+            if (!md.diffusePath.empty())
+                mesh->SetDiffuseMap(Texture2D::Create(md.diffusePath));
+            m_Meshes.push_back(mesh);
+        }
+
+        m_Uploaded = true;
+        PHX_CORE_INFO("Loaded model '{0}' ({1} meshes)", m_Path, m_Meshes.size());
     }
 }

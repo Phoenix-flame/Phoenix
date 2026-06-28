@@ -37,6 +37,23 @@ void MainLayer::OnAttach() {
     m_Scene->CreateEntity("Cube").AddComponent<CubeComponent>();
     m_Scene->CreatePointLightEntity("Point Light");
 
+    // Physics demo: a dynamic cube that falls onto a static floor when you press Play.
+    {
+        auto floor = m_Scene->CreateEntity("Floor");
+        floor.AddComponent<CubeComponent>();
+        auto& floorTransform = floor.GetComponent<TransformComponent>();
+        floorTransform.Translation = { 0.0f, -2.0f, 0.0f };
+        floorTransform.Scale = { 10.0f, 0.5f, 10.0f };
+        floor.AddComponent<RigidBodyComponent>().type = RigidBodyComponent::Type::Static;
+        floor.AddComponent<BoxColliderComponent>();
+
+        auto box = m_Scene->CreateEntity("Falling Cube");
+        box.AddComponent<CubeComponent>();
+        box.GetComponent<TransformComponent>().Translation = { 0.0f, 4.0f, 0.0f };
+        box.AddComponent<RigidBodyComponent>(); // dynamic by default
+        box.AddComponent<BoxColliderComponent>();
+    }
+
     {
         auto backpack = m_Scene->CreateEntity("Backpack");
         auto& mesh = backpack.AddComponent<MeshComponent>();
@@ -234,6 +251,14 @@ void MainLayer::OnImGuiRender(){
         ImGui::ColorEdit3("Background Color", glm::value_ptr(m_BackgroundColor));
         if (ImGui::Checkbox("VSync", &vsync)){
             Application::Get().GetWindow().SetVSync(vsync);
+        }
+
+        ImGui::Separator();
+        if (m_Scene->IsRunning()){
+            if (ImGui::Button("Stop")) { m_Scene->OnRuntimeStop(); }
+        }
+        else{
+            if (ImGui::Button("Play")) { m_Scene->OnRuntimeStart(); }
         }
         ImGui::End();
     }

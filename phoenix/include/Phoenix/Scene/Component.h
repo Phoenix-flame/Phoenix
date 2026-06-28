@@ -46,7 +46,23 @@ namespace Phoenix{
         CubeComponent(const CubeComponent&) = default;
     };
 
-    
+    // Physics. Type values match PhysicsWorld::BodyType. runtimeBodyID is filled in
+    // when the scene's physics simulation starts (0xffffffff = no body / not running).
+    struct RigidBodyComponent{
+        enum class Type { Static = 0, Dynamic = 1, Kinematic = 2 };
+        Type type = Type::Dynamic;
+        uint32_t runtimeBodyID = 0xffffffff;
+        RigidBodyComponent() = default;
+        RigidBodyComponent(const RigidBodyComponent&) = default;
+    };
+
+    struct BoxColliderComponent{
+        glm::vec3 halfExtents = { 0.5f, 0.5f, 0.5f };
+        BoxColliderComponent() = default;
+        BoxColliderComponent(const BoxColliderComponent&) = default;
+    };
+
+
     struct DirLightComponent{
         glm::vec3 ambient = glm::vec3(1.0f);
         glm::vec3 diffuse = glm::vec3(0.2f) * ambient;

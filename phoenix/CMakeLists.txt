@@ -11,6 +11,7 @@ file(GLOB core_src
     "src/opengl/*.cpp"
     "src/renderer/*.cpp"
     "src/Scene/*.cpp"
+    "src/Physics/*.cpp"
     "src/Math/*.cpp"
     "src/vendor/ImGuizmo/*.cpp"
     "src/vendor/ImFileDialog/*.cpp"
@@ -77,6 +78,23 @@ else()
     include_directories(${YAML_CPP_INCLUDE_DIR})
     target_link_libraries(${APP_TARGET} ${YAML_CPP_LIBRARIES})
 endif()
+
+# Jolt Physics: fetched and built from source (not packaged in apt).
+include(FetchContent)
+set(TARGET_UNIT_TESTS       OFF CACHE BOOL "" FORCE)
+set(TARGET_HELLO_WORLD      OFF CACHE BOOL "" FORCE)
+set(TARGET_PERFORMANCE_TEST OFF CACHE BOOL "" FORCE)
+set(TARGET_SAMPLES          OFF CACHE BOOL "" FORCE)
+set(TARGET_VIEWER           OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    JoltPhysics
+    GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
+    GIT_TAG v5.5.0
+    GIT_SHALLOW ON
+    SOURCE_SUBDIR Build
+)
+FetchContent_MakeAvailable(JoltPhysics)
+target_link_libraries(${APP_TARGET} Jolt)
 
 #target_link_libraries(${APP_TARGET} ${SDL2_LIBRARIES})
 target_link_libraries(${APP_TARGET} fmt)
