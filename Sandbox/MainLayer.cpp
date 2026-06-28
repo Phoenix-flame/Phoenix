@@ -224,6 +224,17 @@ void MainLayer::OnImGuiRender(){
                 if (ImGui::MenuItem("Paste", "CTRL+V")) {}
                 ImGui::EndMenu();
             }
+
+            // Run / Stop the physics simulation (right-aligned in the menu bar).
+            {
+                const char* label = m_Scene->IsRunning() ? "Stop" : "Run";
+                float buttonWidth = 60.0f;
+                ImGui::SameLine(ImGui::GetWindowWidth() - buttonWidth - 10.0f);
+                if (ImGui::Button(label, ImVec2(buttonWidth, 0.0f))){
+                    if (m_Scene->IsRunning()) { m_Scene->OnRuntimeStop(); }
+                    else                      { m_Scene->OnRuntimeStart(); }
+                }
+            }
             ImGui::EndMainMenuBar();
         }
 
@@ -251,14 +262,6 @@ void MainLayer::OnImGuiRender(){
         ImGui::ColorEdit3("Background Color", glm::value_ptr(m_BackgroundColor));
         if (ImGui::Checkbox("VSync", &vsync)){
             Application::Get().GetWindow().SetVSync(vsync);
-        }
-
-        ImGui::Separator();
-        if (m_Scene->IsRunning()){
-            if (ImGui::Button("Stop")) { m_Scene->OnRuntimeStop(); }
-        }
-        else{
-            if (ImGui::Button("Play")) { m_Scene->OnRuntimeStart(); }
         }
         ImGui::End();
     }

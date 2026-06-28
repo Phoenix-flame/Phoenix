@@ -120,8 +120,8 @@ namespace Phoenix{
         out << YAML::Key << "Entities" << YAML::Value << YAML::BeginSeq;
 
         for (auto entityID : m_Scene->m_Registry.storage<entt::entity>()){
+            if (!m_Scene->m_Registry.valid(entityID)) { continue; }
             Entity entity{ entityID, m_Scene.get() };
-            if (!entity) { continue; }
             SerializeEntity(out, entity);
         }
 

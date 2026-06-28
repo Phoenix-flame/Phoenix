@@ -8,11 +8,15 @@ namespace Phoenix{
     void SceneEditor::ScenePanel(){
         ImGui::Begin("Scene", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
         // EnTT 3.16 removed registry::each(); iterate the entity storage instead.
-        // Snapshot ids first: EntityNode may DestroyEntity, which would invalidate
-        // live iteration over the storage.
+        // Snapshot ids first (EntityNode may DestroyEntity, invalidating live
+        // iteration) AND filter to valid entities: the entity storage retains
+        // tombstones for in-place-deleted entities, which would otherwise reach
+        // EntityNode as stale handles and crash on GetComponent.
+        auto& registry = m_ActiveScene->m_Registry;
         std::vector<entt::entity> entities;
-        for (auto entityID : m_ActiveScene->m_Registry.storage<entt::entity>())
-            entities.push_back(entityID);
+        for (auto entityID : registry.storage<entt::entity>())
+            if (registry.valid(entityID))
+                entities.push_back(entityID);
         for (auto entityID : entities)
 		{
 			Entity entity{ entityID , m_ActiveScene.get() };
@@ -254,6 +258,16 @@ namespace Phoenix{
                     PHX_CORE_ASSERT("This entity already has the Cube Component!");
                 ImGui::CloseCurrentPopup();
             }
+            if (ImGui::MenuItem("Rigid Body")){
+                if (!m_SelectedEntity.HasComponent<RigidBodyComponent>())
+                    m_SelectedEntity.AddComponent<RigidBodyComponent>();
+                ImGui::CloseCurrentPopup();
+            }
+            if (ImGui::MenuItem("Box Collider")){
+                if (!m_SelectedEntity.HasComponent<BoxColliderComponent>())
+                    m_SelectedEntity.AddComponent<BoxColliderComponent>();
+                ImGui::CloseCurrentPopup();
+            }
 
 			ImGui::EndPopup();
 		}
@@ -395,10 +409,31 @@ namespace Phoenix{
 			}
 		});
 
-		// DrawComponent<SpriteRendererComponent>("Sprite Renderer", entity, [](auto& component)
-		// {
-		// 	ImGui::ColorEdit4("Color", glm::value_ptr(component.Color));
-		// });
+		DrawComponent<RigidBodyComponent>("Rigid Body", entity, [](auto& component){
+			const char* typeStrings[] = { "Static", "Dynamic", "Kinematic" };
+			const char* currentType = typeStrings[(int)component.type];
+			if (ImGui::BeginCombo("Body Type", currentType)){
+				for (int i = 0; i < 3; i++){
+					bool isSelected = currentType == typeStrings[i];
+					if (ImGui::Selectable(typeStrings[i], isSelected))
+						component.type = (RigidBodyComponent::Type)i;
+					if (isSelected)
+						ImGui::SetItemDefaultFocus();
+				}
+				ImGui::EndCombo();
+			}
+			ImGui::TextDisabled("Applied on Run");
+		});
+
+		DrawComponent<BoxColliderComponent>("Box Collider", entity, [](auto& component){
+			float extents[] = { component.halfExtents.x, component.halfExtents.y, component.halfExtents.z };
+			if (ImGui::DragFloat3("Half Extents", extents, 0.05f, 0.0f, 0.0f, "%.2f")){
+				component.halfExtents.x = extents[0];
+				component.halfExtents.y = extents[1];
+				component.halfExtents.z = extents[2];
+			}
+			ImGui::TextDisabled("Scaled by Transform on Run");
+		});
 
 	}
 

@@ -1,8 +1,8 @@
-[17:01:11] [info] PHOENIX: ImGuiLayer attached.
-[17:01:11] [info] PHOENIX: Application initialized successfully.
-[17:01:11] [info] APP: Hello, World!
-[17:01:11] [info] APP: Main Layer attached.
-[17:01:11] [trace] PHOENIX: basic shader added to library.
-[17:01:11] [trace] PHOENIX: lighting shader added to library.
-[17:01:11] [trace] PHOENIX: texture shader added to library.
-[17:02:06] [info] PHOENIX: Loaded model '/home/alireza/Programming/sandbox/Phoenix/Sandbox/backpack/backpack.obj' (79 meshes)
+[17:04:49] [info] PHOENIX: ImGuiLayer attached.
+[17:04:49] [info] PHOENIX: Application initialized successfully.
+[17:04:49] [info] APP: Hello, World!
+[17:04:49] [info] APP: Main Layer attached.
+[17:04:49] [trace] PHOENIX: basic shader added to library.
+[17:04:49] [trace] PHOENIX: lighting shader added to library.
+[17:04:49] [trace] PHOENIX: texture shader added to library.
+[17:05:43] [info] PHOENIX: Loaded model '/home/alireza/Programming/sandbox/Phoenix/Sandbox/backpack/backpack.obj' (79 meshes)
