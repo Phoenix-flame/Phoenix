@@ -2,7 +2,7 @@
 
 #include <Phoenix/core/base.h>
 #include <Phoenix/core/timestep.h>
-#include <entt/entity/registry.hpp>
+#include <entt/entt.hpp>
 #include <Phoenix/renderer/Camera.h>
 
 
@@ -37,6 +37,7 @@ namespace Phoenix{
 
         friend class Entity;
         friend class SceneEditor;
+        friend class SceneSerializer;
     
     private:
         int m_NumPointLights = 0;

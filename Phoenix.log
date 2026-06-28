@@ -1,0 +1,8 @@
+[16:47:10] [info] PHOENIX: ImGuiLayer attached.
+[16:47:10] [info] PHOENIX: Application initialized successfully.
+[16:47:10] [info] APP: Hello, World!
+[16:47:10] [info] APP: Main Layer attached.
+[16:48:06] [info] PHOENIX: Loaded model '/home/alireza/Programming/sandbox/Phoenix/Sandbox/backpack/backpack.obj' (79 meshes)
+[16:48:06] [trace] PHOENIX: basic shader added to library.
+[16:48:06] [trace] PHOENIX: lighting shader added to library.
+[16:48:06] [trace] PHOENIX: texture shader added to library.

@@ -27,9 +27,14 @@ include_directories(
 )
 target_include_directories(
     ${APP_TARGET}
-    PUBLIC 
+    PUBLIC
     ${PROJECT_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/third_party
 )
+
+# Absolute path to the project root so assets/shaders can be resolved at runtime
+# regardless of the working directory. PUBLIC so consumers (e.g. Sandbox) inherit it.
+target_compile_definitions(${APP_TARGET} PUBLIC PHX_PROJECT_DIR="${CMAKE_SOURCE_DIR}")
 
 
 get_property(dirs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
@@ -50,14 +55,31 @@ find_package(GLM REQUIRED)
 find_package(GLEW REQUIRED)
 include_directories(${APP_TARGET} ${GLEW_INCLUDE_DIRS})
 
-find_package(EnTT REQUIRED)
-include_directories(${APP_TARGET} ${EnTT_INCLUDE_DIRS})
+# EnTT is vendored as a single header in third_party/ (added to the include path above).
 
 find_package(fmt REQUIRED)
 find_package(spdlog REQUIRED)
+
+# Assimp: model/mesh (and later, skeletal animation) loading.
+find_package(assimp REQUIRED)
+if(TARGET assimp::assimp)
+    target_link_libraries(${APP_TARGET} assimp::assimp)
+else()
+    include_directories(${ASSIMP_INCLUDE_DIRS})
+    target_link_libraries(${APP_TARGET} ${ASSIMP_LIBRARIES})
+endif()
+
+# yaml-cpp: scene serialization.
+find_package(yaml-cpp REQUIRED)
+if(TARGET yaml-cpp::yaml-cpp)
+    target_link_libraries(${APP_TARGET} yaml-cpp::yaml-cpp)
+else()
+    include_directories(${YAML_CPP_INCLUDE_DIR})
+    target_link_libraries(${APP_TARGET} ${YAML_CPP_LIBRARIES})
+endif()
 
 #target_link_libraries(${APP_TARGET} ${SDL2_LIBRARIES})
 target_link_libraries(${APP_TARGET} fmt)
 target_link_libraries(${APP_TARGET} glfw)
 target_link_libraries(${APP_TARGET} OpenGL::GL ${GLEW_LIBRARIES})
-target_link_libraries(${APP_TARGET} ${SPDLOG_LIBRARIES}  ${EnTT_LIBRARIES} ${CMAKE_DL_LIBS})
+target_link_libraries(${APP_TARGET} ${SPDLOG_LIBRARIES} ${CMAKE_DL_LIBS})

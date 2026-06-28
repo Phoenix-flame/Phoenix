@@ -8,6 +8,7 @@
 
 #include <Phoenix/core/application.h>
 #include <Phoenix/Scene/Scene.h>
+#include <Phoenix/Scene/SceneSerializer.h>
 
 #include <Phoenix/renderer/Framebuffer.h>
 #include <Phoenix/core/log.h>
@@ -36,10 +37,19 @@ void MainLayer::OnAttach() {
     m_Scene->CreateEntity("Cube").AddComponent<CubeComponent>();
     m_Scene->CreatePointLightEntity("Point Light");
 
+    {
+        auto backpack = m_Scene->CreateEntity("Backpack");
+        auto& mesh = backpack.AddComponent<MeshComponent>();
+        mesh.model = CreateRef<Model>(std::string(PHX_PROJECT_DIR) + "/Sandbox/backpack/backpack.obj");
+        mesh.material.diffuse = glm::vec3(0.55f, 0.42f, 0.30f);
+        mesh.material.ambient = glm::vec3(0.30f, 0.24f, 0.18f);
+        backpack.GetComponent<TransformComponent>().Translation = { 2.0f, 0.0f, 0.0f };
+    }
+
     m_ShaderLibrary = CreateScope<ShaderLibrary>();
-    m_ShaderLibrary->Add(Shader::Create("/home/alireza/Programming/Phoenix/Sandbox/assets/shaders/basic.glsl"));
-    m_ShaderLibrary->Add(Shader::Create("/home/alireza/Programming/Phoenix/Sandbox/assets/shaders/lighting.glsl"));
-    m_ShaderLibrary->Add(Shader::Create("/home/alireza/Programming/Phoenix/Sandbox/assets/shaders/texture.glsl"));
+    m_ShaderLibrary->Add(Shader::Create(std::string(PHX_PROJECT_DIR) + "/Sandbox/assets/shaders/basic.glsl"));
+    m_ShaderLibrary->Add(Shader::Create(std::string(PHX_PROJECT_DIR) + "/Sandbox/assets/shaders/lighting.glsl"));
+    m_ShaderLibrary->Add(Shader::Create(std::string(PHX_PROJECT_DIR) + "/Sandbox/assets/shaders/texture.glsl"));
     
 
     m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
@@ -62,7 +72,7 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
     }
 
     // Update
-    if (m_ViewportFocused){
+    if (m_ViewportHovered){
         PHX_PROFILE("MainCamera Update");
         m_MainCamera.OnUpdate(ts);
     }
@@ -83,7 +93,7 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
 
 
 void MainLayer::OnEvent(Phoenix::Event& e) {
-    if (m_ViewportFocused){
+    if (m_ViewportHovered){
         m_MainCamera.OnEvent(e);
     }
     
@@ -111,6 +121,7 @@ void MainLayer::OnEvent(Phoenix::Event& e) {
 
 
 void MainLayer::OnImGuiRender(){
+    ImGuizmo::BeginFrame();
     // Note: Switch this to true to enable dockspace
     static bool dockspaceOpen = true;
     static bool opt_fullscreen_persistant = true;
@@ -169,8 +180,19 @@ void MainLayer::OnImGuiRender(){
         {
             if (ImGui::BeginMenu("File"))
             {
-                if (ImGui::MenuItem("Import Scene")) {}
-                if (ImGui::MenuItem("Export Scene")) {}
+                if (ImGui::MenuItem("Import Scene")) {
+                    std::string path = std::string(PHX_PROJECT_DIR) + "/Sandbox/scene.phx";
+                    auto scene = CreateRef<Scene>();
+                    if (SceneSerializer(scene).Deserialize(path)) {
+                        m_Scene = scene;
+                        m_Scene->OnResize(m_ViewportSize.x, m_ViewportSize.y);
+                        m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
+                    }
+                }
+                if (ImGui::MenuItem("Export Scene")) {
+                    std::string path = std::string(PHX_PROJECT_DIR) + "/Sandbox/scene.phx";
+                    SceneSerializer(m_Scene).Serialize(path);
+                }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Import Shader")) { import_shader = true; }
                 ImGui::EndMenu();
@@ -294,6 +316,36 @@ void MainLayer::OnImGuiRender(){
     uint64_t textureID = m_Framebuffer->GetColorAttachmentRendererID();
     ImGui::Image(reinterpret_cast<void*>(textureID), ImVec2{ m_ViewportSize.x, m_ViewportSize.y }, ImVec2{ 0, 1 }, ImVec2{ 1, 0 });
 
+    // Transform gizmo for the selected entity.
+    Entity selectedEntity = m_SceneEditor->GetSelectedEntity();
+    if (selectedEntity && m_GizmoType != -1 && selectedEntity.HasComponent<TransformComponent>())
+    {
+        ImGuizmo::SetOrthographic(false);
+        ImGuizmo::SetDrawlist();
+        ImVec2 windowPos = ImGui::GetWindowPos();
+        ImGuizmo::SetRect(windowPos.x, windowPos.y, m_ViewportSize.x, m_ViewportSize.y);
+
+        const glm::mat4& cameraProjection = m_MainCamera.GetProjection();
+        glm::mat4 cameraView = m_MainCamera.GetView();
+
+        auto& tc = selectedEntity.GetComponent<TransformComponent>();
+        glm::mat4 transform = tc.GetTransform();
+
+        ImGuizmo::Manipulate(glm::value_ptr(cameraView), glm::value_ptr(cameraProjection),
+            (ImGuizmo::OPERATION)m_GizmoType, ImGuizmo::LOCAL, glm::value_ptr(transform));
+
+        if (ImGuizmo::IsUsing())
+        {
+            glm::vec3 translation, rotation, scale;
+            if (Math::DecomposeTransform(transform, translation, rotation, scale))
+            {
+                glm::vec3 deltaRotation = rotation - tc.Rotation;
+                tc.Translation = translation;
+                tc.Rotation += deltaRotation;
+                tc.Scale = scale;
+            }
+        }
+    }
 
     ImGui::End();
     ImGui::PopStyleVar();
@@ -313,9 +365,16 @@ bool MainLayer::OnKeyPressed(KeyPressedEvent& e){
 
     bool control = Input::IsKeyPressed(Key::LeftControl) || Input::IsKeyPressed(Key::RightControl);
     bool shift = Input::IsKeyPressed(Key::LeftShift) || Input::IsKeyPressed(Key::RightShift);
-    switch (e.GetKeyCode()){
-        
+
+    // Gizmo operation shortcuts (only when not mid-manipulation).
+    if (!ImGuizmo::IsUsing()){
+        switch (e.GetKeyCode()){
+            case Key::Q: m_GizmoType = -1; break; // none
+            case Key::W: m_GizmoType = 0;  break; // translate
+            case Key::E: m_GizmoType = 1;  break; // rotate
+            case Key::R: m_GizmoType = 2;  break; // scale
+        }
     }
-    
+
     return false;
 }

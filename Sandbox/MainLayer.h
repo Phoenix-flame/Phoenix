@@ -49,6 +49,9 @@ private:
 
     bool m_OverlayEnabled = true;
 
+    // Active ImGuizmo operation: 0=translate, 1=rotate, 2=scale, -1=none.
+    int m_GizmoType = 0;
+
 private:
     imgui_addons::ImGuiFileBrowser file_dialog;
 

@@ -5,6 +5,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <Phoenix/renderer/shader.h>
 #include <Phoenix/renderer/VertexArray.h>
+#include <Phoenix/renderer/Mesh.h>
 #include <Phoenix/Scene/ScriptableEntity.h>
 namespace Phoenix{
 
@@ -23,17 +24,20 @@ namespace Phoenix{
         CameraComponent(const CameraComponent& other) = default;
     };
 
-    struct MeshComponent{
-        MeshComponent() = default;
-        MeshComponent(const MeshComponent& other) = default;
-    };
-
     struct Material
     {
         glm::vec3 ambient = glm::vec3(1.0f, 0.5f, 0.31f);
         glm::vec3 diffuse = glm::vec3(1.0f, 0.5f, 0.31f);
         glm::vec3 specular = glm::vec3(0.5f, 0.5f, 0.5f);
         float shininess = 32.0f;
+    };
+
+    struct MeshComponent{
+        Ref<Model> model;
+        Material material;
+        MeshComponent() = default;
+        MeshComponent(const MeshComponent& other) = default;
+        MeshComponent(const Ref<Model>& model) : model(model) {}
     };
 
     struct CubeComponent{

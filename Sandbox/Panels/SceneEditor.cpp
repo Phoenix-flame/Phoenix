@@ -7,11 +7,17 @@ namespace Phoenix{
 
     void SceneEditor::ScenePanel(){
         ImGui::Begin("Scene", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
-        m_ActiveScene->m_Registry.each([&](auto entityID)
+        // EnTT 3.16 removed registry::each(); iterate the entity storage instead.
+        // Snapshot ids first: EntityNode may DestroyEntity, which would invalidate
+        // live iteration over the storage.
+        std::vector<entt::entity> entities;
+        for (auto entityID : m_ActiveScene->m_Registry.storage<entt::entity>())
+            entities.push_back(entityID);
+        for (auto entityID : entities)
 		{
 			Entity entity{ entityID , m_ActiveScene.get() };
 			EntityNode(entity);
-		});
+		}
 
         if (ImGui::IsMouseDown(0) && ImGui::IsWindowHovered())
 		{

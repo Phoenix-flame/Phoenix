@@ -1,3 +1,4 @@
+#pragma once
 #include <Phoenix/core/base.h>
 #define GL_GLEXT_PROTOTYPES
 #include <GLFW/glfw3.h>

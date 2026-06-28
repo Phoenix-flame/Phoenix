@@ -124,14 +124,25 @@ namespace Phoenix{
 
         {
             PHX_PROFILE("Scene Components");
-            Renderer::BeginScene(sceneCameraProjection, sceneCameraView);
+            Renderer::BeginScene(sceneCameraProjection, sceneCameraView, cameraPos);
+            Renderer::SetLights(dirLightExists, lightComponent, lightPos, pLightComponent, pointLightPos, numPointLight);
             auto view = m_Registry.view<CubeComponent, TransformComponent>();
             for (auto entity : view) {
                 auto cube = view.get<CubeComponent>(entity);
                 auto transform = view.get<TransformComponent>(entity);
                 // Render
                 {
-                    Renderer::SubmitLightCube(cameraPos, cube.material, dirLightExists, lightComponent, lightPos, pLightComponent, pointLightPos, numPointLight, transform.GetTransform());
+                    Renderer::SubmitCube(cube.material, transform.GetTransform());
+                }
+            }
+
+            auto meshView = m_Registry.view<MeshComponent, TransformComponent>();
+            for (auto entity : meshView) {
+                auto& mesh = meshView.get<MeshComponent>(entity);
+                auto transform = meshView.get<TransformComponent>(entity);
+                if (!mesh.model) { continue; }
+                for (const auto& subMesh : mesh.model->GetMeshes()) {
+                    Renderer::Submit(subMesh->GetVertexArray(), mesh.material, transform.GetTransform(), subMesh->GetDiffuseMap());
                 }
             }
             Renderer::EndScene();
@@ -163,6 +174,10 @@ namespace Phoenix{
 
     template<>
 	void Scene::OnComponentAdded<CubeComponent>(Entity entity, CubeComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<MeshComponent>(Entity entity, MeshComponent& component){
 	}
 
 

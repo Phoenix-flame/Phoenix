@@ -16,10 +16,12 @@ namespace Phoenix{
             xoffset *= 0.2f;
             yoffset *= 0.2f;
 
-            if (Input::IsMouseButtonPressed(Mouse::Button0) && Input::IsKeyPressed(Key::LeftControl)){
+            // Right mouse: orbit. Middle mouse: pan. (Left mouse is reserved for
+            // selection / the transform gizmo.)
+            if (Input::IsMouseButtonPressed(Mouse::Button1)){
                 Rotate(xoffset, yoffset);
             }
-            else if (Input::IsMouseButtonPressed(Mouse::Button1) && Input::IsKeyPressed(Key::LeftControl)){
+            else if (Input::IsMouseButtonPressed(Mouse::Button2)){
                 Pan(xoffset, yoffset);
             }
         }

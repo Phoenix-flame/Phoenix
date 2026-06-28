@@ -1,5 +1,4 @@
-#pragma once 
-#include <entt/entity/entity.hpp>
+#pragma once
 #include <entt/entt.hpp>
 #include <Phoenix/Scene/Scene.h>
 #include <Phoenix/core/base.h>
