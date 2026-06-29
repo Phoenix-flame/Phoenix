@@ -11,7 +11,7 @@ namespace Phoenix{
     struct RenderLightCube{
         RenderLightCube() = default;
         void Init(){
-            m_Shader = Shader::Create(std::string(PHX_PROJECT_DIR) + "/Sandbox/assets/shaders/lighting.glsl");
+            m_Shader = Shader::Create("assets/shaders/lighting.glsl");
             m_Vertex_array = CreateRef<VertexArray>();
             m_Vertex_array->Bind();
             Ref<VertexBuffer> vertexBuffer = CreateRef<VertexBuffer>(this->vertices, sizeof(this->vertices));

@@ -33,7 +33,12 @@ void MainLayer::OnAttach() {
 
     m_Scene->OnResize(m_Framebuffer->GetSpecification().Width, m_Framebuffer->GetSpecification().Height);
 
-    m_Scene->CreateEntity("Camera").AddComponent<CameraComponent>();
+    {
+        auto cameraEntity = m_Scene->CreateEntity("Camera");
+        cameraEntity.AddComponent<CameraComponent>();
+        // Place it back from the origin so it looks at the scene (down -Z) when primary.
+        cameraEntity.GetComponent<TransformComponent>().Translation = { 0.0f, 1.0f, 8.0f };
+    }
     m_Scene->CreateEntity("Cube").AddComponent<CubeComponent>();
     m_Scene->CreatePointLightEntity("Point Light");
 
@@ -57,16 +62,16 @@ void MainLayer::OnAttach() {
     {
         auto backpack = m_Scene->CreateEntity("Backpack");
         auto& mesh = backpack.AddComponent<MeshComponent>();
-        mesh.model = CreateRef<Model>(std::string(PHX_PROJECT_DIR) + "/Sandbox/backpack/backpack.obj");
+        mesh.model = CreateRef<Model>("backpack/backpack.obj");
         mesh.material.diffuse = glm::vec3(0.55f, 0.42f, 0.30f);
         mesh.material.ambient = glm::vec3(0.30f, 0.24f, 0.18f);
         backpack.GetComponent<TransformComponent>().Translation = { 2.0f, 0.0f, 0.0f };
     }
 
     m_ShaderLibrary = CreateScope<ShaderLibrary>();
-    m_ShaderLibrary->Add(Shader::Create(std::string(PHX_PROJECT_DIR) + "/Sandbox/assets/shaders/basic.glsl"));
-    m_ShaderLibrary->Add(Shader::Create(std::string(PHX_PROJECT_DIR) + "/Sandbox/assets/shaders/lighting.glsl"));
-    m_ShaderLibrary->Add(Shader::Create(std::string(PHX_PROJECT_DIR) + "/Sandbox/assets/shaders/texture.glsl"));
+    m_ShaderLibrary->Add(Shader::Create("assets/shaders/basic.glsl"));
+    m_ShaderLibrary->Add(Shader::Create("assets/shaders/lighting.glsl"));
+    m_ShaderLibrary->Add(Shader::Create("assets/shaders/texture.glsl"));
     
 
     m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
@@ -198,7 +203,7 @@ void MainLayer::OnImGuiRender(){
             if (ImGui::BeginMenu("File"))
             {
                 if (ImGui::MenuItem("Import Scene")) {
-                    std::string path = std::string(PHX_PROJECT_DIR) + "/Sandbox/scene.phx";
+                    std::string path = "scene.phx";
                     auto scene = CreateRef<Scene>();
                     if (SceneSerializer(scene).Deserialize(path)) {
                         m_Scene = scene;
@@ -207,7 +212,7 @@ void MainLayer::OnImGuiRender(){
                     }
                 }
                 if (ImGui::MenuItem("Export Scene")) {
-                    std::string path = std::string(PHX_PROJECT_DIR) + "/Sandbox/scene.phx";
+                    std::string path = "scene.phx";
                     SceneSerializer(m_Scene).Serialize(path);
                 }
                 ImGui::Separator();

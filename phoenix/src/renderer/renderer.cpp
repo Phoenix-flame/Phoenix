@@ -13,7 +13,7 @@ namespace Phoenix{
 		RenderCommand::Init();
         s_RenderLightCube->Init();
         s_CameraGizmo->Init();
-        s_OutlineShader = Shader::Create(std::string(PHX_PROJECT_DIR) + "/Sandbox/assets/shaders/outline.glsl");
+        s_OutlineShader = Shader::Create("assets/shaders/outline.glsl");
 	}
 
 	void Renderer::Shutdown(){

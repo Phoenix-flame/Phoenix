@@ -33,10 +33,6 @@ target_include_directories(
     ${CMAKE_SOURCE_DIR}/third_party
 )
 
-# Absolute path to the project root so assets/shaders can be resolved at runtime
-# regardless of the working directory. PUBLIC so consumers (e.g. Sandbox) inherit it.
-target_compile_definitions(${APP_TARGET} PUBLIC PHX_PROJECT_DIR="${CMAKE_SOURCE_DIR}")
-
 
 get_property(dirs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
 foreach(dir ${dirs})
