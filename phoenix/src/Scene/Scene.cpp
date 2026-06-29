@@ -225,6 +225,35 @@ namespace Phoenix{
             numPointLight ++;
         }
 
+        // Emissive (glowing) objects also cast light on their surroundings: add each
+        // as a point light coloured by its emissive, until the 4-light cap is reached.
+        auto addEmissiveLight = [&](const Material& material, const glm::vec3& position){
+            if (numPointLight >= MAX_NUM_POINT_LIGHTS) { return; }
+            if (material.emissiveStrength <= 0.0f) { return; }
+            glm::vec3 color = material.emissive * material.emissiveStrength;
+            if (color.r <= 0.0f && color.g <= 0.0f && color.b <= 0.0f) { return; }
+            PointLightComponent light;
+            light.ambient   = glm::vec3(0.0f);
+            light.diffuse   = color;
+            light.specular  = color;
+            light.constant  = 1.0f;
+            light.linear    = 0.09f;
+            light.quadratic = 0.032f;
+            pLightComponent[numPointLight] = light;
+            pointLightPos[numPointLight] = position;
+            numPointLight ++;
+        };
+        auto emissiveCubes = m_Registry.view<TransformComponent, CubeComponent>();
+        for (auto entity : emissiveCubes){
+            addEmissiveLight(emissiveCubes.get<CubeComponent>(entity).material,
+                             emissiveCubes.get<TransformComponent>(entity).Translation);
+        }
+        auto emissiveMeshes = m_Registry.view<TransformComponent, MeshComponent>();
+        for (auto entity : emissiveMeshes){
+            addEmissiveLight(emissiveMeshes.get<MeshComponent>(entity).material,
+                             emissiveMeshes.get<TransformComponent>(entity).Translation);
+        }
+
         {
             PHX_PROFILE("Scene Components");
             Renderer::BeginScene(sceneCameraProjection, sceneCameraView, cameraPos);
