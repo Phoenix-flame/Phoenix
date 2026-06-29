@@ -28,6 +28,7 @@ namespace Phoenix{
         out << YAML::Key << "shininess" << YAML::Value << material.shininess;
         out << YAML::Key << "emissive"  << YAML::Value << material.emissive;
         out << YAML::Key << "emissiveStrength" << YAML::Value << material.emissiveStrength;
+        out << YAML::Key << "reflectivity" << YAML::Value << material.reflectivity;
         out << YAML::EndMap;
     }
 
@@ -39,6 +40,7 @@ namespace Phoenix{
         material.shininess = node["shininess"].as<float>();
         if (node["emissive"])         material.emissive = ReadVec3(node["emissive"]);
         if (node["emissiveStrength"]) material.emissiveStrength = node["emissiveStrength"].as<float>();
+        if (node["reflectivity"])     material.reflectivity = node["reflectivity"].as<float>();
         return material;
     }
 

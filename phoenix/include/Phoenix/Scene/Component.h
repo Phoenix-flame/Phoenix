@@ -34,6 +34,9 @@ namespace Phoenix{
         // added to the lit colour; strength > 1 pushes it into HDR so it blooms.
         glm::vec3 emissive = glm::vec3(0.0f);
         float emissiveStrength = 0.0f;
+        // Environment (sky/ground) reflection blended in by this amount (0 = none,
+        // 1 = mirror). Reflects a procedural environment, not the scene itself.
+        float reflectivity = 0.0f;
     };
 
     struct MeshComponent{

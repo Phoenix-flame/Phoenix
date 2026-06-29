@@ -84,6 +84,9 @@ uniform vec3 u_Ambient;
 // Self-illumination (added on top of lighting); drives the bloom/glow effect.
 uniform vec3 u_Emissive;
 
+// Environment reflection amount (0 = none, 1 = mirror).
+uniform float u_Reflectivity;
+
 // Optional diffuse texture. When u_HasDiffuseMap is false, material.diffuse is used.
 uniform sampler2D u_DiffuseMap;
 uniform bool u_HasDiffuseMap;
@@ -110,6 +113,17 @@ float ShadowCalculation(vec3 normal, vec3 lightDir)
         }
     }
     return shadow / 9.0;
+}
+
+// Procedural environment: a sky gradient above the horizon, dim ground below.
+vec3 SampleEnvironment(vec3 dir)
+{
+    float t = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
+    vec3 horizon = vec3(0.55, 0.60, 0.70);
+    vec3 zenith  = vec3(0.15, 0.35, 0.75);
+    vec3 ground  = vec3(0.10, 0.10, 0.12);
+    vec3 sky = mix(horizon, zenith, smoothstep(0.5, 1.0, t));
+    return mix(ground, sky, smoothstep(0.45, 0.55, t));
 }
 
 vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 diffuseColor)
@@ -164,6 +178,12 @@ void main()
     // phase 2: Point lights
     for(int i = 0; i < NR_POINT_LIGHTS; i++)
         result += CalcPointLight(pointLights[i], norm, FragPos, viewDir, diffuseColor);
+
+    // environment reflection (mirror a procedural sky/ground)
+    if (u_Reflectivity > 0.0){
+        vec3 reflectDir = reflect(-viewDir, norm);
+        result = mix(result, SampleEnvironment(reflectDir), u_Reflectivity);
+    }
 
     // emissive / glow
     result += u_Emissive;

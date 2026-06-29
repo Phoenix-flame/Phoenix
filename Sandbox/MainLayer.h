@@ -43,6 +43,9 @@ private:
     void Redo();
     void RestoreScene(const std::string& snapshot);
 
+    // Populate m_Scene with the bloom/glow/shadow showcase.
+    void BuildShowcaseScene();
+
 private:
     bool vsync = true;
 private:

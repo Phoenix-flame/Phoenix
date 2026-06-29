@@ -163,6 +163,7 @@ namespace Phoenix{
         shader->SetFloat3("material.specular", material.specular);
         shader->SetFloat("material.shininess", material.shininess);
         shader->SetFloat3("u_Emissive", material.emissive * material.emissiveStrength);
+        shader->SetFloat("u_Reflectivity", material.reflectivity);
 
         if (diffuseMap){
             diffuseMap->Bind(0);

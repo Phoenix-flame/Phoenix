@@ -309,11 +309,13 @@ namespace Phoenix{
             ImGui::DragFloat("Shininess", &component.material.shininess, 1.0f, 0.0f, 128.0f);
             ImGui::ColorEdit3("Emissive", glm::value_ptr(component.material.emissive));
             ImGui::DragFloat("Glow Strength", &component.material.emissiveStrength, 0.05f, 0.0f, 10.0f);
+            ImGui::SliderFloat("Reflectivity", &component.material.reflectivity, 0.0f, 1.0f);
 		});
 
         DrawComponent<MeshComponent>("Mesh", entity, [](MeshComponent& component){
             ImGui::ColorEdit3("Emissive", glm::value_ptr(component.material.emissive));
             ImGui::DragFloat("Glow Strength", &component.material.emissiveStrength, 0.05f, 0.0f, 10.0f);
+            ImGui::SliderFloat("Reflectivity", &component.material.reflectivity, 0.0f, 1.0f);
             float diffuse[] = {component.material.diffuse.x, component.material.diffuse.y, component.material.diffuse.z};
             if (ImGui::ColorEdit3("Tint (no texture)", diffuse)){
                 component.material.diffuse.x = diffuse[0];

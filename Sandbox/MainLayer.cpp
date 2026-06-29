@@ -33,40 +33,7 @@ void MainLayer::OnAttach() {
 
     m_Scene->OnResize(m_Framebuffer->GetSpecification().Width, m_Framebuffer->GetSpecification().Height);
 
-    {
-        auto cameraEntity = m_Scene->CreateEntity("Camera");
-        cameraEntity.AddComponent<CameraComponent>();
-        // Place it back from the origin so it looks at the scene (down -Z) when primary.
-        cameraEntity.GetComponent<TransformComponent>().Translation = { 0.0f, 1.0f, 8.0f };
-    }
-    m_Scene->CreateEntity("Cube").AddComponent<CubeComponent>();
-    m_Scene->CreatePointLightEntity("Point Light");
-
-    // Physics demo: a dynamic cube that falls onto a static floor when you press Play.
-    {
-        auto floor = m_Scene->CreateEntity("Floor");
-        floor.AddComponent<CubeComponent>();
-        auto& floorTransform = floor.GetComponent<TransformComponent>();
-        floorTransform.Translation = { 0.0f, -2.0f, 0.0f };
-        floorTransform.Scale = { 10.0f, 0.5f, 10.0f };
-        floor.AddComponent<RigidBodyComponent>().type = RigidBodyComponent::Type::Static;
-        floor.AddComponent<BoxColliderComponent>();
-
-        auto box = m_Scene->CreateEntity("Falling Cube");
-        box.AddComponent<CubeComponent>();
-        box.GetComponent<TransformComponent>().Translation = { 0.0f, 4.0f, 0.0f };
-        box.AddComponent<RigidBodyComponent>(); // dynamic by default
-        box.AddComponent<BoxColliderComponent>();
-    }
-
-    {
-        auto backpack = m_Scene->CreateEntity("Backpack");
-        auto& mesh = backpack.AddComponent<MeshComponent>();
-        mesh.model = CreateRef<Model>("backpack/backpack.obj");
-        mesh.material.diffuse = glm::vec3(0.55f, 0.42f, 0.30f);
-        mesh.material.ambient = glm::vec3(0.30f, 0.24f, 0.18f);
-        backpack.GetComponent<TransformComponent>().Translation = { 2.0f, 0.0f, 0.0f };
-    }
+    BuildShowcaseScene();
 
     m_ShaderLibrary = CreateScope<ShaderLibrary>();
     m_ShaderLibrary->Add(Shader::Create("assets/shaders/basic.glsl"));
@@ -79,6 +46,111 @@ void MainLayer::OnAttach() {
     m_Bloom.Init();
 
     m_LastSnapshot = SceneSerializer(m_Scene).SerializeToString();
+}
+
+void MainLayer::BuildShowcaseScene() {
+    // Low ambient so shadows read clearly and the neon glow pops.
+    m_Scene->AmbientColor() = glm::vec3(0.04f);
+
+    {
+        auto cam = m_Scene->CreateEntity("Camera");
+        cam.AddComponent<CameraComponent>();
+        cam.GetComponent<TransformComponent>().Translation = { 0.0f, 4.0f, 14.0f };
+    }
+
+    // Directional "sun" aimed down at an angle to cast clear shadows.
+    {
+        auto sun = m_Scene->CreateDirLightEntity("Sun");
+        auto& t = sun.GetComponent<TransformComponent>();
+        t.Translation = { 7.0f, 9.0f, 5.0f };
+        t.Rotation = { glm::radians(-55.0f), glm::radians(35.0f), 0.0f };
+        auto& dl = sun.GetComponent<DirLightComponent>();
+        dl.ambient  = glm::vec3(0.04f);
+        dl.diffuse  = glm::vec3(0.9f);
+        dl.specular = glm::vec3(1.0f);
+    }
+
+    // Matte floor: receives shadows; also a static physics collider.
+    {
+        auto floor = m_Scene->CreateEntity("Floor");
+        auto& c = floor.AddComponent<CubeComponent>();
+        c.material.ambient = glm::vec3(0.5f);
+        c.material.diffuse = glm::vec3(0.5f);
+        c.material.specular = glm::vec3(0.1f);
+        c.material.shininess = 8.0f;
+        c.material.reflectivity = 0.25f; // subtle reflective sheen
+        auto& t = floor.GetComponent<TransformComponent>();
+        t.Translation = { 0.0f, -1.0f, 0.0f };
+        t.Scale = { 24.0f, 0.5f, 24.0f };
+        floor.AddComponent<RigidBodyComponent>().type = RigidBodyComponent::Type::Static;
+        floor.AddComponent<BoxColliderComponent>();
+    }
+
+    // Shadow-casting pillars.
+    const glm::vec3 pillarPos[] = { {-5.0f, 1.5f, -3.0f}, {5.0f, 2.0f, -4.0f}, {-3.0f, 1.0f, 4.0f} };
+    const float pillarHeight[] = { 3.0f, 4.0f, 2.0f };
+    for (int i = 0; i < 3; i++){
+        auto e = m_Scene->CreateEntity("Pillar " + std::to_string(i + 1));
+        auto& c = e.AddComponent<CubeComponent>();
+        c.material.ambient = glm::vec3(0.35f, 0.35f, 0.4f);
+        c.material.diffuse = glm::vec3(0.35f, 0.35f, 0.4f);
+        c.material.specular = glm::vec3(0.4f);
+        c.material.shininess = 32.0f;
+        auto& t = e.GetComponent<TransformComponent>();
+        t.Translation = pillarPos[i];
+        t.Scale = { 1.0f, pillarHeight[i], 1.0f };
+    }
+
+    // Neon glowing cubes: bloom + emit coloured light onto the scene.
+    struct Neon { const char* name; glm::vec3 pos; glm::vec3 color; };
+    const Neon neons[] = {
+        { "Neon Magenta", { -4.0f, 2.5f,  0.0f }, { 1.0f, 0.0f, 1.0f } },
+        { "Neon Cyan",    {  4.0f, 1.2f,  1.0f }, { 0.0f, 1.0f, 1.0f } },
+        { "Neon Green",   {  0.0f, 3.5f, -3.0f }, { 0.2f, 1.0f, 0.2f } },
+    };
+    for (const auto& n : neons){
+        auto e = m_Scene->CreateEntity(n.name);
+        auto& c = e.AddComponent<CubeComponent>();
+        c.material.ambient = n.color * 0.1f;
+        c.material.diffuse = n.color;
+        c.material.emissive = n.color;
+        c.material.emissiveStrength = 4.0f;
+        auto& t = e.GetComponent<TransformComponent>();
+        t.Translation = n.pos;
+        t.Scale = glm::vec3(0.6f);
+    }
+
+    // Glossy cube: strong specular highlight (closest thing to reflection we have).
+    {
+        auto e = m_Scene->CreateEntity("Mirror Cube");
+        auto& c = e.AddComponent<CubeComponent>();
+        c.material.ambient = glm::vec3(0.05f);
+        c.material.diffuse = glm::vec3(0.15f, 0.15f, 0.2f);
+        c.material.specular = glm::vec3(1.0f);
+        c.material.shininess = 128.0f;
+        c.material.reflectivity = 0.8f; // mirror-like environment reflection
+        e.GetComponent<TransformComponent>().Translation = { 2.5f, 0.5f, 4.0f };
+    }
+
+    // Textured backpack: lit, casts a shadow.
+    {
+        auto bp = m_Scene->CreateEntity("Backpack");
+        auto& mesh = bp.AddComponent<MeshComponent>();
+        mesh.model = CreateRef<Model>("backpack/backpack.obj");
+        bp.GetComponent<TransformComponent>().Translation = { 0.0f, 1.0f, 0.0f };
+    }
+
+    // A glowing cube that drops when you press Run (physics + bloom).
+    {
+        auto box = m_Scene->CreateEntity("Falling Glow Cube");
+        auto& c = box.AddComponent<CubeComponent>();
+        c.material.diffuse = glm::vec3(1.0f, 0.6f, 0.1f);
+        c.material.emissive = glm::vec3(1.0f, 0.6f, 0.1f);
+        c.material.emissiveStrength = 3.0f;
+        box.GetComponent<TransformComponent>().Translation = { 1.0f, 7.0f, 0.0f };
+        box.AddComponent<RigidBodyComponent>();
+        box.AddComponent<BoxColliderComponent>();
+    }
 }
 
 void MainLayer::CommitHistory() {
@@ -260,6 +332,16 @@ void MainLayer::OnImGuiRender(){
         {
             if (ImGui::BeginMenu("File"))
             {
+                if (ImGui::MenuItem("Load Showcase Scene")) {
+                    m_Scene = CreateRef<Scene>();
+                    m_Scene->OnResize(m_ViewportSize.x, m_ViewportSize.y);
+                    BuildShowcaseScene();
+                    m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
+                    m_UndoStack.clear();
+                    m_RedoStack.clear();
+                    m_LastSnapshot = SceneSerializer(m_Scene).SerializeToString();
+                }
+                ImGui::Separator();
                 if (ImGui::MenuItem("Import Scene")) {
                     std::string path = "scene.phx";
                     auto scene = CreateRef<Scene>();

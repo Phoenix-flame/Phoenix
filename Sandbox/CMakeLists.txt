@@ -20,7 +20,13 @@ target_link_libraries(${PROJECT_NAME}
     phoenix
 )
 
-# Copy assets next to the executable so they resolve relative to the binary
-# (main() chdir's to the executable's directory at startup).
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/assets   DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/backpack DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+# Copy assets next to the executable AFTER EVERY BUILD so new/changed shaders and
+# models always sync (configure-time file(COPY) misses files added later).
+# main() chdir's to the executable's directory at startup.
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/assets $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/backpack $<TARGET_FILE_DIR:${PROJECT_NAME}>/backpack
+    VERBATIM
+)
