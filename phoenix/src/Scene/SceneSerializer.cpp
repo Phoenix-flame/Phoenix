@@ -168,6 +168,14 @@ namespace Phoenix{
             out << YAML::EndMap;
         }
 
+        if (entity.HasComponent<PrimitiveComponent>()){
+            auto& p = entity.GetComponent<PrimitiveComponent>();
+            out << YAML::Key << "PrimitiveComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "Type" << YAML::Value << (int)p.type;
+            SerializeMaterial(out, p.material);
+            out << YAML::EndMap;
+        }
+
         if (entity.HasComponent<LuaScriptComponent>()){
             out << YAML::Key << "LuaScriptComponent" << YAML::Value << YAML::BeginMap;
             out << YAML::Key << "Source" << YAML::Value << entity.GetComponent<LuaScriptComponent>().source;
@@ -340,6 +348,13 @@ namespace Phoenix{
             w.mesh = nullptr;
         }
         else if (entity.HasComponent<WaterComponent>()) entity.RemoveComponent<WaterComponent>();
+
+        if (auto n = node["PrimitiveComponent"]){
+            auto& p = entity.HasComponent<PrimitiveComponent>() ? entity.GetComponent<PrimitiveComponent>() : entity.AddComponent<PrimitiveComponent>();
+            p.type = (PrimitiveComponent::Type)n["Type"].as<int>();
+            p.material = ReadMaterial(n["Material"]);
+        }
+        else if (entity.HasComponent<PrimitiveComponent>()) entity.RemoveComponent<PrimitiveComponent>();
 
         if (auto n = node["LuaScriptComponent"]){
             auto& s = entity.HasComponent<LuaScriptComponent>() ? entity.GetComponent<LuaScriptComponent>() : entity.AddComponent<LuaScriptComponent>();

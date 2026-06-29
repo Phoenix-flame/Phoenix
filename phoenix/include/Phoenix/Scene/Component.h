@@ -53,6 +53,19 @@ namespace Phoenix{
         CubeComponent(const CubeComponent&) = default;
     };
 
+    // A built-in procedural shape (sphere, pillar/cylinder, cone, plane, cube). The
+    // unit-sized mesh is generated lazily and shared across all entities of the same
+    // type (cached by the Scene); scale it with the entity transform. Add a Rigid Body
+    // + Mesh Collider to make it interact physically.
+    struct PrimitiveComponent{
+        enum class Type { Cube = 0, Sphere = 1, Cylinder = 2, Cone = 3, Plane = 4 };
+        Type type = Type::Sphere;
+        Material material;
+        PrimitiveComponent() = default;
+        PrimitiveComponent(const PrimitiveComponent&) = default;
+        PrimitiveComponent(Type t) : type(t) {}
+    };
+
     // Physics. Type values match PhysicsWorld::BodyType. runtimeBodyID is filled in
     // when the scene's physics simulation starts (0xffffffff = no body / not running).
     struct RigidBodyComponent{

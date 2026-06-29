@@ -3,6 +3,7 @@
 #include <Phoenix/Scene/Entity.h>
 #include <Phoenix/Scene/Component.h>
 #include <Phoenix/renderer/renderer.h>
+#include <Phoenix/renderer/Primitives.h>
 #include <Phoenix/core/log.h>
 #include <Phoenix/core/Profiler.h>
 #include <Phoenix/Physics/Physics.h>
@@ -10,7 +11,27 @@
 #include <limits>
 #include <cmath>
 #include <algorithm>
+#include <unordered_map>
 namespace Phoenix{
+
+    // Built-in primitive meshes are unit-sized and identical across all entities of a
+    // given type, so generate each once and share it. Generated lazily on the main
+    // (render) thread the first time a primitive of that type is drawn.
+    static Ref<Mesh> GetPrimitiveMesh(PrimitiveComponent::Type type){
+        static std::unordered_map<int, Ref<Mesh>> cache;
+        auto it = cache.find((int)type);
+        if (it != cache.end()) { return it->second; }
+        Ref<Mesh> mesh;
+        switch (type){
+            case PrimitiveComponent::Type::Cube:     mesh = Primitives::Cube();     break;
+            case PrimitiveComponent::Type::Sphere:   mesh = Primitives::Sphere();   break;
+            case PrimitiveComponent::Type::Cylinder: mesh = Primitives::Cylinder(); break;
+            case PrimitiveComponent::Type::Cone:     mesh = Primitives::Cone();     break;
+            case PrimitiveComponent::Type::Plane:    mesh = Primitives::Plane();    break;
+        }
+        cache[(int)type] = mesh;
+        return mesh;
+    }
 
     // Build a renderable mesh from a terrain heightmap (positions + analytic normals).
     static Ref<Mesh> BuildTerrainMesh(const TerrainComponent& terrain){
@@ -126,6 +147,31 @@ namespace Phoenix{
                 rb.runtimeBodyID = m_PhysicsWorld->CreateMesh(points, indices, transform.Translation, transform.Rotation);
             }
         }
+        // Primitive shapes: build a collider from the generated unit mesh. Convex hull
+        // for dynamic/kinematic bodies, exact triangle mesh for static ones.
+        auto primColliderView = m_Registry.view<RigidBodyComponent, MeshColliderComponent, PrimitiveComponent, TransformComponent>();
+        for (auto entity : primColliderView){
+            auto& rb = primColliderView.get<RigidBodyComponent>(entity);
+            if (rb.runtimeBodyID != 0xffffffff) { continue; } // already has a body
+            auto& meshCollider = primColliderView.get<MeshColliderComponent>(entity);
+            auto& primitive = primColliderView.get<PrimitiveComponent>(entity);
+            auto& transform = primColliderView.get<TransformComponent>(entity);
+            Ref<Mesh> mesh = GetPrimitiveMesh(primitive.type);
+            if (!mesh) { continue; }
+
+            std::vector<glm::vec3> points;
+            points.reserve(mesh->GetPositions().size());
+            for (const auto& p : mesh->GetPositions()) { points.push_back(p * transform.Scale); }
+
+            PhysicsWorld::BodyType type = (PhysicsWorld::BodyType)(int)rb.type;
+            if (meshCollider.convex || type != PhysicsWorld::BodyType::Static){
+                rb.runtimeBodyID = m_PhysicsWorld->CreateConvexHull(points, transform.Translation, transform.Rotation, type);
+            }
+            else{
+                rb.runtimeBodyID = m_PhysicsWorld->CreateMesh(points, mesh->GetIndices(), transform.Translation, transform.Rotation);
+            }
+        }
+
         // Terrain: static triangle-mesh collider from the heightfield.
         auto terrainView = m_Registry.view<TerrainComponent, TransformComponent>();
         for (auto entity : terrainView){
@@ -393,6 +439,11 @@ namespace Phoenix{
             addEmissiveLight(emissiveMeshes.get<MeshComponent>(entity).material,
                              emissiveMeshes.get<TransformComponent>(entity).Translation);
         }
+        auto emissivePrimitives = m_Registry.view<TransformComponent, PrimitiveComponent>();
+        for (auto entity : emissivePrimitives){
+            addEmissiveLight(emissivePrimitives.get<PrimitiveComponent>(entity).material,
+                             emissivePrimitives.get<TransformComponent>(entity).Translation);
+        }
 
         // Directional shadow pass: render scene depth from the light's point of view
         // into the shadow map (must happen before the main lighting pass).
@@ -426,6 +477,13 @@ namespace Phoenix{
                 if (!terrain.mesh) { continue; } // built lazily in the main pass
                 Renderer::SubmitShadow(terrain.mesh->GetVertexArray(),
                     terrainCasters.get<TransformComponent>(entity).GetTransform());
+            }
+            auto primitiveCasters = m_Registry.view<PrimitiveComponent, TransformComponent>();
+            for (auto entity : primitiveCasters){
+                Ref<Mesh> mesh = GetPrimitiveMesh(primitiveCasters.get<PrimitiveComponent>(entity).type);
+                if (!mesh) { continue; }
+                Renderer::SubmitShadow(mesh->GetVertexArray(),
+                    primitiveCasters.get<TransformComponent>(entity).GetTransform());
             }
             Renderer::EndShadowPass();
         }
@@ -468,6 +526,17 @@ namespace Phoenix{
                 Renderer::Submit(terrain.mesh->GetVertexArray(), terrain.material, transform.GetTransform());
             }
             Renderer::SetWireframe(false);
+
+            auto primitiveView = m_Registry.view<PrimitiveComponent, TransformComponent>();
+            for (auto entity : primitiveView){
+                auto& primitive = primitiveView.get<PrimitiveComponent>(entity);
+                auto transform = primitiveView.get<TransformComponent>(entity);
+                Ref<Mesh> mesh = GetPrimitiveMesh(primitive.type);
+                if (!mesh) { continue; }
+                Renderer::SetWireframe(m_Registry.any_of<WireframeComponent>(entity));
+                Renderer::Submit(mesh->GetVertexArray(), primitive.material, transform.GetTransform());
+            }
+            Renderer::SetWireframe(false);
             Renderer::EndScene();
         }
 
@@ -499,6 +568,12 @@ namespace Phoenix{
                         vertexArrays.push_back(subMesh->GetVertexArray());
                     }
                     Renderer::DrawOutline(vertexArrays, transform, outlineColor);
+                }
+            }
+            if (selectedEntity.HasComponent<PrimitiveComponent>()){
+                Ref<Mesh> mesh = GetPrimitiveMesh(selectedEntity.GetComponent<PrimitiveComponent>().type);
+                if (mesh){
+                    Renderer::DrawOutline({ mesh->GetVertexArray() }, transform, outlineColor);
                 }
             }
         }
@@ -573,6 +648,10 @@ namespace Phoenix{
 
     template<>
 	void Scene::OnComponentAdded<WaterComponent>(Entity entity, WaterComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<PrimitiveComponent>(Entity entity, PrimitiveComponent& component){
 	}
 
     template<>

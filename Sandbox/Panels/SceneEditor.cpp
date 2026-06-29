@@ -254,6 +254,24 @@ namespace Phoenix{
 				m_SelectedEntity.AddComponent<WaterComponent>();
 			}
 
+			if (ImGui::BeginMenu("Create Shape")){
+				struct ShapeDef { const char* label; const char* name; PrimitiveComponent::Type type; };
+				const ShapeDef shapes[] = {
+					{ "Sphere",          "Sphere",   PrimitiveComponent::Type::Sphere   },
+					{ "Pillar (Cylinder)", "Pillar", PrimitiveComponent::Type::Cylinder },
+					{ "Cone",            "Cone",     PrimitiveComponent::Type::Cone     },
+					{ "Plane",           "Plane",    PrimitiveComponent::Type::Plane    },
+					{ "Cube",            "Cube",     PrimitiveComponent::Type::Cube     },
+				};
+				for (const auto& s : shapes){
+					if (ImGui::MenuItem(s.label)){
+						m_SelectedEntity = m_ActiveScene->CreateEntity(s.name);
+						m_SelectedEntity.AddComponent<PrimitiveComponent>(s.type);
+					}
+				}
+				ImGui::EndMenu();
+			}
+
 			ImGui::EndPopup();
 		}
 
@@ -503,6 +521,11 @@ namespace Phoenix{
                     m_SelectedEntity.AddComponent<LuaScriptComponent>();
                 ImGui::CloseCurrentPopup();
             }
+            if (ImGui::MenuItem("Shape")){
+                if (!m_SelectedEntity.HasComponent<PrimitiveComponent>())
+                    m_SelectedEntity.AddComponent<PrimitiveComponent>();
+                ImGui::CloseCurrentPopup();
+            }
 
 			ImGui::EndPopup();
 		}
@@ -535,6 +558,20 @@ namespace Phoenix{
                 component.material.specular.y = specular[1];
                 component.material.specular.z = specular[2];
             }
+            ImGui::DragFloat("Shininess", &component.material.shininess, 1.0f, 0.0f, 128.0f);
+            ImGui::ColorEdit3("Emissive", glm::value_ptr(component.material.emissive));
+            ImGui::DragFloat("Glow Strength", &component.material.emissiveStrength, 0.05f, 0.0f, 10.0f);
+            ImGui::SliderFloat("Reflectivity", &component.material.reflectivity, 0.0f, 1.0f);
+		});
+
+        DrawComponent<PrimitiveComponent>("Shape", entity, [](PrimitiveComponent& component){
+            const char* kinds[] = { "Cube", "Sphere", "Cylinder", "Cone", "Plane" };
+            int current = (int)component.type;
+            if (ImGui::Combo("Shape", &current, kinds, IM_ARRAYSIZE(kinds)))
+                component.type = (PrimitiveComponent::Type)current;
+            ImGui::ColorEdit3("Ambient", glm::value_ptr(component.material.ambient));
+            ImGui::ColorEdit3("Diffuse", glm::value_ptr(component.material.diffuse));
+            ImGui::ColorEdit3("Specular", glm::value_ptr(component.material.specular));
             ImGui::DragFloat("Shininess", &component.material.shininess, 1.0f, 0.0f, 128.0f);
             ImGui::ColorEdit3("Emissive", glm::value_ptr(component.material.emissive));
             ImGui::DragFloat("Glow Strength", &component.material.emissiveStrength, 0.05f, 0.0f, 10.0f);
