@@ -67,8 +67,9 @@ in vec2 TexCoords;
 in vec4 FragPosLightSpace;
 out vec4 FragColor;
 
-// Directional shadow map.
-uniform sampler2D u_ShadowMap;
+// Directional shadow map (comparison sampler -> hardware PCF).
+// GLES requires an explicit precision for shadow samplers.
+uniform highp sampler2DShadow u_ShadowMap;
 uniform bool u_ShadowsEnabled;
 uniform vec3 boxColor;
 uniform vec3 lightColor;
@@ -103,15 +104,18 @@ float ShadowCalculation(vec3 normal, vec3 lightDir)
     // slope-scaled bias to avoid shadow acne
     float bias = max(0.0025 * (1.0 - dot(normal, lightDir)), 0.0008);
 
-    // 5x5 PCF with a wider spread for soft shadow edges.
+    // 5x5 hardware PCF (each tap is a bilinearly filtered comparison) with a wider
+    // spread for smooth, unbanded soft shadow edges.
     float shadow = 0.0;
     float samples = 0.0;
     const float spread = 1.6;
+    float refDepth = currentDepth - bias;
     vec2 texelSize = (1.0 / vec2(textureSize(u_ShadowMap, 0))) * spread;
     for (int x = -2; x <= 2; ++x){
         for (int y = -2; y <= 2; ++y){
-            float pcfDepth = texture(u_ShadowMap, projCoords.xy + vec2(float(x), float(y)) * texelSize).r;
-            shadow += (currentDepth - bias > pcfDepth) ? 1.0 : 0.0;
+            // texture(sampler2DShadow, vec3(uv, ref)) returns 1.0 when lit, filtered.
+            float lit = texture(u_ShadowMap, vec3(projCoords.xy + vec2(float(x), float(y)) * texelSize, refDepth));
+            shadow += 1.0 - lit;
             samples += 1.0;
         }
     }
