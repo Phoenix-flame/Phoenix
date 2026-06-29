@@ -15,6 +15,7 @@ namespace Phoenix{
 		virtual void Resize(uint32_t width, uint32_t height) override;
 
 		virtual uint32_t GetColorAttachmentRendererID() const override { return m_ColorAttachment; }
+		virtual uint32_t GetRendererID() const override { return m_RendererID; }
 
 		virtual const FramebufferSpecification& GetSpecification() const override { return m_Specification; }
 	private:

@@ -2,6 +2,7 @@
 #include <Phoenix/imGui/imgui.h>
 #include <Phoenix/imGui/imgui_internal.h>
 #include <Phoenix/Scene/Component.h>
+#include <glm/gtc/type_ptr.hpp>
 
 namespace Phoenix{
 
@@ -306,7 +307,21 @@ namespace Phoenix{
                 component.material.specular.z = specular[2];
             }
             ImGui::DragFloat("Shininess", &component.material.shininess, 1.0f, 0.0f, 128.0f);
+            ImGui::ColorEdit3("Emissive", glm::value_ptr(component.material.emissive));
+            ImGui::DragFloat("Glow Strength", &component.material.emissiveStrength, 0.05f, 0.0f, 10.0f);
 		});
+
+        DrawComponent<MeshComponent>("Mesh", entity, [](MeshComponent& component){
+            ImGui::ColorEdit3("Emissive", glm::value_ptr(component.material.emissive));
+            ImGui::DragFloat("Glow Strength", &component.material.emissiveStrength, 0.05f, 0.0f, 10.0f);
+            float diffuse[] = {component.material.diffuse.x, component.material.diffuse.y, component.material.diffuse.z};
+            if (ImGui::ColorEdit3("Tint (no texture)", diffuse)){
+                component.material.diffuse.x = diffuse[0];
+                component.material.diffuse.y = diffuse[1];
+                component.material.diffuse.z = diffuse[2];
+            }
+            ImGui::DragFloat("Shininess", &component.material.shininess, 1.0f, 0.0f, 128.0f);
+        });
 
         DrawComponent<DirLightComponent>("Directional Light", entity, [](auto& component){
 			ImGui::Checkbox("Active", &component.isActive);

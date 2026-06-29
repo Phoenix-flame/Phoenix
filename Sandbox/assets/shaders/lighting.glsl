@@ -73,6 +73,9 @@ uniform DirLight dirLight;
 // Global ambient light, applied to every fragment regardless of light sources.
 uniform vec3 u_Ambient;
 
+// Self-illumination (added on top of lighting); drives the bloom/glow effect.
+uniform vec3 u_Emissive;
+
 // Optional diffuse texture. When u_HasDiffuseMap is false, material.diffuse is used.
 uniform sampler2D u_DiffuseMap;
 uniform bool u_HasDiffuseMap;
@@ -127,6 +130,9 @@ void main()
     // phase 2: Point lights
     for(int i = 0; i < NR_POINT_LIGHTS; i++)
         result += CalcPointLight(pointLights[i], norm, FragPos, viewDir, diffuseColor);
+
+    // emissive / glow
+    result += u_Emissive;
 
     FragColor = vec4(result, 1.0);
 }

@@ -76,6 +76,8 @@ void MainLayer::OnAttach() {
 
     m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
 
+    m_Bloom.Init();
+
     m_LastSnapshot = SceneSerializer(m_Scene).SerializeToString();
 }
 
@@ -145,18 +147,28 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
         m_MainCamera.OnUpdate(ts);
     }
 
-    m_Framebuffer->Bind();
-
-    Phoenix::RenderCommand::SetClearColor(glm::vec4(m_BackgroundColor, 1.0));
-    Phoenix::RenderCommand::Clear();
-    
-    glm::mat4 projection = m_MainCamera.GetViewProjectionMatrix();
-    {
-        PHX_PROFILE("Scene Update");
-        m_Scene->OnUpdate(m_MainCamera, ts, m_SceneEditor->GetSelectedEntity());
+    if (m_BloomEnabled){
+        // Render the scene to the HDR target, then bloom + composite into m_Framebuffer.
+        m_Bloom.Resize((uint32_t)m_ViewportSize.x, (uint32_t)m_ViewportSize.y);
+        m_Bloom.BindHDRTarget();
+        Phoenix::RenderCommand::SetClearColor(glm::vec4(m_BackgroundColor, 1.0));
+        Phoenix::RenderCommand::Clear();
+        {
+            PHX_PROFILE("Scene Update");
+            m_Scene->OnUpdate(m_MainCamera, ts, m_SceneEditor->GetSelectedEntity());
+        }
+        m_Bloom.Composite(m_Framebuffer->GetRendererID(), m_BloomIntensity, m_BloomThreshold);
     }
-
-    m_Framebuffer->Unbind();
+    else{
+        m_Framebuffer->Bind();
+        Phoenix::RenderCommand::SetClearColor(glm::vec4(m_BackgroundColor, 1.0));
+        Phoenix::RenderCommand::Clear();
+        {
+            PHX_PROFILE("Scene Update");
+            m_Scene->OnUpdate(m_MainCamera, ts, m_SceneEditor->GetSelectedEntity());
+        }
+        m_Framebuffer->Unbind();
+    }
 }
 
 
@@ -312,6 +324,13 @@ void MainLayer::OnImGuiRender(){
 
         ImGui::ColorEdit3("Background Color", glm::value_ptr(m_BackgroundColor));
         ImGui::ColorEdit3("Ambient Light", glm::value_ptr(m_Scene->AmbientColor()));
+
+        ImGui::Separator();
+        ImGui::Checkbox("Bloom", &m_BloomEnabled);
+        if (m_BloomEnabled){
+            ImGui::DragFloat("Bloom Intensity", &m_BloomIntensity, 0.05f, 0.0f, 5.0f);
+            ImGui::DragFloat("Bloom Threshold", &m_BloomThreshold, 0.05f, 0.0f, 5.0f);
+        }
         if (ImGui::Checkbox("VSync", &vsync)){
             Application::Get().GetWindow().SetVSync(vsync);
         }

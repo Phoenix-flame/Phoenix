@@ -30,6 +30,10 @@ namespace Phoenix{
         glm::vec3 diffuse = glm::vec3(1.0f, 0.5f, 0.31f);
         glm::vec3 specular = glm::vec3(0.5f, 0.5f, 0.5f);
         float shininess = 32.0f;
+        // Self-illumination for the bloom/glow effect. emissive * emissiveStrength is
+        // added to the lit colour; strength > 1 pushes it into HDR so it blooms.
+        glm::vec3 emissive = glm::vec3(0.0f);
+        float emissiveStrength = 0.0f;
     };
 
     struct MeshComponent{

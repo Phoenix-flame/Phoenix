@@ -8,6 +8,7 @@
 #include <vendor/imFileDialog/ImGuiFileBrowser.h>
 #include <Phoenix/renderer/CameraController.h>
 #include <Phoenix/renderer/Framebuffer.h>
+#include <Phoenix/renderer/Bloom.h>
 #include <Phoenix/renderer/renderer_command.h>
 #include <Phoenix/Scene/Scene.h>
 #include <Phoenix/event/keyEvent.h>
@@ -65,6 +66,12 @@ private:
     std::vector<std::string> m_UndoStack;
     std::vector<std::string> m_RedoStack;
     std::string m_LastSnapshot;
+
+    // Bloom post-processing.
+    Bloom m_Bloom;
+    bool m_BloomEnabled = true;
+    float m_BloomIntensity = 1.0f;
+    float m_BloomThreshold = 1.0f;
 
 private:
     imgui_addons::ImGuiFileBrowser file_dialog;
