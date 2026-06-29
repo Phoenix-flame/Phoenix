@@ -174,6 +174,85 @@ void MainLayer::BuildShowcaseScene() {
     }
 }
 
+void MainLayer::BuildWaterShowcase() {
+    m_Scene->AmbientColor() = glm::vec3(0.08f, 0.09f, 0.12f);
+
+    {
+        auto cam = m_Scene->CreateEntity("Camera");
+        cam.AddComponent<CameraComponent>();
+        cam.GetComponent<TransformComponent>().Translation = { 0.0f, 10.0f, 34.0f };
+    }
+
+    // Sun
+    {
+        auto sun = m_Scene->CreateDirLightEntity("Sun");
+        auto& t = sun.GetComponent<TransformComponent>();
+        t.Translation = { 20.0f, 25.0f, 15.0f };
+        t.Rotation = { glm::radians(-50.0f), glm::radians(30.0f), 0.0f };
+        auto& dl = sun.GetComponent<DirLightComponent>();
+        dl.ambient  = glm::vec3(0.05f);
+        dl.diffuse  = glm::vec3(1.0f, 0.96f, 0.85f);
+        dl.specular = glm::vec3(1.0f);
+    }
+
+    // Terrain carved into a lake basin (deep bowl in the centre, hills around the rim).
+    {
+        auto e = m_Scene->CreateEntity("Lake Terrain");
+        auto& terr = e.AddComponent<TerrainComponent>();
+        terr.resolution = 96;
+        terr.size = 60.0f;
+        terr.material.ambient   = glm::vec3(0.20f, 0.28f, 0.16f);
+        terr.material.diffuse   = glm::vec3(0.32f, 0.44f, 0.24f);
+        terr.material.specular  = glm::vec3(0.05f);
+        terr.material.shininess = 6.0f;
+
+        int N = terr.resolution;
+        terr.heights.assign((size_t)N * N, 0.0f);
+        for (int z = 0; z < N; z++){
+            for (int x = 0; x < N; x++){
+                float nx = ((float)x / (N - 1) - 0.5f) * 2.0f;
+                float nz = ((float)z / (N - 1) - 0.5f) * 2.0f;
+                float r = std::sqrt(nx * nx + nz * nz);
+                float bowl   = -6.0f * (1.0f - glm::smoothstep(0.0f, 0.55f, r));
+                float rim    = 3.5f * glm::smoothstep(0.45f, 0.9f, r);
+                float ripple = 0.7f * std::sin(nx * 6.0f) * std::cos(nz * 6.0f) * glm::smoothstep(0.5f, 1.0f, r);
+                terr.heights[(size_t)z * N + x] = bowl + rim + ripple;
+            }
+        }
+    }
+
+    // Water filling the basin up to y = -1.5.
+    {
+        auto e = m_Scene->CreateEntity("Water");
+        auto& w = e.AddComponent<WaterComponent>();
+        w.size = 60.0f;
+        w.resolution = 120;
+        w.color = glm::vec3(0.04f, 0.20f, 0.30f);
+        w.alpha = 0.72f;
+        w.amplitude = 0.12f;
+        w.waveScale = 0.5f;
+        w.speed = 1.0f;
+        e.GetComponent<TransformComponent>().Translation = { 0.0f, -1.5f, 0.0f };
+    }
+
+    // Glowing buoys floating at the waterline (bloom + reflection in the water).
+    struct Buoy { const char* name; glm::vec3 pos; glm::vec3 color; };
+    const Buoy buoys[] = {
+        { "Buoy Red",  { -6.0f, -1.0f,  4.0f }, { 1.0f, 0.2f, 0.1f } },
+        { "Buoy Blue", {  7.0f, -1.0f, -3.0f }, { 0.1f, 0.5f, 1.0f } },
+    };
+    for (const auto& b : buoys){
+        auto e = m_Scene->CreateEntity(b.name);
+        auto& c = e.AddComponent<CubeComponent>();
+        c.material.diffuse = b.color;
+        c.material.emissive = b.color;
+        c.material.emissiveStrength = 4.0f;
+        auto& t = e.GetComponent<TransformComponent>();
+        t.Translation = b.pos;
+        t.Scale = glm::vec3(0.5f);
+    }
+}
+
 void MainLayer::SculptTerrain(TerrainComponent& terrain, const glm::vec3& terrainPos,
                               const glm::vec3& terrainScale, const glm::vec3& rayOrigin,
                               const glm::vec3& rayDir, float dt) {
@@ -430,6 +509,15 @@ void MainLayer::OnImGuiRender(){
                     m_Scene = CreateRef<Scene>();
                     m_Scene->OnResize(m_ViewportSize.x, m_ViewportSize.y);
                     BuildShowcaseScene();
+                    m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
+                    m_UndoStack.clear();
+                    m_RedoStack.clear();
+                    m_LastSnapshot = SceneSerializer(m_Scene).SerializeToString();
+                }
+                if (ImGui::MenuItem("Load Water Showcase")) {
+                    m_Scene = CreateRef<Scene>();
+                    m_Scene->OnResize(m_ViewportSize.x, m_ViewportSize.y);
+                    BuildWaterShowcase();
                     m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
                     m_UndoStack.clear();
                     m_RedoStack.clear();

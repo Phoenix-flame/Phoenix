@@ -47,6 +47,8 @@ private:
 
     // Populate m_Scene with the bloom/glow/shadow showcase.
     void BuildShowcaseScene();
+    // Populate m_Scene with the terrain-lake + water showcase.
+    void BuildWaterShowcase();
 
     // Terrain sculpting: raycast to the terrain plane and raise/lower/smooth heights.
     void SculptTerrain(TerrainComponent& terrain, const glm::vec3& terrainPos,
