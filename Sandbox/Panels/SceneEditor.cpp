@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 #include <unordered_set>
+#include <algorithm>
 
 namespace Phoenix{
 
@@ -238,6 +239,15 @@ namespace Phoenix{
 			
 			if (ImGui::MenuItem("Create Directional Light"))
 				m_SelectedEntity = m_ActiveScene->CreateDirLightEntity("Directional Light");
+
+			if (ImGui::MenuItem("Create Terrain")){
+				m_SelectedEntity = m_ActiveScene->CreateEntity("Terrain");
+				auto& terrain = m_SelectedEntity.AddComponent<TerrainComponent>();
+				terrain.material.ambient  = glm::vec3(0.25f, 0.35f, 0.20f);
+				terrain.material.diffuse  = glm::vec3(0.35f, 0.50f, 0.28f);
+				terrain.material.specular = glm::vec3(0.1f);
+				terrain.material.shininess = 8.0f;
+			}
 
 			ImGui::EndPopup();
 		}
@@ -669,6 +679,19 @@ namespace Phoenix{
 				component.halfExtents.z = extents[2];
 			}
 			ImGui::TextDisabled("Scaled by Transform on Run");
+		});
+
+		DrawComponent<TerrainComponent>("Terrain", entity, [](TerrainComponent& component){
+			ImGui::ColorEdit3("Color", glm::value_ptr(component.material.diffuse));
+			component.material.ambient = component.material.diffuse * 0.6f;
+			ImGui::SliderFloat("Reflectivity", &component.material.reflectivity, 0.0f, 1.0f);
+			ImGui::Checkbox("Collider on Run", &component.generateCollider);
+			ImGui::TextDisabled("%d x %d grid, %.0f units. Sculpt via Settings > Terrain Sculpt.",
+				component.resolution, component.resolution, component.size);
+			if (ImGui::Button("Flatten")){
+				std::fill(component.heights.begin(), component.heights.end(), 0.0f);
+				component.dirty = true;
+			}
 		});
 
 		DrawComponent<MeshColliderComponent>("Mesh Collider", entity, [](MeshColliderComponent& component){

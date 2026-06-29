@@ -142,6 +142,19 @@ namespace Phoenix{
             out << YAML::Key << "WireframeComponent" << YAML::Value << YAML::BeginMap << YAML::EndMap;
         }
 
+        if (entity.HasComponent<TerrainComponent>()){
+            auto& t = entity.GetComponent<TerrainComponent>();
+            out << YAML::Key << "TerrainComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "Resolution" << YAML::Value << t.resolution;
+            out << YAML::Key << "Size" << YAML::Value << t.size;
+            out << YAML::Key << "GenerateCollider" << YAML::Value << t.generateCollider;
+            SerializeMaterial(out, t.material);
+            out << YAML::Key << "Heights" << YAML::Value << YAML::Flow << YAML::BeginSeq;
+            for (float h : t.heights) { out << h; }
+            out << YAML::EndSeq;
+            out << YAML::EndMap;
+        }
+
         if (entity.HasComponent<LuaScriptComponent>()){
             out << YAML::Key << "LuaScriptComponent" << YAML::Value << YAML::BeginMap;
             out << YAML::Key << "Source" << YAML::Value << entity.GetComponent<LuaScriptComponent>().source;
@@ -287,6 +300,20 @@ namespace Phoenix{
             if (!entity.HasComponent<WireframeComponent>()) entity.AddComponent<WireframeComponent>();
         }
         else if (entity.HasComponent<WireframeComponent>()) entity.RemoveComponent<WireframeComponent>();
+
+        if (auto n = node["TerrainComponent"]){
+            auto& t = entity.HasComponent<TerrainComponent>() ? entity.GetComponent<TerrainComponent>() : entity.AddComponent<TerrainComponent>();
+            t.resolution = n["Resolution"].as<int>();
+            t.size = n["Size"].as<float>();
+            t.generateCollider = n["GenerateCollider"].as<bool>();
+            t.material = ReadMaterial(n["Material"]);
+            t.heights.clear();
+            for (auto h : n["Heights"]) { t.heights.push_back(h.as<float>()); }
+            if ((int)t.heights.size() != t.resolution * t.resolution) { t.heights.resize((size_t)t.resolution * t.resolution, 0.0f); }
+            t.dirty = true;
+            t.mesh = nullptr;
+        }
+        else if (entity.HasComponent<TerrainComponent>()) entity.RemoveComponent<TerrainComponent>();
 
         if (auto n = node["LuaScriptComponent"]){
             auto& s = entity.HasComponent<LuaScriptComponent>() ? entity.GetComponent<LuaScriptComponent>() : entity.AddComponent<LuaScriptComponent>();

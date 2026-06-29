@@ -15,6 +15,8 @@
 #include <vendor/ImGuizmo/ImGuizmo.h>
 #include <Phoenix/core/Input.h>
 #include <Phoenix/Math/Math.h>
+#include <cmath>
+#include <algorithm>
 MainLayer::MainLayer(const std::string& name): Phoenix::Layer(name), 
         m_MainCamera()
     { }
@@ -172,10 +174,83 @@ void MainLayer::BuildShowcaseScene() {
     }
 }
 
+void MainLayer::SculptTerrain(TerrainComponent& terrain, const glm::vec3& terrainPos,
+                              const glm::vec3& terrainScale, const glm::vec3& rayOrigin,
+                              const glm::vec3& rayDir, float dt) {
+    int N = terrain.resolution;
+    float half = terrain.size * 0.5f;
+    float cell = (N > 1) ? terrain.size / (float)(N - 1) : terrain.size;
+    float sx = (terrainScale.x != 0.0f) ? terrainScale.x : 1.0f;
+    float sz = (terrainScale.z != 0.0f) ? terrainScale.z : 1.0f;
+    float sy = (terrainScale.y != 0.0f) ? terrainScale.y : 1.0f;
+
+    // Bilinearly sample the heightfield at a local (x,z).
+    auto sampleHeight = [&](float lx, float lz) -> float {
+        float gx = (lx + half) / cell;
+        float gz = (lz + half) / cell;
+        int x0 = (int)std::floor(gx), z0 = (int)std::floor(gz);
+        float fx = gx - x0, fz = gz - z0;
+        auto H = [&](int x, int z) {
+            x = std::max(0, std::min(N - 1, x));
+            z = std::max(0, std::min(N - 1, z));
+            return terrain.heights[(size_t)z * N + x];
+        };
+        float h0 = H(x0, z0) * (1 - fx) + H(x0 + 1, z0) * fx;
+        float h1 = H(x0, z0 + 1) * (1 - fx) + H(x0 + 1, z0 + 1) * fx;
+        return h0 * (1 - fz) + h1 * fz;
+    };
+
+    // March the ray and find where it crosses the actual terrain surface (so the
+    // brush lands under the cursor even on already-sculpted hills/valleys).
+    bool found = false;
+    float localX = 0.0f, localZ = 0.0f;
+    const float maxT = 500.0f;
+    const float stepT = 0.15f;
+    for (float t = 0.0f; t < maxT; t += stepT){
+        glm::vec3 p = rayOrigin + rayDir * t;
+        float lx = (p.x - terrainPos.x) / sx;
+        float lz = (p.z - terrainPos.z) / sz;
+        if (lx < -half || lx > half || lz < -half || lz > half) { continue; }
+        float surfaceY = terrainPos.y + sampleHeight(lx, lz) * sy;
+        if (p.y <= surfaceY){ localX = lx; localZ = lz; found = true; break; }
+    }
+    if (!found) { return; }
+
+    int gx = (int)std::lround((localX + half) / cell);
+    int gz = (int)std::lround((localZ + half) / cell);
+    int rad = (int)std::ceil(m_BrushRadius / cell);
+    float delta = m_BrushStrength * dt;
+
+    bool changed = false;
+    for (int dz = -rad; dz <= rad; dz++){
+        for (int dx = -rad; dx <= rad; dx++){
+            int x = gx + dx, z = gz + dz;
+            if (x < 0 || x >= N || z < 0 || z >= N) { continue; }
+            float wx = ((float)x * cell - half) - localX;
+            float wz = ((float)z * cell - half) - localZ;
+            float dist = std::sqrt(wx * wx + wz * wz);
+            if (dist > m_BrushRadius) { continue; }
+            float fall = 1.0f - dist / m_BrushRadius;
+            float& h = terrain.heights[(size_t)z * N + x];
+            if (m_BrushMode == 0) { h += delta * fall; }
+            else if (m_BrushMode == 1) { h -= delta * fall; }
+            else { // smooth toward the neighbour average
+                int xm = std::max(0, x - 1), xp = std::min(N - 1, x + 1);
+                int zm = std::max(0, z - 1), zp = std::min(N - 1, z + 1);
+                float avg = (terrain.heights[(size_t)z * N + xm] + terrain.heights[(size_t)z * N + xp]
+                           + terrain.heights[(size_t)zm * N + x] + terrain.heights[(size_t)zp * N + x]) * 0.25f;
+                h += (avg - h) * fall * std::min(1.0f, dt * 8.0f);
+            }
+            changed = true;
+        }
+    }
+    if (changed) { terrain.dirty = true; }
+}
+
 void MainLayer::CommitHistory() {
     // Don't record during simulation (transforms change every frame) or while an
     // edit is in progress (a gizmo drag / held slider) — wait until it settles.
-    if (m_Scene->IsRunning() || ImGuizmo::IsUsing() || ImGui::IsAnyItemActive())
+    if (m_Scene->IsRunning() || ImGuizmo::IsUsing() || ImGui::IsAnyItemActive() || m_Sculpting)
         return;
 
     std::string current = SceneSerializer(m_Scene).SerializeToString();
@@ -436,6 +511,16 @@ void MainLayer::OnImGuiRender(){
         if (ImGui::Checkbox("VSync", &vsync)){
             Application::Get().GetWindow().SetVSync(vsync);
         }
+
+        ImGui::Separator();
+        ImGui::Checkbox("Terrain Sculpt", &m_TerrainSculpt);
+        if (m_TerrainSculpt){
+            const char* modes[] = { "Raise", "Lower", "Smooth" };
+            ImGui::Combo("Brush", &m_BrushMode, modes, IM_ARRAYSIZE(modes));
+            ImGui::DragFloat("Radius", &m_BrushRadius, 0.1f, 0.5f, 20.0f);
+            ImGui::DragFloat("Strength", &m_BrushStrength, 0.1f, 0.1f, 30.0f);
+            ImGui::TextDisabled("Select a Terrain, then drag in the viewport.");
+        }
         ImGui::End();
     }
 
@@ -549,9 +634,38 @@ void MainLayer::OnImGuiRender(){
         }
     }
 
+    // Terrain sculpting: while the tool is on and a Terrain is selected, LMB-drag in
+    // the viewport raises/lowers/smooths the heightfield under the cursor.
+    m_Sculpting = false;
+    if (m_TerrainSculpt && selectedEntity && selectedEntity.HasComponent<TerrainComponent>()
+        && m_ViewportHovered && !ImGuizmo::IsUsing() && !ImGuizmo::IsOver()
+        && ImGui::IsMouseDown(ImGuiMouseButton_Left))
+    {
+        ImVec2 mouse = ImGui::GetMousePos();
+        float mx = mouse.x - imageMin.x;
+        float my = mouse.y - imageMin.y;
+        if (mx >= 0.0f && my >= 0.0f && mx < m_ViewportSize.x && my < m_ViewportSize.y)
+        {
+            float ndcX = (mx / m_ViewportSize.x) * 2.0f - 1.0f;
+            float ndcY = 1.0f - (my / m_ViewportSize.y) * 2.0f;
+            glm::mat4 invViewProj = glm::inverse(m_MainCamera.GetProjection() * m_MainCamera.GetView());
+            glm::vec4 nearPoint = invViewProj * glm::vec4(ndcX, ndcY, -1.0f, 1.0f);
+            glm::vec4 farPoint  = invViewProj * glm::vec4(ndcX, ndcY,  1.0f, 1.0f);
+            nearPoint /= nearPoint.w;
+            farPoint  /= farPoint.w;
+            glm::vec3 rayOrigin = glm::vec3(nearPoint);
+            glm::vec3 rayDir = glm::normalize(glm::vec3(farPoint) - glm::vec3(nearPoint));
+
+            auto& tc = selectedEntity.GetComponent<TransformComponent>();
+            SculptTerrain(selectedEntity.GetComponent<TerrainComponent>(), tc.Translation, tc.Scale,
+                rayOrigin, rayDir, ImGui::GetIO().DeltaTime);
+            m_Sculpting = true;
+        }
+    }
+
     // Click-to-select: cast a ray from the cursor and pick the nearest entity.
-    // Skipped while interacting with the gizmo or orbiting the camera.
-    if (m_ViewportHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
+    // Skipped while interacting with the gizmo, orbiting, or sculpting.
+    if (!m_TerrainSculpt && m_ViewportHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
         && !ImGuizmo::IsUsing() && !ImGuizmo::IsOver())
     {
         ImVec2 mouse = ImGui::GetMousePos();

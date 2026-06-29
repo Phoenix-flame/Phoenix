@@ -86,6 +86,26 @@ namespace Phoenix{
         WireframeComponent(const WireframeComponent&) = default;
     };
 
+    // An editable heightmap terrain (sculpt hills/valleys/riverbeds). `heights` is a
+    // resolution×resolution grid; the mesh is regenerated when `dirty`. The Mesh and
+    // runtime body are transient (not serialized / reset on copy).
+    struct TerrainComponent{
+        int resolution = 64;        // grid is resolution×resolution vertices
+        float size = 40.0f;         // world width/depth
+        std::vector<float> heights; // resolution*resolution, row-major (z*res + x)
+        Material material;
+        bool generateCollider = true;
+
+        Ref<Mesh> mesh;             // generated; not serialized
+        bool dirty = true;
+        uint32_t runtimeBodyID = 0xffffffff;
+
+        TerrainComponent(){ heights.resize((size_t)resolution * resolution, 0.0f); }
+        TerrainComponent(const TerrainComponent& o)
+            : resolution(o.resolution), size(o.size), heights(o.heights),
+              material(o.material), generateCollider(o.generateCollider), dirty(true) {}
+    };
+
     // A Lua script (edited inline, serialized). It runs while the scene is playing;
     // the live runtime is owned by the Scene, not stored here.
     struct LuaScriptComponent{

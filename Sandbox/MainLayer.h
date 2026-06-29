@@ -16,6 +16,8 @@
 
 
 using namespace Phoenix;
+namespace Phoenix { struct TerrainComponent; }
+
 class MainLayer: public Layer{
 public:
     MainLayer(const std::string& name = "Layer");
@@ -45,6 +47,11 @@ private:
 
     // Populate m_Scene with the bloom/glow/shadow showcase.
     void BuildShowcaseScene();
+
+    // Terrain sculpting: raycast to the terrain plane and raise/lower/smooth heights.
+    void SculptTerrain(TerrainComponent& terrain, const glm::vec3& terrainPos,
+                       const glm::vec3& terrainScale, const glm::vec3& rayOrigin,
+                       const glm::vec3& rayDir, float dt);
 
 private:
     bool vsync = true;
@@ -76,6 +83,13 @@ private:
     float m_BloomIntensity = 1.0f;
     float m_BloomThreshold = 1.0f;
     float m_Exposure = 1.8f; // pre-tonemap exposure (compensates for ACES darkening)
+
+    // Terrain sculpting tool.
+    bool m_TerrainSculpt = false;
+    int m_BrushMode = 0; // 0 raise, 1 lower, 2 smooth
+    float m_BrushRadius = 5.0f;
+    float m_BrushStrength = 6.0f;
+    bool m_Sculpting = false; // actively dragging this frame (gates undo capture)
 
 private:
     imgui_addons::ImGuiFileBrowser file_dialog;

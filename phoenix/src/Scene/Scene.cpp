@@ -11,6 +11,49 @@
 #include <cmath>
 #include <algorithm>
 namespace Phoenix{
+
+    // Build a renderable mesh from a terrain heightmap (positions + analytic normals).
+    static Ref<Mesh> BuildTerrainMesh(const TerrainComponent& terrain){
+        const int N = terrain.resolution;
+        const float halfSize = terrain.size * 0.5f;
+        const float cell = (N > 1) ? terrain.size / (float)(N - 1) : terrain.size;
+
+        auto heightAt = [&](int x, int z) -> float {
+            x = std::max(0, std::min(N - 1, x));
+            z = std::max(0, std::min(N - 1, z));
+            return terrain.heights[(size_t)z * N + x];
+        };
+
+        std::vector<Vertex> vertices;
+        vertices.reserve((size_t)N * N);
+        for (int z = 0; z < N; z++){
+            for (int x = 0; x < N; x++){
+                float fx = (N > 1) ? (float)x / (N - 1) : 0.0f;
+                float fz = (N > 1) ? (float)z / (N - 1) : 0.0f;
+                glm::vec3 pos(fx * terrain.size - halfSize, heightAt(x, z), fz * terrain.size - halfSize);
+                // central-difference normal
+                float hl = heightAt(x - 1, z), hr = heightAt(x + 1, z);
+                float hd = heightAt(x, z - 1), hu = heightAt(x, z + 1);
+                glm::vec3 normal = glm::normalize(glm::vec3(hl - hr, 2.0f * cell, hd - hu));
+                vertices.push_back({ pos, normal, glm::vec2(fx * 8.0f, fz * 8.0f) });
+            }
+        }
+
+        std::vector<uint32_t> indices;
+        indices.reserve((size_t)(N - 1) * (N - 1) * 6);
+        for (int z = 0; z < N - 1; z++){
+            for (int x = 0; x < N - 1; x++){
+                uint32_t i0 = (uint32_t)(z * N + x);
+                uint32_t i1 = (uint32_t)(z * N + x + 1);
+                uint32_t i2 = (uint32_t)((z + 1) * N + x);
+                uint32_t i3 = (uint32_t)((z + 1) * N + x + 1);
+                indices.push_back(i0); indices.push_back(i2); indices.push_back(i1);
+                indices.push_back(i1); indices.push_back(i2); indices.push_back(i3);
+            }
+        }
+        return CreateRef<Mesh>(vertices, indices);
+    }
+
     Scene::Scene() = default;
     Scene::~Scene() = default;
 
@@ -56,6 +99,23 @@ namespace Phoenix{
                 rb.runtimeBodyID = m_PhysicsWorld->CreateMesh(points, indices, transform.Translation, transform.Rotation);
             }
         }
+        // Terrain: static triangle-mesh collider from the heightfield.
+        auto terrainView = m_Registry.view<TerrainComponent, TransformComponent>();
+        for (auto entity : terrainView){
+            auto& terrain = terrainView.get<TerrainComponent>(entity);
+            if (!terrain.generateCollider) { continue; }
+            if (terrain.dirty || !terrain.mesh){
+                terrain.mesh = BuildTerrainMesh(terrain);
+                terrain.dirty = false;
+            }
+            auto& transform = terrainView.get<TransformComponent>(entity);
+            std::vector<glm::vec3> points;
+            points.reserve(terrain.mesh->GetPositions().size());
+            for (const auto& p : terrain.mesh->GetPositions()) { points.push_back(p * transform.Scale); }
+            terrain.runtimeBodyID = m_PhysicsWorld->CreateMesh(points, terrain.mesh->GetIndices(),
+                transform.Translation, transform.Rotation);
+        }
+
         m_PhysicsWorld->OptimizeBroadPhase();
 
         // Instantiate Lua scripts for the runtime.
@@ -70,6 +130,10 @@ namespace Phoenix{
         auto view = m_Registry.view<RigidBodyComponent>();
         for (auto entity : view){
             view.get<RigidBodyComponent>(entity).runtimeBodyID = 0xffffffff;
+        }
+        auto terrainView = m_Registry.view<TerrainComponent>();
+        for (auto entity : terrainView){
+            terrainView.get<TerrainComponent>(entity).runtimeBodyID = 0xffffffff;
         }
         m_PhysicsWorld.reset();
         m_Scripts.clear();
@@ -327,6 +391,13 @@ namespace Phoenix{
                     Renderer::SubmitShadow(subMesh->GetVertexArray(), transform);
                 }
             }
+            auto terrainCasters = m_Registry.view<TerrainComponent, TransformComponent>();
+            for (auto entity : terrainCasters){
+                auto& terrain = terrainCasters.get<TerrainComponent>(entity);
+                if (!terrain.mesh) { continue; } // built lazily in the main pass
+                Renderer::SubmitShadow(terrain.mesh->GetVertexArray(),
+                    terrainCasters.get<TransformComponent>(entity).GetTransform());
+            }
             Renderer::EndShadowPass();
         }
 
@@ -353,6 +424,19 @@ namespace Phoenix{
                 for (const auto& subMesh : mesh.model->GetMeshes()) {
                     Renderer::Submit(subMesh->GetVertexArray(), mesh.material, transform.GetTransform(), subMesh->GetDiffuseMap());
                 }
+            }
+            Renderer::SetWireframe(false);
+
+            auto terrainView = m_Registry.view<TerrainComponent, TransformComponent>();
+            for (auto entity : terrainView){
+                auto& terrain = terrainView.get<TerrainComponent>(entity);
+                auto transform = terrainView.get<TransformComponent>(entity);
+                if (terrain.dirty || !terrain.mesh){
+                    terrain.mesh = BuildTerrainMesh(terrain);
+                    terrain.dirty = false;
+                }
+                Renderer::SetWireframe(m_Registry.any_of<WireframeComponent>(entity));
+                Renderer::Submit(terrain.mesh->GetVertexArray(), terrain.material, transform.GetTransform());
             }
             Renderer::SetWireframe(false);
             Renderer::EndScene();
@@ -440,6 +524,10 @@ namespace Phoenix{
 
     template<>
 	void Scene::OnComponentAdded<MeshColliderComponent>(Entity entity, MeshColliderComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<TerrainComponent>(Entity entity, TerrainComponent& component){
 	}
 
     template<>
