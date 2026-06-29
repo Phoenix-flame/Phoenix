@@ -7,12 +7,14 @@ namespace Phoenix{
     Scope<Renderer::SceneData> Renderer::s_SceneData = CreateScope<Renderer::SceneData>();
     Scope<RenderLightCube> Renderer::s_RenderLightCube = CreateScope<RenderLightCube>();
     Scope<RenderCameraGizmo> Renderer::s_CameraGizmo = CreateScope<RenderCameraGizmo>();
+    Scope<RenderDirLightGizmo> Renderer::s_DirLightGizmo = CreateScope<RenderDirLightGizmo>();
     Ref<Shader> Renderer::s_OutlineShader;
 
 	void Renderer::Init(){
 		RenderCommand::Init();
         s_RenderLightCube->Init();
         s_CameraGizmo->Init();
+        s_DirLightGizmo->Init();
         s_OutlineShader = Shader::Create("assets/shaders/outline.glsl");
 	}
 
@@ -36,6 +38,7 @@ namespace Phoenix{
     }
 
     void Renderer::SetLights(
+            const glm::vec3& ambient,
             bool dirLightExists,
             const DirLightComponent& dirLight,
             const glm::vec3& dirLightDir,
@@ -44,6 +47,8 @@ namespace Phoenix{
             int numOfPointLight ){
 
         auto& shader = s_RenderLightCube->m_Shader;
+
+        shader->SetFloat3("u_Ambient", ambient);
 
         if (dirLightExists)
         {
@@ -111,6 +116,10 @@ namespace Phoenix{
         Submit(s_RenderLightCube->m_Vertex_array, material, transform);
     }
 
+    void Renderer::SetWireframe(bool enabled){
+        glPolygonMode(GL_FRONT_AND_BACK, enabled ? GL_LINE : GL_FILL);
+    }
+
     void Renderer::DrawOutline(const std::vector<Ref<VertexArray>>& vertexArrays, const glm::mat4& transform, const glm::vec3& color){
         if (vertexArrays.empty()) { return; }
 
@@ -166,6 +175,28 @@ namespace Phoenix{
         s_CameraGizmo->m_Vertex_array->Bind();
         glLineWidth(2.0f);
         glDrawElements(GL_LINES, 16, GL_UNSIGNED_INT, 0);
+
+        s_OutlineShader->Unbind();
+    }
+
+    void Renderer::DrawDirLightGizmo(const glm::mat4& transform, const glm::vec3& color){
+        // Use rotation+translation only (drop scale) so the arrow keeps a fixed size.
+        glm::vec3 pos = glm::vec3(transform[3]);
+        glm::mat3 rotation = glm::mat3(transform);
+        rotation[0] = glm::normalize(rotation[0]);
+        rotation[1] = glm::normalize(rotation[1]);
+        rotation[2] = glm::normalize(rotation[2]);
+        glm::mat4 model = glm::translate(glm::mat4(1.0f), pos) * glm::mat4(rotation);
+
+        s_OutlineShader->Bind();
+        s_OutlineShader->SetMat4("view", s_SceneData->ViewMatrix);
+        s_OutlineShader->SetMat4("projection", s_SceneData->ProjectionMatrix);
+        s_OutlineShader->SetMat4("model", model);
+        s_OutlineShader->SetFloat3("u_Color", color);
+
+        s_DirLightGizmo->m_Vertex_array->Bind();
+        glLineWidth(2.0f);
+        glDrawElements(GL_LINES, 10, GL_UNSIGNED_INT, 0);
 
         s_OutlineShader->Unbind();
     }

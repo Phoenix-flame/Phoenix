@@ -28,6 +28,10 @@ namespace Phoenix{
         void OnResize(float width, float height);
         int GetNumberOfPointLights() { return m_NumPointLights; }
 
+        // Global ambient light (editable; serialized).
+        glm::vec3& AmbientColor() { return m_AmbientColor; }
+        const glm::vec3& AmbientColor() const { return m_AmbientColor; }
+
         // Returns the nearest entity whose (unit-cube) bounds the ray hits, or an
         // empty entity if none. Used for click-to-select in the viewport.
         Entity PickEntity(const glm::vec3& rayOrigin, const glm::vec3& rayDirection);
@@ -54,6 +58,7 @@ namespace Phoenix{
     private:
         int m_NumPointLights = 0;
         const int MAX_NUM_POINT_LIGHTS = 4;
+        glm::vec3 m_AmbientColor = glm::vec3(0.1f);
 
         Scope<PhysicsWorld> m_PhysicsWorld;
     };

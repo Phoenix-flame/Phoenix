@@ -62,6 +62,15 @@ namespace Phoenix{
         BoxColliderComponent(const BoxColliderComponent&) = default;
     };
 
+    // When present, the entity is drawn as a wireframe ("mesh network"). The bool
+    // exists only so the type is non-empty (entt returns void from emplace<> for
+    // empty types, which AddComponent's `T&` return can't bind to).
+    struct WireframeComponent{
+        bool enabled = true;
+        WireframeComponent() = default;
+        WireframeComponent(const WireframeComponent&) = default;
+    };
+
 
     struct DirLightComponent{
         glm::vec3 ambient = glm::vec3(1.0f);

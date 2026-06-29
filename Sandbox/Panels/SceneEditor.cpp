@@ -268,6 +268,11 @@ namespace Phoenix{
                     m_SelectedEntity.AddComponent<BoxColliderComponent>();
                 ImGui::CloseCurrentPopup();
             }
+            if (ImGui::MenuItem("Wireframe")){
+                if (!m_SelectedEntity.HasComponent<WireframeComponent>())
+                    m_SelectedEntity.AddComponent<WireframeComponent>();
+                ImGui::CloseCurrentPopup();
+            }
 
 			ImGui::EndPopup();
 		}
@@ -433,6 +438,11 @@ namespace Phoenix{
 				component.halfExtents.z = extents[2];
 			}
 			ImGui::TextDisabled("Scaled by Transform on Run");
+		});
+
+		DrawComponent<WireframeComponent>("Wireframe", entity, [](auto& component){
+			(void)component;
+			ImGui::TextDisabled("Object is drawn as a wireframe.\nRemove this component to hide it.");
 		});
 
 	}

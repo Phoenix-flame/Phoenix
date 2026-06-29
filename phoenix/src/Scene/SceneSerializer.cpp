@@ -126,6 +126,10 @@ namespace Phoenix{
             out << YAML::EndMap;
         }
 
+        if (entity.HasComponent<WireframeComponent>()){
+            out << YAML::Key << "WireframeComponent" << YAML::Value << YAML::BeginMap << YAML::EndMap;
+        }
+
         out << YAML::EndMap;
     }
 
@@ -133,6 +137,7 @@ namespace Phoenix{
         YAML::Emitter out;
         out << YAML::BeginMap;
         out << YAML::Key << "Scene" << YAML::Value << "Untitled";
+        out << YAML::Key << "Ambient" << YAML::Value << m_Scene->AmbientColor();
         out << YAML::Key << "Entities" << YAML::Value << YAML::BeginSeq;
 
         for (auto entityID : m_Scene->m_Registry.storage<entt::entity>()){
@@ -253,6 +258,11 @@ namespace Phoenix{
             bc.halfExtents = ReadVec3(n["HalfExtents"]);
         }
         else if (entity.HasComponent<BoxColliderComponent>()) entity.RemoveComponent<BoxColliderComponent>();
+
+        if (node["WireframeComponent"]){
+            if (!entity.HasComponent<WireframeComponent>()) entity.AddComponent<WireframeComponent>();
+        }
+        else if (entity.HasComponent<WireframeComponent>()) entity.RemoveComponent<WireframeComponent>();
     }
 
     void SceneSerializer::RecountPointLights(){
@@ -266,6 +276,8 @@ namespace Phoenix{
             PHX_CORE_ERROR("Scene data has no entities node");
             return false;
         }
+
+        if (data["Ambient"]) m_Scene->AmbientColor() = ReadVec3(data["Ambient"]);
 
         for (auto entityNode : data["Entities"]){
             std::string name;
@@ -294,6 +306,8 @@ namespace Phoenix{
             PHX_CORE_ERROR("Scene data has no entities node");
             return false;
         }
+
+        if (root["Ambient"]) m_Scene->AmbientColor() = ReadVec3(root["Ambient"]);
 
         auto& registry = m_Scene->m_Registry;
         const YAML::Node entities = root["Entities"];

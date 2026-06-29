@@ -194,7 +194,7 @@ namespace Phoenix{
         {
             editorCamera.SetState(true);
         }
-        glm::vec3 lightPos = glm::vec3(0.0f);
+        glm::vec3 lightDir = glm::vec3(0.0f, -1.0f, 0.0f);
         DirLightComponent lightComponent;
         bool dirLightExists = false;
         auto lightsView = m_Registry.view<TransformComponent,DirLightComponent>();
@@ -203,7 +203,10 @@ namespace Phoenix{
             if (!light.isActive) { continue; }
             auto transform = lightsView.get<TransformComponent>(entity);
             lightComponent = light;
-            lightPos = transform.Translation;
+            // A directional light points along its local forward (-Z), rotated by
+            // the entity's orientation. (Previously this used translation, so the
+            // light couldn't be aimed.)
+            lightDir = glm::normalize(glm::mat3(transform.GetTransform()) * glm::vec3(0.0f, 0.0f, -1.0f));
             dirLightExists = true;
         }
 
@@ -212,6 +215,7 @@ namespace Phoenix{
         int numPointLight = 0;
         auto pLightsView = m_Registry.view<TransformComponent,PointLightComponent>();
         for(auto entity:pLightsView){
+            if (numPointLight >= MAX_NUM_POINT_LIGHTS) { break; } // shader supports up to 4
             auto light = pLightsView.get<PointLightComponent>(entity);
             if (!light.isActive) { continue; }
             auto transform = pLightsView.get<TransformComponent>(entity);
@@ -223,16 +227,15 @@ namespace Phoenix{
         {
             PHX_PROFILE("Scene Components");
             Renderer::BeginScene(sceneCameraProjection, sceneCameraView, cameraPos);
-            Renderer::SetLights(dirLightExists, lightComponent, lightPos, pLightComponent, pointLightPos, numPointLight);
+            Renderer::SetLights(m_AmbientColor, dirLightExists, lightComponent, lightDir, pLightComponent, pointLightPos, numPointLight);
             auto view = m_Registry.view<CubeComponent, TransformComponent>();
             for (auto entity : view) {
                 auto cube = view.get<CubeComponent>(entity);
                 auto transform = view.get<TransformComponent>(entity);
-                // Render
-                {
-                    Renderer::SubmitCube(cube.material, transform.GetTransform());
-                }
+                Renderer::SetWireframe(m_Registry.any_of<WireframeComponent>(entity));
+                Renderer::SubmitCube(cube.material, transform.GetTransform());
             }
+            Renderer::SetWireframe(false);
 
             auto meshView = m_Registry.view<MeshComponent, TransformComponent>();
             for (auto entity : meshView) {
@@ -240,10 +243,12 @@ namespace Phoenix{
                 auto transform = meshView.get<TransformComponent>(entity);
                 if (!mesh.model) { continue; }
                 mesh.model->Update(); // completes async GPU upload once parsing finishes
+                Renderer::SetWireframe(m_Registry.any_of<WireframeComponent>(entity));
                 for (const auto& subMesh : mesh.model->GetMeshes()) {
                     Renderer::Submit(subMesh->GetVertexArray(), mesh.material, transform.GetTransform(), subMesh->GetDiffuseMap());
                 }
             }
+            Renderer::SetWireframe(false);
             Renderer::EndScene();
         }
 
@@ -277,6 +282,15 @@ namespace Phoenix{
                 float aspect = cameraComponent.camera.GetOrthographicAcpectRatio();
                 if (aspect <= 0.0f) { aspect = 16.0f / 9.0f; }
                 Renderer::DrawCameraGizmo(transform.GetTransform(), fov, aspect, glm::vec3(0.3f, 0.7f, 1.0f));
+            }
+        }
+
+        // Directional light arrows showing their aim.
+        {
+            auto dirView = m_Registry.view<DirLightComponent, TransformComponent>();
+            for (auto entity : dirView){
+                auto& transform = dirView.get<TransformComponent>(entity);
+                Renderer::DrawDirLightGizmo(transform.GetTransform(), glm::vec3(1.0f, 0.95f, 0.5f));
             }
         }
     }
@@ -316,6 +330,10 @@ namespace Phoenix{
 
     template<>
 	void Scene::OnComponentAdded<BoxColliderComponent>(Entity entity, BoxColliderComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<WireframeComponent>(Entity entity, WireframeComponent& component){
 	}
 
 

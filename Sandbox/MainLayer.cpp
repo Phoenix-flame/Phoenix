@@ -311,6 +311,7 @@ void MainLayer::OnImGuiRender(){
         ImGui::Separator();
 
         ImGui::ColorEdit3("Background Color", glm::value_ptr(m_BackgroundColor));
+        ImGui::ColorEdit3("Ambient Light", glm::value_ptr(m_Scene->AmbientColor()));
         if (ImGui::Checkbox("VSync", &vsync)){
             Application::Get().GetWindow().SetVSync(vsync);
         }

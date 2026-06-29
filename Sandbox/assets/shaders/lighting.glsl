@@ -70,6 +70,9 @@ uniform vec3 cameraPos;
 uniform Material material;
 uniform DirLight dirLight;
 
+// Global ambient light, applied to every fragment regardless of light sources.
+uniform vec3 u_Ambient;
+
 // Optional diffuse texture. When u_HasDiffuseMap is false, material.diffuse is used.
 uniform sampler2D u_DiffuseMap;
 uniform bool u_HasDiffuseMap;
@@ -117,7 +120,8 @@ void main()
     vec3 norm = normalize(Normal);
     vec3 viewDir = normalize(cameraPos - FragPos);
     vec3 diffuseColor = u_HasDiffuseMap ? texture(u_DiffuseMap, TexCoords).rgb : material.diffuse;
-    vec3 result = vec3(0.0);
+    // global ambient
+    vec3 result = u_Ambient * diffuseColor;
     // phase 1: Directional lighting
     result += CalcDirLight(dirLight, norm, viewDir, diffuseColor);
     // phase 2: Point lights
