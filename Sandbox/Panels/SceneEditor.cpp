@@ -274,6 +274,11 @@ namespace Phoenix{
                     m_SelectedEntity.AddComponent<WireframeComponent>();
                 ImGui::CloseCurrentPopup();
             }
+            if (ImGui::MenuItem("Lua Script")){
+                if (!m_SelectedEntity.HasComponent<LuaScriptComponent>())
+                    m_SelectedEntity.AddComponent<LuaScriptComponent>();
+                ImGui::CloseCurrentPopup();
+            }
 
 			ImGui::EndPopup();
 		}
@@ -460,6 +465,16 @@ namespace Phoenix{
 		DrawComponent<WireframeComponent>("Wireframe", entity, [](auto& component){
 			(void)component;
 			ImGui::TextDisabled("Object is drawn as a wireframe.\nRemove this component to hide it.");
+		});
+
+		DrawComponent<LuaScriptComponent>("Lua Script", entity, [](LuaScriptComponent& component){
+			static char buffer[8192];
+			std::strncpy(buffer, component.source.c_str(), sizeof(buffer) - 1);
+			buffer[sizeof(buffer) - 1] = '\0';
+			if (ImGui::InputTextMultiline("##LuaSource", buffer, sizeof(buffer), ImVec2(-1.0f, 220.0f))){
+				component.source = buffer;
+			}
+			ImGui::TextDisabled("Runs while playing (Run). Define OnUpdate(dt).\nAPI: GetTranslation/SetTranslation, GetRotation/SetRotation,\nSetScale, SetColor(r,g,b), SetEmissive(r,g,b[,strength]).");
 		});
 
 	}

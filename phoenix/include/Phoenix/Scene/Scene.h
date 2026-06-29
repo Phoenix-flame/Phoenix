@@ -8,11 +8,13 @@
 
 #include <Phoenix/renderer/shader.h>
 #include <Phoenix/renderer/VertexArray.h>
+#include <vector>
 
 namespace Phoenix{
     class Entity;
     class SceneEditor;
     class PhysicsWorld;
+    class LuaScript;
     class Scene{
     public:
         Scene();
@@ -61,6 +63,7 @@ namespace Phoenix{
         glm::vec3 m_AmbientColor = glm::vec3(0.1f);
 
         Scope<PhysicsWorld> m_PhysicsWorld;
+        std::vector<Ref<LuaScript>> m_Scripts; // live Lua runtimes while playing
     };
 
 }

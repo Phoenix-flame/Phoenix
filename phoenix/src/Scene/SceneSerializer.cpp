@@ -136,6 +136,12 @@ namespace Phoenix{
             out << YAML::Key << "WireframeComponent" << YAML::Value << YAML::BeginMap << YAML::EndMap;
         }
 
+        if (entity.HasComponent<LuaScriptComponent>()){
+            out << YAML::Key << "LuaScriptComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "Source" << YAML::Value << entity.GetComponent<LuaScriptComponent>().source;
+            out << YAML::EndMap;
+        }
+
         out << YAML::EndMap;
     }
 
@@ -269,6 +275,12 @@ namespace Phoenix{
             if (!entity.HasComponent<WireframeComponent>()) entity.AddComponent<WireframeComponent>();
         }
         else if (entity.HasComponent<WireframeComponent>()) entity.RemoveComponent<WireframeComponent>();
+
+        if (auto n = node["LuaScriptComponent"]){
+            auto& s = entity.HasComponent<LuaScriptComponent>() ? entity.GetComponent<LuaScriptComponent>() : entity.AddComponent<LuaScriptComponent>();
+            s.source = n["Source"].as<std::string>();
+        }
+        else if (entity.HasComponent<LuaScriptComponent>()) entity.RemoveComponent<LuaScriptComponent>();
     }
 
     void SceneSerializer::RecountPointLights(){

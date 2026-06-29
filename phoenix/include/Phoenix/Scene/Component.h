@@ -78,6 +78,21 @@ namespace Phoenix{
         WireframeComponent(const WireframeComponent&) = default;
     };
 
+    // A Lua script (edited inline, serialized). It runs while the scene is playing;
+    // the live runtime is owned by the Scene, not stored here.
+    struct LuaScriptComponent{
+        std::string source =
+            "-- runs while playing (press Run)\n"
+            "local t = 0.0\n"
+            "function OnUpdate(dt)\n"
+            "    t = t + dt\n"
+            "    local x, y, z = GetTranslation()\n"
+            "    SetTranslation(x, y, z)\n"
+            "end\n";
+        LuaScriptComponent() = default;
+        LuaScriptComponent(const LuaScriptComponent&) = default;
+    };
+
 
     struct DirLightComponent{
         // diffuse is the dominant term so the light is actually directional; its own

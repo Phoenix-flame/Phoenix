@@ -6,6 +6,7 @@
 #include <Phoenix/core/log.h>
 #include <Phoenix/core/Profiler.h>
 #include <Phoenix/Physics/Physics.h>
+#include <Phoenix/Scene/LuaScript.h>
 #include <limits>
 #include <cmath>
 #include <algorithm>
@@ -27,6 +28,13 @@ namespace Phoenix{
             rb.runtimeBodyID = m_PhysicsWorld->CreateBox(transform.Translation, transform.Rotation, halfExtents, type);
         }
         m_PhysicsWorld->OptimizeBroadPhase();
+
+        // Instantiate Lua scripts for the runtime.
+        auto scriptView = m_Registry.view<LuaScriptComponent>();
+        for (auto entity : scriptView){
+            Entity e{ entity, this };
+            m_Scripts.push_back(CreateRef<LuaScript>(scriptView.get<LuaScriptComponent>(entity).source, e));
+        }
     }
 
     void Scene::OnRuntimeStop(){
@@ -35,6 +43,7 @@ namespace Phoenix{
             view.get<RigidBodyComponent>(entity).runtimeBodyID = 0xffffffff;
         }
         m_PhysicsWorld.reset();
+        m_Scripts.clear();
     }
 
     // Slab-method ray vs axis-aligned box. Returns true and the entry distance if hit.
@@ -141,6 +150,12 @@ namespace Phoenix{
     }
 
     void Scene::OnUpdate(EditorCamera& editorCamera, Timestep ts, Entity selectedEntity){
+
+        // Lua scripts run while playing (they may move/recolour their entities).
+        if (!m_Scripts.empty()){
+            PHX_PROFILE("Lua Scripts");
+            for (auto& script : m_Scripts){ script->OnUpdate((float)ts); }
+        }
 
         // Physics: step the simulation and copy body transforms back to entities.
         if (m_PhysicsWorld){
@@ -393,6 +408,10 @@ namespace Phoenix{
 
     template<>
 	void Scene::OnComponentAdded<WireframeComponent>(Entity entity, WireframeComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<LuaScriptComponent>(Entity entity, LuaScriptComponent& component){
 	}
 
 

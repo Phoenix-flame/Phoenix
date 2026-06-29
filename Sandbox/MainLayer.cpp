@@ -140,6 +140,22 @@ void MainLayer::BuildShowcaseScene() {
         bp.GetComponent<TransformComponent>().Translation = { 0.0f, 1.0f, 0.0f };
     }
 
+    // A Lua-scripted cube that orbits and colour-cycles while playing.
+    {
+        auto e = m_Scene->CreateEntity("Scripted Cube");
+        auto& c = e.AddComponent<CubeComponent>();
+        c.material.diffuse = glm::vec3(0.8f, 0.3f, 0.2f);
+        e.GetComponent<TransformComponent>().Translation = { -2.0f, 1.0f, 3.0f };
+        auto& script = e.AddComponent<LuaScriptComponent>();
+        script.source =
+            "local t = 0.0\n"
+            "function OnUpdate(dt)\n"
+            "    t = t + dt\n"
+            "    SetTranslation(-2.0 + math.sin(t) * 2.0, 1.0 + 0.5 * math.sin(t * 2.0), 3.0)\n"
+            "    SetColor(0.5 + 0.5 * math.sin(t), 0.5 + 0.5 * math.sin(t + 2.0), 0.5 + 0.5 * math.sin(t + 4.0))\n"
+            "end\n";
+    }
+
     // A glowing cube that drops when you press Run (physics + bloom).
     {
         auto box = m_Scene->CreateEntity("Falling Glow Cube");

@@ -66,6 +66,11 @@ else()
     target_link_libraries(${APP_TARGET} ${ASSIMP_LIBRARIES})
 endif()
 
+# Lua: entity scripting.
+find_package(Lua REQUIRED)
+include_directories(${LUA_INCLUDE_DIR})
+target_link_libraries(${APP_TARGET} ${LUA_LIBRARIES})
+
 # yaml-cpp: scene serialization.
 find_package(yaml-cpp REQUIRED)
 if(TARGET yaml-cpp::yaml-cpp)
