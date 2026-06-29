@@ -18,7 +18,7 @@ namespace Phoenix{
         void BindHDRTarget();
 
         // Run the bloom passes and composite into targetFBO (0 = default framebuffer).
-        void Composite(uint32_t targetFBO, float intensity, float threshold);
+        void Composite(uint32_t targetFBO, float intensity, float threshold, float exposure);
     private:
         void DrawFullscreenQuad();
 

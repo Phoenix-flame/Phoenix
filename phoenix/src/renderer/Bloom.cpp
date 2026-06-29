@@ -92,7 +92,7 @@ namespace Phoenix{
         glDrawArrays(GL_TRIANGLES, 0, 6);
     }
 
-    void Bloom::Composite(uint32_t targetFBO, float intensity, float threshold){
+    void Bloom::Composite(uint32_t targetFBO, float intensity, float threshold, float exposure){
         if (!m_HDRFBO) { return; }
 
         glDisable(GL_DEPTH_TEST);
@@ -133,6 +133,7 @@ namespace Phoenix{
         m_CompositeShader->SetInt("u_Scene", 0);
         m_CompositeShader->SetInt("u_Bloom", 1);
         m_CompositeShader->SetFloat("u_Intensity", intensity);
+        m_CompositeShader->SetFloat("u_Exposure", exposure);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, m_HDRColor);
         glActiveTexture(GL_TEXTURE1);

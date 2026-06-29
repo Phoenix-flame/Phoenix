@@ -245,7 +245,7 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
             PHX_PROFILE("Scene Update");
             m_Scene->OnUpdate(m_MainCamera, ts, m_SceneEditor->GetSelectedEntity());
         }
-        m_Bloom.Composite(m_Framebuffer->GetRendererID(), m_BloomIntensity, m_BloomThreshold);
+        m_Bloom.Composite(m_Framebuffer->GetRendererID(), m_BloomIntensity, m_BloomThreshold, m_Exposure);
     }
     else{
         m_Framebuffer->Bind();
@@ -426,6 +426,7 @@ void MainLayer::OnImGuiRender(){
         ImGui::Separator();
         ImGui::Checkbox("Bloom", &m_BloomEnabled);
         if (m_BloomEnabled){
+            ImGui::DragFloat("Exposure", &m_Exposure, 0.05f, 0.1f, 8.0f);
             ImGui::DragFloat("Bloom Intensity", &m_BloomIntensity, 0.05f, 0.0f, 5.0f);
             ImGui::DragFloat("Bloom Threshold", &m_BloomThreshold, 0.05f, 0.0f, 5.0f);
         }

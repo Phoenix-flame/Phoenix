@@ -20,9 +20,22 @@ out vec4 FragColor;
 uniform sampler2D u_Scene;
 uniform sampler2D u_Bloom;
 uniform float u_Intensity;
+uniform float u_Exposure;
+
+// Narkowicz ACES filmic tonemap: rolls bright HDR values off to white smoothly
+// instead of hard-clipping, so glowing areas keep colour/detail.
+vec3 ACESFilm(vec3 x){
+    const float a = 2.51;
+    const float b = 0.03;
+    const float c = 2.43;
+    const float d = 0.59;
+    const float e = 0.14;
+    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
 
 void main(){
     vec3 scene = texture(u_Scene, TexCoords).rgb;
     vec3 bloom = texture(u_Bloom, TexCoords).rgb;
-    FragColor = vec4(scene + bloom * u_Intensity, 1.0);
+    vec3 color = (scene + bloom * u_Intensity) * u_Exposure;
+    FragColor = vec4(ACESFilm(color), 1.0);
 }

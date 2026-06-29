@@ -75,6 +75,7 @@ private:
     bool m_BloomEnabled = true;
     float m_BloomIntensity = 1.0f;
     float m_BloomThreshold = 1.0f;
+    float m_Exposure = 1.8f; // pre-tonemap exposure (compensates for ACES darkening)
 
 private:
     imgui_addons::ImGuiFileBrowser file_dialog;

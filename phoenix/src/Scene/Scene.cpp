@@ -245,15 +245,18 @@ namespace Phoenix{
         auto addEmissiveLight = [&](const Material& material, const glm::vec3& position){
             if (numPointLight >= MAX_NUM_POINT_LIGHTS) { return; }
             if (material.emissiveStrength <= 0.0f) { return; }
-            glm::vec3 color = material.emissive * material.emissiveStrength;
-            if (color.r <= 0.0f && color.g <= 0.0f && color.b <= 0.0f) { return; }
+            if (material.emissive.r <= 0.0f && material.emissive.g <= 0.0f && material.emissive.b <= 0.0f) { return; }
+            // The emitted light is GENTLE and decoupled from the (often large) glow
+            // strength, and falls off quickly, so several emissive objects don't blow
+            // the scene out to white. The strength still drives the bloom in the shader.
+            glm::vec3 color = material.emissive * 0.6f;
             PointLightComponent light;
             light.ambient   = glm::vec3(0.0f);
             light.diffuse   = color;
             light.specular  = color;
             light.constant  = 1.0f;
-            light.linear    = 0.09f;
-            light.quadratic = 0.032f;
+            light.linear    = 0.22f;
+            light.quadratic = 0.20f;
             pLightComponent[numPointLight] = light;
             pointLightPos[numPointLight] = position;
             numPointLight ++;
