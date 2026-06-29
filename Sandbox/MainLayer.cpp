@@ -132,12 +132,15 @@ void MainLayer::BuildShowcaseScene() {
         e.GetComponent<TransformComponent>().Translation = { 2.5f, 0.5f, 4.0f };
     }
 
-    // Textured backpack: lit, casts a shadow.
+    // Textured backpack: lit, casts a shadow, and drops with a convex mesh collider
+    // (its actual geometry) onto the floor when you press Run.
     {
         auto bp = m_Scene->CreateEntity("Backpack");
         auto& mesh = bp.AddComponent<MeshComponent>();
         mesh.model = CreateRef<Model>("backpack/backpack.obj");
-        bp.GetComponent<TransformComponent>().Translation = { 0.0f, 1.0f, 0.0f };
+        bp.GetComponent<TransformComponent>().Translation = { 0.0f, 5.0f, 0.0f };
+        bp.AddComponent<RigidBodyComponent>(); // dynamic
+        bp.AddComponent<MeshColliderComponent>(); // convex hull of the mesh
     }
 
     // A Lua-scripted cube that orbits and colour-cycles while playing.

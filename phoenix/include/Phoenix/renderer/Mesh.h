@@ -33,10 +33,16 @@ namespace Phoenix{
 
         void SetDiffuseMap(const Ref<Texture2D>& diffuseMap) { m_DiffuseMap = diffuseMap; }
         const Ref<Texture2D>& GetDiffuseMap() const { return m_DiffuseMap; }
+
+        // CPU-side geometry retained for physics collider generation.
+        const std::vector<glm::vec3>& GetPositions() const { return m_Positions; }
+        const std::vector<uint32_t>& GetIndices() const { return m_Indices; }
     private:
         Ref<VertexArray> m_VertexArray;
         uint32_t m_IndexCount = 0;
         Ref<Texture2D> m_DiffuseMap;
+        std::vector<glm::vec3> m_Positions;
+        std::vector<uint32_t> m_Indices;
     };
 
     // A model loaded from disk (via Assimp). Parsing runs on a background thread;

@@ -69,6 +69,14 @@ namespace Phoenix{
         BoxColliderComponent(const BoxColliderComponent&) = default;
     };
 
+    // Collider built from the entity's MeshComponent geometry. convex = convex hull
+    // (works for dynamic bodies); otherwise an exact triangle mesh (static only).
+    struct MeshColliderComponent{
+        bool convex = true;
+        MeshColliderComponent() = default;
+        MeshColliderComponent(const MeshColliderComponent&) = default;
+    };
+
     // When present, the entity is drawn as a wireframe ("mesh network"). The bool
     // exists only so the type is non-empty (entt returns void from emplace<> for
     // empty types, which AddComponent's `T&` return can't bind to).

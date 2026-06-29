@@ -12,6 +12,11 @@ namespace Phoenix{
     Mesh::Mesh(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices){
         m_IndexCount = (uint32_t)indices.size();
 
+        // Retain positions + indices on the CPU for physics collider generation.
+        m_Positions.reserve(vertices.size());
+        for (const auto& v : vertices) { m_Positions.push_back(v.Position); }
+        m_Indices = indices;
+
         m_VertexArray = CreateRef<VertexArray>();
         m_VertexArray->Bind();
 

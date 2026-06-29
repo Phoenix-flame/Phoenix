@@ -27,6 +27,35 @@ namespace Phoenix{
             PhysicsWorld::BodyType type = (PhysicsWorld::BodyType)(int)rb.type;
             rb.runtimeBodyID = m_PhysicsWorld->CreateBox(transform.Translation, transform.Rotation, halfExtents, type);
         }
+
+        // Mesh colliders: build the shape from the entity's mesh geometry (scaled into
+        // local space), preferring the box collider above if both are present.
+        auto meshColliderView = m_Registry.view<RigidBodyComponent, MeshColliderComponent, MeshComponent, TransformComponent>();
+        for (auto entity : meshColliderView){
+            auto& rb = meshColliderView.get<RigidBodyComponent>(entity);
+            if (rb.runtimeBodyID != 0xffffffff) { continue; } // already has a (box) body
+            auto& meshCollider = meshColliderView.get<MeshColliderComponent>(entity);
+            auto& mesh = meshColliderView.get<MeshComponent>(entity);
+            auto& transform = meshColliderView.get<TransformComponent>(entity);
+            if (!mesh.model || mesh.model->GetMeshes().empty()) { continue; } // not loaded yet
+
+            // Gather all sub-mesh geometry, scaled by the transform's scale.
+            std::vector<glm::vec3> points;
+            std::vector<uint32_t> indices;
+            for (const auto& sub : mesh.model->GetMeshes()){
+                uint32_t base = (uint32_t)points.size();
+                for (const auto& p : sub->GetPositions()) { points.push_back(p * transform.Scale); }
+                for (uint32_t idx : sub->GetIndices())     { indices.push_back(base + idx); }
+            }
+
+            PhysicsWorld::BodyType type = (PhysicsWorld::BodyType)(int)rb.type;
+            if (meshCollider.convex || type != PhysicsWorld::BodyType::Static){
+                rb.runtimeBodyID = m_PhysicsWorld->CreateConvexHull(points, transform.Translation, transform.Rotation, type);
+            }
+            else{
+                rb.runtimeBodyID = m_PhysicsWorld->CreateMesh(points, indices, transform.Translation, transform.Rotation);
+            }
+        }
         m_PhysicsWorld->OptimizeBroadPhase();
 
         // Instantiate Lua scripts for the runtime.
@@ -407,6 +436,10 @@ namespace Phoenix{
 
     template<>
 	void Scene::OnComponentAdded<BoxColliderComponent>(Entity entity, BoxColliderComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<MeshColliderComponent>(Entity entity, MeshColliderComponent& component){
 	}
 
     template<>

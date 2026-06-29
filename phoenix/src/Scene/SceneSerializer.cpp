@@ -132,6 +132,12 @@ namespace Phoenix{
             out << YAML::EndMap;
         }
 
+        if (entity.HasComponent<MeshColliderComponent>()){
+            out << YAML::Key << "MeshColliderComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "Convex" << YAML::Value << entity.GetComponent<MeshColliderComponent>().convex;
+            out << YAML::EndMap;
+        }
+
         if (entity.HasComponent<WireframeComponent>()){
             out << YAML::Key << "WireframeComponent" << YAML::Value << YAML::BeginMap << YAML::EndMap;
         }
@@ -270,6 +276,12 @@ namespace Phoenix{
             bc.halfExtents = ReadVec3(n["HalfExtents"]);
         }
         else if (entity.HasComponent<BoxColliderComponent>()) entity.RemoveComponent<BoxColliderComponent>();
+
+        if (auto n = node["MeshColliderComponent"]){
+            auto& mc = entity.HasComponent<MeshColliderComponent>() ? entity.GetComponent<MeshColliderComponent>() : entity.AddComponent<MeshColliderComponent>();
+            mc.convex = n["Convex"].as<bool>();
+        }
+        else if (entity.HasComponent<MeshColliderComponent>()) entity.RemoveComponent<MeshColliderComponent>();
 
         if (node["WireframeComponent"]){
             if (!entity.HasComponent<WireframeComponent>()) entity.AddComponent<WireframeComponent>();

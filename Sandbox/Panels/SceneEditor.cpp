@@ -473,6 +473,11 @@ namespace Phoenix{
                     m_SelectedEntity.AddComponent<BoxColliderComponent>();
                 ImGui::CloseCurrentPopup();
             }
+            if (ImGui::MenuItem("Mesh Collider")){
+                if (!m_SelectedEntity.HasComponent<MeshColliderComponent>())
+                    m_SelectedEntity.AddComponent<MeshColliderComponent>();
+                ImGui::CloseCurrentPopup();
+            }
             if (ImGui::MenuItem("Wireframe")){
                 if (!m_SelectedEntity.HasComponent<WireframeComponent>())
                     m_SelectedEntity.AddComponent<WireframeComponent>();
@@ -664,6 +669,14 @@ namespace Phoenix{
 				component.halfExtents.z = extents[2];
 			}
 			ImGui::TextDisabled("Scaled by Transform on Run");
+		});
+
+		DrawComponent<MeshColliderComponent>("Mesh Collider", entity, [](MeshColliderComponent& component){
+			ImGui::Checkbox("Convex hull", &component.convex);
+			ImGui::TextDisabled(component.convex
+				? "Convex hull of the mesh (works for dynamic bodies)."
+				: "Exact triangle mesh (STATIC bodies only).");
+			ImGui::TextDisabled("Built from the Mesh on Run; needs a Rigid Body + Mesh.");
 		});
 
 		DrawComponent<WireframeComponent>("Wireframe", entity, [](auto& component){

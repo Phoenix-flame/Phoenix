@@ -9,6 +9,8 @@
 #include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
+#include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 
 #include <glm/gtc/quaternion.hpp>
@@ -167,6 +169,67 @@ namespace Phoenix{
         BodyID id = bodyInterface.CreateAndAddBody(settings,
             type == BodyType::Static ? EActivation::DontActivate : EActivation::Activate);
         return id.GetIndexAndSequenceNumber();
+    }
+
+    // Create a body from an already-built shape with the given transform/type.
+    static uint32_t CreateBodyFromShape(JPH::PhysicsSystem& system, const JPH::ShapeRefC& shape,
+                                        const glm::vec3& position, const glm::vec3& rotationEuler, PhysicsWorld::BodyType type){
+        using namespace JPH;
+        glm::quat q = glm::quat(rotationEuler);
+        EMotionType motion = (type == PhysicsWorld::BodyType::Static)    ? EMotionType::Static
+                           : (type == PhysicsWorld::BodyType::Kinematic) ? EMotionType::Kinematic
+                                                                         : EMotionType::Dynamic;
+        ObjectLayer layer = (type == PhysicsWorld::BodyType::Static) ? Layers::NON_MOVING : Layers::MOVING;
+        BodyCreationSettings settings(shape, RVec3(position.x, position.y, position.z),
+            Quat(q.x, q.y, q.z, q.w), motion, layer);
+        BodyID id = system.GetBodyInterface().CreateAndAddBody(settings,
+            type == PhysicsWorld::BodyType::Static ? EActivation::DontActivate : EActivation::Activate);
+        return id.GetIndexAndSequenceNumber();
+    }
+
+    uint32_t PhysicsWorld::CreateConvexHull(const std::vector<glm::vec3>& points,
+                                            const glm::vec3& position, const glm::vec3& rotationEuler, BodyType type){
+        using namespace JPH;
+        if (points.empty()) { return InvalidBody; }
+
+        Array<Vec3> hullPoints;
+        hullPoints.reserve(points.size());
+        for (const auto& p : points) { hullPoints.push_back(Vec3(p.x, p.y, p.z)); }
+
+        ConvexHullShapeSettings shapeSettings(hullPoints);
+        shapeSettings.SetEmbedded();
+        ShapeSettings::ShapeResult result = shapeSettings.Create();
+        if (result.HasError()){
+            PHX_CORE_ERROR("[Jolt] convex hull error: {0}", result.GetError().c_str());
+            return InvalidBody;
+        }
+        return CreateBodyFromShape(m_Impl->physicsSystem, result.Get(), position, rotationEuler, type);
+    }
+
+    uint32_t PhysicsWorld::CreateMesh(const std::vector<glm::vec3>& points, const std::vector<uint32_t>& indices,
+                                      const glm::vec3& position, const glm::vec3& rotationEuler){
+        using namespace JPH;
+        if (points.empty() || indices.size() < 3) { return InvalidBody; }
+
+        VertexList vertices;
+        vertices.reserve(points.size());
+        for (const auto& p : points) { vertices.push_back(Float3(p.x, p.y, p.z)); }
+
+        IndexedTriangleList triangles;
+        triangles.reserve(indices.size() / 3);
+        for (size_t i = 0; i + 2 < indices.size(); i += 3){
+            triangles.push_back(IndexedTriangle((uint32)indices[i], (uint32)indices[i + 1], (uint32)indices[i + 2], 0));
+        }
+
+        MeshShapeSettings shapeSettings(vertices, triangles);
+        shapeSettings.SetEmbedded();
+        ShapeSettings::ShapeResult result = shapeSettings.Create();
+        if (result.HasError()){
+            PHX_CORE_ERROR("[Jolt] mesh shape error: {0}", result.GetError().c_str());
+            return InvalidBody;
+        }
+        // Triangle meshes must be static.
+        return CreateBodyFromShape(m_Impl->physicsSystem, result.Get(), position, rotationEuler, BodyType::Static);
     }
 
     void PhysicsWorld::RemoveBody(uint32_t bodyID){
