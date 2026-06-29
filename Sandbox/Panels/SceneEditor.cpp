@@ -526,6 +526,11 @@ namespace Phoenix{
                     m_SelectedEntity.AddComponent<PrimitiveComponent>();
                 ImGui::CloseCurrentPopup();
             }
+            if (ImGui::MenuItem("Animation")){
+                if (!m_SelectedEntity.HasComponent<AnimationComponent>())
+                    m_SelectedEntity.AddComponent<AnimationComponent>();
+                ImGui::CloseCurrentPopup();
+            }
 
 			ImGui::EndPopup();
 		}
@@ -576,6 +581,24 @@ namespace Phoenix{
             ImGui::ColorEdit3("Emissive", glm::value_ptr(component.material.emissive));
             ImGui::DragFloat("Glow Strength", &component.material.emissiveStrength, 0.05f, 0.0f, 10.0f);
             ImGui::SliderFloat("Reflectivity", &component.material.reflectivity, 0.0f, 1.0f);
+		});
+
+        DrawComponent<AnimationComponent>("Animation", entity, [entity](AnimationComponent& component) mutable {
+            int clipCount = 0;
+            if (entity.HasComponent<MeshComponent>()){
+                auto& mc = entity.GetComponent<MeshComponent>();
+                if (mc.model && mc.model->IsReady()) { clipCount = (int)mc.model->GetAnimationCount(); }
+            }
+            if (clipCount > 0){
+                ImGui::Text("Clips available: %d", clipCount);
+                if (ImGui::DragInt("Clip", &component.clip, 0.1f, 0, clipCount - 1)) { component.activeClip = -1; }
+            }
+            else{
+                ImGui::TextDisabled("Add a rigged Mesh; animations load with it.");
+                if (ImGui::DragInt("Clip", &component.clip, 0.1f, 0, 32)) { component.activeClip = -1; }
+            }
+            ImGui::Checkbox("Playing", &component.playing);
+            ImGui::DragFloat("Speed", &component.speed, 0.05f, 0.0f, 5.0f);
 		});
 
         DrawComponent<MeshComponent>("Mesh", entity, [](MeshComponent& component){

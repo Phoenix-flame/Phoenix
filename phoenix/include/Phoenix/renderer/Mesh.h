@@ -2,17 +2,23 @@
 #include <Phoenix/core/base.h>
 #include <Phoenix/renderer/VertexArray.h>
 #include <Phoenix/renderer/Texture.h>
+#include <Phoenix/renderer/Animation.h>
 #include <glm/glm.hpp>
 #include <vector>
 #include <string>
+#include <map>
 #include <future>
 
 namespace Phoenix{
 
+    // Up to 4 bone influences per vertex. BoneIDs default to -1 (no influence) so the
+    // skinning loop in the shader can skip empty slots; weights default to 0.
     struct Vertex{
         glm::vec3 Position;
         glm::vec3 Normal;
         glm::vec2 TexCoords;
+        glm::vec4 BoneIDs = glm::vec4(-1.0f);
+        glm::vec4 Weights = glm::vec4(0.0f);
     };
 
     // CPU-side data for one mesh, produced on a worker thread (no GL calls).
@@ -20,6 +26,14 @@ namespace Phoenix{
         std::vector<Vertex> vertices;
         std::vector<uint32_t> indices;
         std::string diffusePath; // absolute path; empty if the mesh has no diffuse map
+    };
+
+    // Everything the worker thread extracts from a model file: geometry plus the
+    // skeleton/animation data (free of GL resources, so it crosses the thread).
+    struct ModelData{
+        std::vector<MeshData> meshes;
+        std::map<std::string, BoneInfo> boneInfoMap;
+        std::vector<Ref<Animation>> animations;
     };
 
     // A single drawable chunk of geometry: an interleaved vertex buffer
@@ -60,10 +74,20 @@ namespace Phoenix{
 
         const std::vector<Ref<Mesh>>& GetMeshes() const { return m_Meshes; }
         const std::string& GetPath() const { return m_Path; }
+
+        // Skeletal animation (empty for static models). Animations become available
+        // once the async load completes (IsReady()).
+        bool HasAnimations() const { return !m_Animations.empty(); }
+        size_t GetAnimationCount() const { return m_Animations.size(); }
+        Animation* GetAnimation(size_t index) const {
+            return index < m_Animations.size() ? m_Animations[index].get() : nullptr;
+        }
     private:
         std::string m_Path;
         std::vector<Ref<Mesh>> m_Meshes;
-        std::future<std::vector<MeshData>> m_Future;
+        std::map<std::string, BoneInfo> m_BoneInfoMap;
+        std::vector<Ref<Animation>> m_Animations;
+        std::future<ModelData> m_Future;
         bool m_Uploaded = false;
     };
 }

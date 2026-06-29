@@ -2,10 +2,12 @@
 
 #type vertex
 #version 300 es
-precision mediump float;
-in vec3 aPos;
-in vec3 aNormal;
-in vec2 aTexCoords;
+precision highp float;
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aNormal;
+layout(location = 2) in vec2 aTexCoords;
+layout(location = 3) in vec4 aBoneIDs; // -1 marks an unused influence slot
+layout(location = 4) in vec4 aWeights;
 
 out vec3 Normal;
 out vec3 FragPos;
@@ -16,11 +18,33 @@ uniform mat4 view;
 uniform mat4 projection;
 uniform mat4 u_LightSpaceMatrix;
 
+// Skeletal animation: when u_Animated, blend the bone matrices by the vertex weights.
+const int MAX_BONES = 100;
+uniform mat4 u_BoneMatrices[MAX_BONES];
+uniform bool u_Animated;
+
 void main()
 {
-    gl_Position = projection * view * model * vec4(aPos, 1.0);
-    Normal = mat3(transpose(inverse(model))) * aNormal;
-    FragPos = vec3(model * vec4(aPos, 1.0));
+    vec3 localPos = aPos;
+    vec3 localNormal = aNormal;
+
+    if (u_Animated){
+        mat4 skin = mat4(0.0);
+        float total = 0.0;
+        for (int i = 0; i < 4; i++){
+            if (aBoneIDs[i] < 0.0) { continue; }
+            skin += u_BoneMatrices[int(aBoneIDs[i])] * aWeights[i];
+            total += aWeights[i];
+        }
+        if (total > 0.0){
+            localPos = vec3(skin * vec4(aPos, 1.0));
+            localNormal = mat3(skin) * aNormal;
+        }
+    }
+
+    gl_Position = projection * view * model * vec4(localPos, 1.0);
+    Normal = mat3(transpose(inverse(model))) * localNormal;
+    FragPos = vec3(model * vec4(localPos, 1.0));
     TexCoords = aTexCoords;
     FragPosLightSpace = u_LightSpaceMatrix * vec4(FragPos, 1.0);
 }

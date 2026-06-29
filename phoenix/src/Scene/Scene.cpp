@@ -355,6 +355,27 @@ namespace Phoenix{
 			});
 		}
 
+        // Skeletal animation: advance each animator and recompute its bone matrices.
+        // Done before the shadow + main passes so both can read the posed skeleton.
+        {
+            PHX_PROFILE("Animation");
+            auto animView = m_Registry.view<MeshComponent, AnimationComponent>();
+            for (auto entity : animView){
+                auto& mesh = animView.get<MeshComponent>(entity);
+                auto& anim = animView.get<AnimationComponent>(entity);
+                if (!mesh.model) { continue; }
+                mesh.model->Update(); // ensure GPU upload + animations are available
+                if (!mesh.model->IsReady() || !mesh.model->HasAnimations()) { continue; }
+                if (!anim.animator){ anim.animator = CreateRef<Animator>(); anim.activeClip = -1; }
+                int clip = std::max(0, std::min((int)mesh.model->GetAnimationCount() - 1, anim.clip));
+                if (anim.activeClip != clip){
+                    anim.animator->PlayAnimation(mesh.model->GetAnimation(clip));
+                    anim.activeClip = clip;
+                }
+                if (anim.playing) { anim.animator->UpdateAnimation((float)ts * anim.speed); }
+            }
+        }
+
 
         auto cameras = m_Registry.view<TransformComponent,CameraComponent>();
         glm::mat4 sceneCameraProjection = editorCamera.GetProjection();
@@ -467,8 +488,13 @@ namespace Phoenix{
                 auto& mesh = meshCasters.get<MeshComponent>(entity);
                 if (!mesh.model) { continue; }
                 glm::mat4 transform = meshCasters.get<TransformComponent>(entity).GetTransform();
+                auto* anim = m_Registry.try_get<AnimationComponent>(entity);
+                bool animated = anim && anim->animator && mesh.model->HasAnimations();
                 for (const auto& subMesh : mesh.model->GetMeshes()){
-                    Renderer::SubmitShadow(subMesh->GetVertexArray(), transform);
+                    if (animated)
+                        Renderer::SubmitShadowAnimated(subMesh->GetVertexArray(), transform, anim->animator->GetFinalBoneMatrices());
+                    else
+                        Renderer::SubmitShadow(subMesh->GetVertexArray(), transform);
                 }
             }
             auto terrainCasters = m_Registry.view<TerrainComponent, TransformComponent>();
@@ -508,8 +534,14 @@ namespace Phoenix{
                 if (!mesh.model) { continue; }
                 mesh.model->Update(); // completes async GPU upload once parsing finishes
                 Renderer::SetWireframe(m_Registry.any_of<WireframeComponent>(entity));
+                auto* anim = m_Registry.try_get<AnimationComponent>(entity);
+                bool animated = anim && anim->animator && mesh.model->HasAnimations();
                 for (const auto& subMesh : mesh.model->GetMeshes()) {
-                    Renderer::Submit(subMesh->GetVertexArray(), mesh.material, transform.GetTransform(), subMesh->GetDiffuseMap());
+                    if (animated)
+                        Renderer::SubmitAnimated(subMesh->GetVertexArray(), mesh.material, transform.GetTransform(),
+                            anim->animator->GetFinalBoneMatrices(), subMesh->GetDiffuseMap());
+                    else
+                        Renderer::Submit(subMesh->GetVertexArray(), mesh.material, transform.GetTransform(), subMesh->GetDiffuseMap());
                 }
             }
             Renderer::SetWireframe(false);
@@ -652,6 +684,10 @@ namespace Phoenix{
 
     template<>
 	void Scene::OnComponentAdded<PrimitiveComponent>(Entity entity, PrimitiveComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<AnimationComponent>(Entity entity, AnimationComponent& component){
 	}
 
     template<>

@@ -253,6 +253,64 @@ void MainLayer::BuildWaterShowcase() {
     }
 }
 
+void MainLayer::BuildRobotShowcase() {
+    // Showcase for skeletal animation: a rigged character walking on a lit floor.
+    m_Scene->AmbientColor() = glm::vec3(0.06f);
+
+    {
+        auto cam = m_Scene->CreateEntity("Camera");
+        cam.AddComponent<CameraComponent>();
+        auto& t = cam.GetComponent<TransformComponent>();
+        t.Translation = { 0.0f, 3.0f, 8.0f };
+        t.Rotation = { glm::radians(-12.0f), 0.0f, 0.0f };
+    }
+
+    // Sun for clear shadows beneath the walker.
+    {
+        auto sun = m_Scene->CreateDirLightEntity("Sun");
+        auto& t = sun.GetComponent<TransformComponent>();
+        t.Translation = { 6.0f, 9.0f, 5.0f };
+        t.Rotation = { glm::radians(-55.0f), glm::radians(30.0f), 0.0f };
+        auto& dl = sun.GetComponent<DirLightComponent>();
+        dl.ambient  = glm::vec3(0.05f);
+        dl.diffuse  = glm::vec3(0.95f);
+        dl.specular = glm::vec3(1.0f);
+    }
+
+    // Floor that receives the shadow.
+    {
+        auto floor = m_Scene->CreateEntity("Floor");
+        auto& c = floor.AddComponent<CubeComponent>();
+        c.material.ambient = glm::vec3(0.4f);
+        c.material.diffuse = glm::vec3(0.45f);
+        c.material.specular = glm::vec3(0.1f);
+        c.material.shininess = 8.0f;
+        auto& t = floor.GetComponent<TransformComponent>();
+        t.Translation = { 0.0f, -1.0f, 0.0f };
+        t.Scale = { 24.0f, 0.5f, 24.0f };
+        floor.AddComponent<RigidBodyComponent>().type = RigidBodyComponent::Type::Static;
+        floor.AddComponent<BoxColliderComponent>();
+    }
+
+    // The walking robot. Drop a rigged + animated model at assets/models/robot.fbx
+    // (see assets/models/README.txt for how to get one from Mixamo). Mixamo exports
+    // are in centimetres (~180 units tall), so we scale way down. If the file is
+    // missing the slot is simply empty; everything else still renders.
+    {
+        auto robot = m_Scene->CreateEntity("Walking Robot");
+        auto& mesh = robot.AddComponent<MeshComponent>();
+        mesh.model = CreateRef<Model>("assets/models/robot.fbx");
+        mesh.material.ambient  = glm::vec3(0.2f);
+        mesh.material.diffuse  = glm::vec3(0.7f, 0.7f, 0.75f);
+        mesh.material.specular = glm::vec3(0.3f);
+        mesh.material.shininess = 24.0f;
+        robot.AddComponent<AnimationComponent>(); // plays clip 0 (the walk) on loop
+        auto& t = robot.GetComponent<TransformComponent>();
+        t.Translation = { 0.0f, -0.75f, 0.0f };
+        t.Scale = glm::vec3(0.02f); // tune in the Transform panel to fit your model
+    }
+}
+
 void MainLayer::SculptTerrain(TerrainComponent& terrain, const glm::vec3& terrainPos,
                               const glm::vec3& terrainScale, const glm::vec3& rayOrigin,
                               const glm::vec3& rayDir, float dt) {
@@ -518,6 +576,15 @@ void MainLayer::OnImGuiRender(){
                     m_Scene = CreateRef<Scene>();
                     m_Scene->OnResize(m_ViewportSize.x, m_ViewportSize.y);
                     BuildWaterShowcase();
+                    m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
+                    m_UndoStack.clear();
+                    m_RedoStack.clear();
+                    m_LastSnapshot = SceneSerializer(m_Scene).SerializeToString();
+                }
+                if (ImGui::MenuItem("Load Robot Showcase")) {
+                    m_Scene = CreateRef<Scene>();
+                    m_Scene->OnResize(m_ViewportSize.x, m_ViewportSize.y);
+                    BuildRobotShowcase();
                     m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
                     m_UndoStack.clear();
                     m_RedoStack.clear();

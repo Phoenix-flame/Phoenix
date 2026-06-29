@@ -180,6 +180,11 @@ namespace Phoenix{
 		UploadUniformMat4(name, value);
 	}
 
+	void Shader::SetMat4Array(const std::string& name, const glm::mat4* values, uint32_t count){
+		GLint location = glGetUniformLocation(_rendererID, name.c_str());
+		glUniformMatrix4fv(location, (GLsizei)count, GL_FALSE, glm::value_ptr(values[0]));
+	}
+
 	void Shader::UploadUniformInt(const std::string& name, int value){
 		GLint location = glGetUniformLocation(_rendererID, name.c_str());
 		glUniform1i(location, value);

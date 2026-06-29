@@ -138,6 +138,21 @@ namespace Phoenix{
               amplitude(o.amplitude), waveScale(o.waveScale), speed(o.speed) {}
     };
 
+    // Plays a skeletal animation on the entity's MeshComponent model. `clip` selects
+    // which animation in the model; the live Animator (bone matrices) is transient and
+    // recreated at runtime, so it is not serialized / reset on copy.
+    struct AnimationComponent{
+        int clip = 0;        // index into the model's animations
+        bool playing = true; // advance the animation in edit + play
+        float speed = 1.0f;
+
+        Ref<Animator> animator;       // created lazily once the model is ready
+        int activeClip = -1;          // which clip the animator is currently playing
+        AnimationComponent() = default;
+        AnimationComponent(const AnimationComponent& o)
+            : clip(o.clip), playing(o.playing), speed(o.speed) {}
+    };
+
     // A Lua script (edited inline, serialized). It runs while the scene is playing;
     // the live runtime is owned by the Scene, not stored here.
     struct LuaScriptComponent{

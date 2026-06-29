@@ -71,8 +71,20 @@ namespace Phoenix{
 
     void Renderer::SubmitShadow(const Ref<VertexArray>& vertexArray, const glm::mat4& transform){
         s_ShadowShader->SetMat4("model", transform);
+        s_ShadowShader->SetInt("u_Animated", 0);
         vertexArray->Bind();
         RenderCommand::DrawIndexed(vertexArray);
+    }
+
+    void Renderer::SubmitShadowAnimated(const Ref<VertexArray>& vertexArray, const glm::mat4& transform,
+            const std::vector<glm::mat4>& boneMatrices){
+        s_ShadowShader->SetMat4("model", transform);
+        s_ShadowShader->SetInt("u_Animated", 1);
+        if (!boneMatrices.empty())
+            s_ShadowShader->SetMat4Array("u_BoneMatrices", boneMatrices.data(), (uint32_t)boneMatrices.size());
+        vertexArray->Bind();
+        RenderCommand::DrawIndexed(vertexArray);
+        s_ShadowShader->SetInt("u_Animated", 0);
     }
 
     void Renderer::SubmitShadowCube(const glm::mat4& transform){
@@ -182,9 +194,41 @@ namespace Phoenix{
         }
 
         shader->SetMat4("model", transform);
+        shader->SetInt("u_Animated", 0);
 
         vertexArray->Bind();
         RenderCommand::DrawIndexed(vertexArray);
+    }
+
+    void Renderer::SubmitAnimated(const Ref<VertexArray>& vertexArray, const Material& material, const glm::mat4& transform,
+            const std::vector<glm::mat4>& boneMatrices, const Ref<Texture2D>& diffuseMap){
+        auto& shader = s_RenderLightCube->m_Shader;
+
+        shader->SetFloat3("material.ambient", material.ambient);
+        shader->SetFloat3("material.diffuse", material.diffuse);
+        shader->SetFloat3("material.specular", material.specular);
+        shader->SetFloat("material.shininess", material.shininess);
+        shader->SetFloat3("u_Emissive", material.emissive * material.emissiveStrength);
+        shader->SetFloat("u_Reflectivity", material.reflectivity);
+
+        if (diffuseMap){
+            diffuseMap->Bind(0);
+            shader->SetInt("u_DiffuseMap", 0);
+            shader->SetInt("u_HasDiffuseMap", 1);
+        }
+        else{
+            shader->SetInt("u_HasDiffuseMap", 0);
+        }
+
+        shader->SetMat4("model", transform);
+        shader->SetInt("u_Animated", 1);
+        if (!boneMatrices.empty())
+            shader->SetMat4Array("u_BoneMatrices", boneMatrices.data(), (uint32_t)boneMatrices.size());
+
+        vertexArray->Bind();
+        RenderCommand::DrawIndexed(vertexArray);
+
+        shader->SetInt("u_Animated", 0); // reset so following draws aren't skinned
     }
 
     void Renderer::SubmitCube(const Material& material, const glm::mat4& transform){

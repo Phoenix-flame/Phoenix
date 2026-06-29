@@ -168,6 +168,15 @@ namespace Phoenix{
             out << YAML::EndMap;
         }
 
+        if (entity.HasComponent<AnimationComponent>()){
+            auto& a = entity.GetComponent<AnimationComponent>();
+            out << YAML::Key << "AnimationComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "Clip" << YAML::Value << a.clip;
+            out << YAML::Key << "Playing" << YAML::Value << a.playing;
+            out << YAML::Key << "Speed" << YAML::Value << a.speed;
+            out << YAML::EndMap;
+        }
+
         if (entity.HasComponent<PrimitiveComponent>()){
             auto& p = entity.GetComponent<PrimitiveComponent>();
             out << YAML::Key << "PrimitiveComponent" << YAML::Value << YAML::BeginMap;
@@ -348,6 +357,16 @@ namespace Phoenix{
             w.mesh = nullptr;
         }
         else if (entity.HasComponent<WaterComponent>()) entity.RemoveComponent<WaterComponent>();
+
+        if (auto n = node["AnimationComponent"]){
+            auto& a = entity.HasComponent<AnimationComponent>() ? entity.GetComponent<AnimationComponent>() : entity.AddComponent<AnimationComponent>();
+            a.clip = n["Clip"].as<int>();
+            a.playing = n["Playing"].as<bool>();
+            a.speed = n["Speed"].as<float>();
+            a.animator = nullptr; // transient; recreated at runtime
+            a.activeClip = -1;
+        }
+        else if (entity.HasComponent<AnimationComponent>()) entity.RemoveComponent<AnimationComponent>();
 
         if (auto n = node["PrimitiveComponent"]){
             auto& p = entity.HasComponent<PrimitiveComponent>() ? entity.GetComponent<PrimitiveComponent>() : entity.AddComponent<PrimitiveComponent>();

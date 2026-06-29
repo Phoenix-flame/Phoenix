@@ -172,6 +172,11 @@ namespace Phoenix{
 		// shader. If diffuseMap is non-null it is sampled in place of material.diffuse.
 		static void Submit(const Ref<VertexArray>& vertexArray, const Material& material, const glm::mat4& transform = glm::mat4(1.0f), const Ref<Texture2D>& diffuseMap = nullptr);
 
+		// Draw a skinned mesh: same as Submit but uploads the per-frame bone matrices
+		// and enables vertex skinning in the shader.
+		static void SubmitAnimated(const Ref<VertexArray>& vertexArray, const Material& material, const glm::mat4& transform,
+			const std::vector<glm::mat4>& boneMatrices, const Ref<Texture2D>& diffuseMap = nullptr);
+
 		// Convenience: draw the built-in unit cube.
 		static void SubmitCube(const Material& material, const glm::mat4& transform = glm::mat4(1.0f));
 
@@ -184,6 +189,8 @@ namespace Phoenix{
 		// resulting depth map. The pass saves/restores the bound framebuffer+viewport.
 		static void BeginShadowPass(const glm::mat4& lightSpaceMatrix);
 		static void SubmitShadow(const Ref<VertexArray>& vertexArray, const glm::mat4& transform);
+		static void SubmitShadowAnimated(const Ref<VertexArray>& vertexArray, const glm::mat4& transform,
+			const std::vector<glm::mat4>& boneMatrices);
 		static void SubmitShadowCube(const glm::mat4& transform);
 		static void EndShadowPass();
 
