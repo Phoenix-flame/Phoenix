@@ -19,8 +19,15 @@ namespace Phoenix{
         // In-memory variants, used by the editor undo/redo history.
         std::string SerializeToString();
         bool DeserializeFromString(const std::string& data);
+
+        // Reconcile the existing scene to match the snapshot IN PLACE: update
+        // changed components, add/remove as needed, create/destroy entities, and
+        // reuse mesh Models whose path is unchanged (no reload). Used by undo/redo.
+        bool ApplyFromString(const std::string& data);
     private:
         bool DeserializeNode(const YAML::Node& data);
+        void ApplyEntity(Entity entity, const YAML::Node& node);
+        void RecountPointLights();
 
         Ref<Scene> m_Scene;
     };

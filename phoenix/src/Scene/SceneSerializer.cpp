@@ -6,6 +6,8 @@
 
 #include <yaml-cpp/yaml.h>
 #include <fstream>
+#include <unordered_set>
+#include <vector>
 
 namespace Phoenix{
 
@@ -174,6 +176,91 @@ namespace Phoenix{
         return DeserializeNode(root);
     }
 
+    // Sync a single entity's components to match `node`: update existing, add
+    // missing, remove ones no longer present. A MeshComponent's Model is reused
+    // when the path is unchanged, so undo/redo of unrelated edits never reloads it.
+    void SceneSerializer::ApplyEntity(Entity entity, const YAML::Node& node){
+        if (node["TagComponent"])
+            entity.GetComponent<TagComponent>().Tag = node["TagComponent"]["Tag"].as<std::string>();
+
+        if (auto n = node["TransformComponent"]){
+            auto& tc = entity.GetComponent<TransformComponent>();
+            tc.Translation = ReadVec3(n["Translation"]);
+            tc.Rotation    = ReadVec3(n["Rotation"]);
+            tc.Scale       = ReadVec3(n["Scale"]);
+        }
+
+        if (auto n = node["CameraComponent"]){
+            auto& cc = entity.HasComponent<CameraComponent>() ? entity.GetComponent<CameraComponent>() : entity.AddComponent<CameraComponent>();
+            cc.primary = n["Primary"].as<bool>();
+            auto& camera = cc.camera;
+            camera.SetProjectionType((SceneCamera::ProjectionType)n["ProjectionType"].as<int>());
+            camera.SetPerspectiveVerticalFOV(n["PerspectiveFOV"].as<float>());
+            camera.SetPerspectiveNearClip(n["PerspectiveNear"].as<float>());
+            camera.SetPerspectiveFarClip(n["PerspectiveFar"].as<float>());
+            camera.SetOrthographicSize(n["OrthographicSize"].as<float>());
+            camera.SetOrthographicNearClip(n["OrthographicNear"].as<float>());
+            camera.SetOrthographicFarClip(n["OrthographicFar"].as<float>());
+        }
+        else if (entity.HasComponent<CameraComponent>()) entity.RemoveComponent<CameraComponent>();
+
+        if (auto n = node["CubeComponent"]){
+            auto& cube = entity.HasComponent<CubeComponent>() ? entity.GetComponent<CubeComponent>() : entity.AddComponent<CubeComponent>();
+            cube.material = ReadMaterial(n["Material"]);
+        }
+        else if (entity.HasComponent<CubeComponent>()) entity.RemoveComponent<CubeComponent>();
+
+        if (auto n = node["PointLightComponent"]){
+            auto& pl = entity.HasComponent<PointLightComponent>() ? entity.GetComponent<PointLightComponent>() : entity.AddComponent<PointLightComponent>();
+            pl.ambient   = ReadVec3(n["ambient"]);
+            pl.diffuse   = ReadVec3(n["diffuse"]);
+            pl.specular  = ReadVec3(n["specular"]);
+            pl.isActive  = n["isActive"].as<bool>();
+            pl.constant  = n["constant"].as<float>();
+            pl.linear    = n["linear"].as<float>();
+            pl.quadratic = n["quadratic"].as<float>();
+        }
+        else if (entity.HasComponent<PointLightComponent>()) entity.RemoveComponent<PointLightComponent>();
+
+        if (auto n = node["DirLightComponent"]){
+            auto& dl = entity.HasComponent<DirLightComponent>() ? entity.GetComponent<DirLightComponent>() : entity.AddComponent<DirLightComponent>();
+            dl.ambient  = ReadVec3(n["ambient"]);
+            dl.diffuse  = ReadVec3(n["diffuse"]);
+            dl.specular = ReadVec3(n["specular"]);
+            dl.isActive = n["isActive"].as<bool>();
+        }
+        else if (entity.HasComponent<DirLightComponent>()) entity.RemoveComponent<DirLightComponent>();
+
+        if (auto n = node["MeshComponent"]){
+            auto& mc = entity.HasComponent<MeshComponent>() ? entity.GetComponent<MeshComponent>() : entity.AddComponent<MeshComponent>();
+            std::string path = n["Path"].as<std::string>();
+            if (path.empty())
+                mc.model = nullptr;
+            else if (!mc.model || mc.model->GetPath() != path)
+                mc.model = CreateRef<Model>(path); // only (re)load when the path actually changed
+            mc.material = ReadMaterial(n["Material"]);
+        }
+        else if (entity.HasComponent<MeshComponent>()) entity.RemoveComponent<MeshComponent>();
+
+        if (auto n = node["RigidBodyComponent"]){
+            auto& rb = entity.HasComponent<RigidBodyComponent>() ? entity.GetComponent<RigidBodyComponent>() : entity.AddComponent<RigidBodyComponent>();
+            rb.type = (RigidBodyComponent::Type)n["Type"].as<int>();
+        }
+        else if (entity.HasComponent<RigidBodyComponent>()) entity.RemoveComponent<RigidBodyComponent>();
+
+        if (auto n = node["BoxColliderComponent"]){
+            auto& bc = entity.HasComponent<BoxColliderComponent>() ? entity.GetComponent<BoxColliderComponent>() : entity.AddComponent<BoxColliderComponent>();
+            bc.halfExtents = ReadVec3(n["HalfExtents"]);
+        }
+        else if (entity.HasComponent<BoxColliderComponent>()) entity.RemoveComponent<BoxColliderComponent>();
+    }
+
+    void SceneSerializer::RecountPointLights(){
+        int count = 0;
+        for (auto e : m_Scene->m_Registry.view<PointLightComponent>()) { (void)e; count++; }
+        m_Scene->m_NumPointLights = count;
+    }
+
     bool SceneSerializer::DeserializeNode(const YAML::Node& data){
         if (!data["Entities"]){
             PHX_CORE_ERROR("Scene data has no entities node");
@@ -187,70 +274,62 @@ namespace Phoenix{
 
             // CreateEntity already attaches a TransformComponent and a TagComponent.
             Entity entity = m_Scene->CreateEntity(name);
-
-            if (auto tn = entityNode["TransformComponent"]){
-                auto& tc = entity.GetComponent<TransformComponent>();
-                tc.Translation = ReadVec3(tn["Translation"]);
-                tc.Rotation    = ReadVec3(tn["Rotation"]);
-                tc.Scale       = ReadVec3(tn["Scale"]);
-            }
-
-            if (auto cn = entityNode["CameraComponent"]){
-                auto& cc = entity.AddComponent<CameraComponent>();
-                cc.primary = cn["Primary"].as<bool>();
-                auto& camera = cc.camera;
-                camera.SetProjectionType((SceneCamera::ProjectionType)cn["ProjectionType"].as<int>());
-                camera.SetPerspectiveVerticalFOV(cn["PerspectiveFOV"].as<float>());
-                camera.SetPerspectiveNearClip(cn["PerspectiveNear"].as<float>());
-                camera.SetPerspectiveFarClip(cn["PerspectiveFar"].as<float>());
-                camera.SetOrthographicSize(cn["OrthographicSize"].as<float>());
-                camera.SetOrthographicNearClip(cn["OrthographicNear"].as<float>());
-                camera.SetOrthographicFarClip(cn["OrthographicFar"].as<float>());
-            }
-
-            if (auto cn = entityNode["CubeComponent"]){
-                auto& cube = entity.AddComponent<CubeComponent>();
-                cube.material = ReadMaterial(cn["Material"]);
-            }
-
-            if (auto pn = entityNode["PointLightComponent"]){
-                auto& pl = entity.AddComponent<PointLightComponent>();
-                pl.ambient   = ReadVec3(pn["ambient"]);
-                pl.diffuse   = ReadVec3(pn["diffuse"]);
-                pl.specular  = ReadVec3(pn["specular"]);
-                pl.isActive  = pn["isActive"].as<bool>();
-                pl.constant  = pn["constant"].as<float>();
-                pl.linear    = pn["linear"].as<float>();
-                pl.quadratic = pn["quadratic"].as<float>();
-                m_Scene->m_NumPointLights++;
-            }
-            else if (auto dn = entityNode["DirLightComponent"]){
-                auto& dl = entity.AddComponent<DirLightComponent>();
-                dl.ambient  = ReadVec3(dn["ambient"]);
-                dl.diffuse  = ReadVec3(dn["diffuse"]);
-                dl.specular = ReadVec3(dn["specular"]);
-                dl.isActive = dn["isActive"].as<bool>();
-            }
-
-            if (auto mn = entityNode["MeshComponent"]){
-                auto& mc = entity.AddComponent<MeshComponent>();
-                std::string path = mn["Path"].as<std::string>();
-                if (!path.empty())
-                    mc.model = CreateRef<Model>(path);
-                mc.material = ReadMaterial(mn["Material"]);
-            }
-
-            if (auto rn = entityNode["RigidBodyComponent"]){
-                auto& rb = entity.AddComponent<RigidBodyComponent>();
-                rb.type = (RigidBodyComponent::Type)rn["Type"].as<int>();
-            }
-
-            if (auto bn = entityNode["BoxColliderComponent"]){
-                auto& bc = entity.AddComponent<BoxColliderComponent>();
-                bc.halfExtents = ReadVec3(bn["HalfExtents"]);
-            }
+            ApplyEntity(entity, entityNode);
         }
 
+        RecountPointLights();
+        return true;
+    }
+
+    bool SceneSerializer::ApplyFromString(const std::string& data){
+        YAML::Node root;
+        try{
+            root = YAML::Load(data);
+        }
+        catch (const std::exception& e){
+            PHX_CORE_ERROR("Failed to parse scene snapshot: {0}", e.what());
+            return false;
+        }
+        if (!root["Entities"]){
+            PHX_CORE_ERROR("Scene data has no entities node");
+            return false;
+        }
+
+        auto& registry = m_Scene->m_Registry;
+        const YAML::Node entities = root["Entities"];
+
+        // Collect the snapshot's entity ids.
+        std::unordered_set<uint32_t> targetIds;
+        for (std::size_t i = 0; i < entities.size(); i++)
+            targetIds.insert(entities[i]["Entity"].as<uint32_t>());
+
+        // Destroy live entities not present in the snapshot (collect first to avoid
+        // mutating the storage while iterating it).
+        std::vector<entt::entity> toDestroy;
+        for (auto handle : registry.storage<entt::entity>()){
+            if (!registry.valid(handle)) { continue; }
+            if (targetIds.find((uint32_t)handle) == targetIds.end())
+                toDestroy.push_back(handle);
+        }
+        for (auto handle : toDestroy)
+            m_Scene->DestroyEntity(Entity{ handle, m_Scene.get() });
+
+        // Update matching entities in place; create any that are missing.
+        for (std::size_t i = 0; i < entities.size(); i++){
+            YAML::Node node = entities[i];
+            entt::entity handle = (entt::entity)node["Entity"].as<uint32_t>();
+            Entity entity;
+            if (registry.valid(handle))
+                entity = Entity{ handle, m_Scene.get() };
+            else{
+                std::string name;
+                if (node["TagComponent"]) name = node["TagComponent"]["Tag"].as<std::string>();
+                entity = m_Scene->CreateEntity(name);
+            }
+            ApplyEntity(entity, node);
+        }
+
+        RecountPointLights();
         return true;
     }
 }

@@ -11,9 +11,13 @@ namespace Phoenix{
         ~SceneEditor() = default;
 
         void OnImGuiRender(){
+            // Drop the selection if its entity no longer exists (e.g. after an
+            // undo that removed it) so nothing references a stale handle.
+            if (m_SelectedEntity && !m_ActiveScene->m_Registry.valid((entt::entity)m_SelectedEntity))
+                m_SelectedEntity = {};
             ScenePanel();
             EntityPanel();
-        }   
+        }
 
         void ScenePanel();
         void EntityPanel();

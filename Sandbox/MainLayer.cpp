@@ -97,12 +97,12 @@ void MainLayer::CommitHistory() {
 }
 
 void MainLayer::RestoreScene(const std::string& snapshot) {
-    auto scene = CreateRef<Scene>();
-    SceneSerializer(scene).DeserializeFromString(snapshot);
-    m_Scene = scene;
-    m_Scene->OnResize(m_ViewportSize.x, m_ViewportSize.y);
-    m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
-    m_LastSnapshot = snapshot;
+    // Reconcile the existing scene in place (keeps loaded models + selection)
+    // instead of rebuilding it from scratch.
+    SceneSerializer(m_Scene).ApplyFromString(snapshot);
+    // Re-serialize the live scene as the baseline so CommitHistory doesn't record
+    // a spurious entry (entity ids can differ from the snapshot after create/delete).
+    m_LastSnapshot = SceneSerializer(m_Scene).SerializeToString();
 }
 
 void MainLayer::Undo() {
