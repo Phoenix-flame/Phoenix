@@ -249,6 +249,11 @@ namespace Phoenix{
 				terrain.material.shininess = 8.0f;
 			}
 
+			if (ImGui::MenuItem("Create Water")){
+				m_SelectedEntity = m_ActiveScene->CreateEntity("Water");
+				m_SelectedEntity.AddComponent<WaterComponent>();
+			}
+
 			ImGui::EndPopup();
 		}
 
@@ -692,6 +697,15 @@ namespace Phoenix{
 				std::fill(component.heights.begin(), component.heights.end(), 0.0f);
 				component.dirty = true;
 			}
+		});
+
+		DrawComponent<WaterComponent>("Water", entity, [](WaterComponent& component){
+			ImGui::ColorEdit3("Color", glm::value_ptr(component.color));
+			ImGui::SliderFloat("Transparency", &component.alpha, 0.0f, 1.0f);
+			ImGui::DragFloat("Wave Height", &component.amplitude, 0.01f, 0.0f, 2.0f);
+			ImGui::DragFloat("Wave Scale", &component.waveScale, 0.01f, 0.05f, 3.0f);
+			ImGui::DragFloat("Wave Speed", &component.speed, 0.05f, 0.0f, 6.0f);
+			ImGui::TextDisabled("Position at the water level over a terrain basin to fill a lake.");
 		});
 
 		DrawComponent<MeshColliderComponent>("Mesh Collider", entity, [](MeshColliderComponent& component){

@@ -201,6 +201,12 @@ namespace Phoenix{
 		// Draw an arrow showing a directional light's aim (the transform's -Z).
 		static void DrawDirLightGizmo(const glm::mat4& transform, const glm::vec3& color);
 
+		// Draw an animated transparent water surface (flat grid displaced in the shader).
+		// Call after the opaque scene; uses the camera state from the last BeginScene.
+		static void SubmitWater(const Ref<VertexArray>& vertexArray, const glm::mat4& transform,
+			const glm::vec3& color, float alpha, const glm::vec3& lightDir, float time,
+			float amplitude, float waveScale, float speed);
+
 		static RendererAPI::API GetAPI() { return RendererAPI::GetAPI(); }
 	private:
 		struct SceneData{
@@ -213,6 +219,7 @@ namespace Phoenix{
         static Scope<RenderCameraGizmo> s_CameraGizmo;
         static Scope<RenderDirLightGizmo> s_DirLightGizmo;
         static Ref<Shader> s_OutlineShader;
+        static Ref<Shader> s_WaterShader;
 
         // Directional shadow map state.
         static uint32_t s_ShadowFBO, s_ShadowDepthTex;

@@ -61,6 +61,7 @@ namespace Phoenix{
         int m_NumPointLights = 0;
         const int MAX_NUM_POINT_LIGHTS = 4;
         glm::vec3 m_AmbientColor = glm::vec3(0.1f);
+        float m_Time = 0.0f; // accumulated seconds (drives water animation)
 
         Scope<PhysicsWorld> m_PhysicsWorld;
         std::vector<Ref<LuaScript>> m_Scripts; // live Lua runtimes while playing

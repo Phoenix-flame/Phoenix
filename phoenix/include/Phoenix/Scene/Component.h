@@ -106,6 +106,25 @@ namespace Phoenix{
               material(o.material), generateCollider(o.generateCollider), dirty(true) {}
     };
 
+    // An animated transparent water surface (a flat grid displaced by waves in the
+    // water shader). Place it at a water level over a sculpted terrain basin to make
+    // a lake. The grid mesh is transient (regenerated, not serialized).
+    struct WaterComponent{
+        float size = 40.0f;
+        int resolution = 96;
+        glm::vec3 color = glm::vec3(0.05f, 0.22f, 0.35f);
+        float alpha = 0.7f;
+        float amplitude = 0.15f;
+        float waveScale = 0.6f;
+        float speed = 1.2f;
+
+        Ref<Mesh> mesh; // flat grid; not serialized
+        WaterComponent() = default;
+        WaterComponent(const WaterComponent& o)
+            : size(o.size), resolution(o.resolution), color(o.color), alpha(o.alpha),
+              amplitude(o.amplitude), waveScale(o.waveScale), speed(o.speed) {}
+    };
+
     // A Lua script (edited inline, serialized). It runs while the scene is playing;
     // the live runtime is owned by the Scene, not stored here.
     struct LuaScriptComponent{

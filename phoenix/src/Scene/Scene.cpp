@@ -54,6 +54,33 @@ namespace Phoenix{
         return CreateRef<Mesh>(vertices, indices);
     }
 
+    // Flat XZ grid mesh (y=0, normals up) used by the water surface; waves are applied
+    // in the water shader.
+    static Ref<Mesh> BuildGridMesh(float size, int N){
+        if (N < 2) { N = 2; }
+        float half = size * 0.5f;
+        std::vector<Vertex> vertices;
+        vertices.reserve((size_t)N * N);
+        for (int z = 0; z < N; z++){
+            for (int x = 0; x < N; x++){
+                float fx = (float)x / (N - 1), fz = (float)z / (N - 1);
+                vertices.push_back({ glm::vec3(fx * size - half, 0.0f, fz * size - half),
+                                     glm::vec3(0.0f, 1.0f, 0.0f), glm::vec2(fx, fz) });
+            }
+        }
+        std::vector<uint32_t> indices;
+        indices.reserve((size_t)(N - 1) * (N - 1) * 6);
+        for (int z = 0; z < N - 1; z++){
+            for (int x = 0; x < N - 1; x++){
+                uint32_t i0 = (uint32_t)(z * N + x), i1 = (uint32_t)(z * N + x + 1);
+                uint32_t i2 = (uint32_t)((z + 1) * N + x), i3 = (uint32_t)((z + 1) * N + x + 1);
+                indices.push_back(i0); indices.push_back(i2); indices.push_back(i1);
+                indices.push_back(i1); indices.push_back(i2); indices.push_back(i3);
+            }
+        }
+        return CreateRef<Mesh>(vertices, indices);
+    }
+
     Scene::Scene() = default;
     Scene::~Scene() = default;
 
@@ -243,6 +270,8 @@ namespace Phoenix{
     }
 
     void Scene::OnUpdate(EditorCamera& editorCamera, Timestep ts, Entity selectedEntity){
+
+        m_Time += (float)ts; // drives water animation (advances in edit + play)
 
         // Lua scripts run while playing (they may move/recolour their entities).
         if (!m_Scripts.empty()){
@@ -442,6 +471,18 @@ namespace Phoenix{
             Renderer::EndScene();
         }
 
+        // Transparent water surfaces (drawn after the opaque scene).
+        {
+            auto waterView = m_Registry.view<WaterComponent, TransformComponent>();
+            for (auto entity : waterView){
+                auto& water = waterView.get<WaterComponent>(entity);
+                auto transform = waterView.get<TransformComponent>(entity);
+                if (!water.mesh) { water.mesh = BuildGridMesh(water.size, water.resolution); }
+                Renderer::SubmitWater(water.mesh->GetVertexArray(), transform.GetTransform(),
+                    water.color, water.alpha, lightDir, m_Time, water.amplitude, water.waveScale, water.speed);
+            }
+        }
+
         // Selection outline (drawn over the scene, using this frame's camera state).
         if (selectedEntity && selectedEntity.HasComponent<TransformComponent>()){
             const glm::vec3 outlineColor = { 1.0f, 0.5f, 0.1f };
@@ -528,6 +569,10 @@ namespace Phoenix{
 
     template<>
 	void Scene::OnComponentAdded<TerrainComponent>(Entity entity, TerrainComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<WaterComponent>(Entity entity, WaterComponent& component){
 	}
 
     template<>

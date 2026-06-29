@@ -9,6 +9,7 @@ namespace Phoenix{
     Scope<RenderCameraGizmo> Renderer::s_CameraGizmo = CreateScope<RenderCameraGizmo>();
     Scope<RenderDirLightGizmo> Renderer::s_DirLightGizmo = CreateScope<RenderDirLightGizmo>();
     Ref<Shader> Renderer::s_OutlineShader;
+    Ref<Shader> Renderer::s_WaterShader;
 
     uint32_t Renderer::s_ShadowFBO = 0;
     uint32_t Renderer::s_ShadowDepthTex = 0;
@@ -26,6 +27,7 @@ namespace Phoenix{
         s_CameraGizmo->Init();
         s_DirLightGizmo->Init();
         s_OutlineShader = Shader::Create("assets/shaders/outline.glsl");
+        s_WaterShader = Shader::Create("assets/shaders/water.glsl");
         s_ShadowShader = Shader::Create("assets/shaders/shadow_depth.glsl");
 
         // Depth-only framebuffer for the directional shadow map.
@@ -272,6 +274,32 @@ namespace Phoenix{
         glDrawElements(GL_LINES, 10, GL_UNSIGNED_INT, 0);
 
         s_OutlineShader->Unbind();
+    }
+
+    void Renderer::SubmitWater(const Ref<VertexArray>& vertexArray, const glm::mat4& transform,
+            const glm::vec3& color, float alpha, const glm::vec3& lightDir, float time,
+            float amplitude, float waveScale, float speed){
+        glEnable(GL_BLEND);
+        glDepthMask(GL_FALSE); // transparent: test against depth but don't write it
+
+        s_WaterShader->Bind();
+        s_WaterShader->SetMat4("view", s_SceneData->ViewMatrix);
+        s_WaterShader->SetMat4("projection", s_SceneData->ProjectionMatrix);
+        s_WaterShader->SetMat4("model", transform);
+        s_WaterShader->SetFloat3("u_CameraPos", s_SceneData->CameraPos);
+        s_WaterShader->SetFloat3("u_Color", color);
+        s_WaterShader->SetFloat("u_Alpha", alpha);
+        s_WaterShader->SetFloat3("u_LightDir", lightDir);
+        s_WaterShader->SetFloat("u_Time", time);
+        s_WaterShader->SetFloat("u_Amplitude", amplitude);
+        s_WaterShader->SetFloat("u_WaveScale", waveScale);
+        s_WaterShader->SetFloat("u_Speed", speed);
+
+        vertexArray->Bind();
+        RenderCommand::DrawIndexed(vertexArray);
+
+        s_WaterShader->Unbind();
+        glDepthMask(GL_TRUE);
     }
 
 	void Renderer::EndScene(){

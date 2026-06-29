@@ -155,6 +155,19 @@ namespace Phoenix{
             out << YAML::EndMap;
         }
 
+        if (entity.HasComponent<WaterComponent>()){
+            auto& w = entity.GetComponent<WaterComponent>();
+            out << YAML::Key << "WaterComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "Size" << YAML::Value << w.size;
+            out << YAML::Key << "Resolution" << YAML::Value << w.resolution;
+            out << YAML::Key << "Color" << YAML::Value << w.color;
+            out << YAML::Key << "Alpha" << YAML::Value << w.alpha;
+            out << YAML::Key << "Amplitude" << YAML::Value << w.amplitude;
+            out << YAML::Key << "WaveScale" << YAML::Value << w.waveScale;
+            out << YAML::Key << "Speed" << YAML::Value << w.speed;
+            out << YAML::EndMap;
+        }
+
         if (entity.HasComponent<LuaScriptComponent>()){
             out << YAML::Key << "LuaScriptComponent" << YAML::Value << YAML::BeginMap;
             out << YAML::Key << "Source" << YAML::Value << entity.GetComponent<LuaScriptComponent>().source;
@@ -314,6 +327,19 @@ namespace Phoenix{
             t.mesh = nullptr;
         }
         else if (entity.HasComponent<TerrainComponent>()) entity.RemoveComponent<TerrainComponent>();
+
+        if (auto n = node["WaterComponent"]){
+            auto& w = entity.HasComponent<WaterComponent>() ? entity.GetComponent<WaterComponent>() : entity.AddComponent<WaterComponent>();
+            w.size = n["Size"].as<float>();
+            w.resolution = n["Resolution"].as<int>();
+            w.color = ReadVec3(n["Color"]);
+            w.alpha = n["Alpha"].as<float>();
+            w.amplitude = n["Amplitude"].as<float>();
+            w.waveScale = n["WaveScale"].as<float>();
+            w.speed = n["Speed"].as<float>();
+            w.mesh = nullptr;
+        }
+        else if (entity.HasComponent<WaterComponent>()) entity.RemoveComponent<WaterComponent>();
 
         if (auto n = node["LuaScriptComponent"]){
             auto& s = entity.HasComponent<LuaScriptComponent>() ? entity.GetComponent<LuaScriptComponent>() : entity.AddComponent<LuaScriptComponent>();
