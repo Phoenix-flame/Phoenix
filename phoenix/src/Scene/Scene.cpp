@@ -203,9 +203,10 @@ namespace Phoenix{
             if (!light.isActive) { continue; }
             auto transform = lightsView.get<TransformComponent>(entity);
             lightComponent = light;
-            // A directional light points along its local forward (-Z), rotated by
-            // the entity's orientation. (Previously this used translation, so the
-            // light couldn't be aimed.)
+            // A directional light points along its local forward (-Z), rotated by the
+            // entity's orientation. The shader uses lightDir = -direction, so the lit
+            // faces are the ones facing into the arrow (the arrow shows where the light
+            // travels; surfaces facing the source light up).
             lightDir = glm::normalize(glm::mat3(transform.GetTransform()) * glm::vec3(0.0f, 0.0f, -1.0f));
             dirLightExists = true;
         }

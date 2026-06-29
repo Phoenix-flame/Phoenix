@@ -73,8 +73,11 @@ namespace Phoenix{
 
 
     struct DirLightComponent{
-        glm::vec3 ambient = glm::vec3(1.0f);
-        glm::vec3 diffuse = glm::vec3(0.2f) * ambient;
+        // diffuse is the dominant term so the light is actually directional; its own
+        // ambient is small since the scene has a separate global ambient. (Previously
+        // ambient=1.0 flooded everything flat, making the light look like it did nothing.)
+        glm::vec3 ambient = glm::vec3(0.05f);
+        glm::vec3 diffuse = glm::vec3(0.8f);
         glm::vec3 specular = glm::vec3(1.0f);
         bool isActive = true;
         DirLightComponent() = default;
