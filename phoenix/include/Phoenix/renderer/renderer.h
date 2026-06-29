@@ -179,6 +179,14 @@ namespace Phoenix{
 		// after drawing the affected objects.
 		static void SetWireframe(bool enabled);
 
+		// Directional shadow map. Call BeginShadowPass, submit all shadow casters,
+		// then EndShadowPass BEFORE BeginScene; the lighting pass then samples the
+		// resulting depth map. The pass saves/restores the bound framebuffer+viewport.
+		static void BeginShadowPass(const glm::mat4& lightSpaceMatrix);
+		static void SubmitShadow(const Ref<VertexArray>& vertexArray, const glm::mat4& transform);
+		static void SubmitShadowCube(const glm::mat4& transform);
+		static void EndShadowPass();
+
 		// Selection outline: stencils the object's silhouette, then draws a slightly
 		// enlarged flat-color version only where the stencil is unset, leaving a thin
 		// border line around the outer edge. Pass all of an object's sub-VAOs together
@@ -205,5 +213,13 @@ namespace Phoenix{
         static Scope<RenderCameraGizmo> s_CameraGizmo;
         static Scope<RenderDirLightGizmo> s_DirLightGizmo;
         static Ref<Shader> s_OutlineShader;
+
+        // Directional shadow map state.
+        static uint32_t s_ShadowFBO, s_ShadowDepthTex;
+        static Ref<Shader> s_ShadowShader;
+        static glm::mat4 s_LightSpaceMatrix;
+        static bool s_ShadowsEnabled;
+        static int s_PrevFBO;
+        static int s_PrevViewport[4];
 	};
 }

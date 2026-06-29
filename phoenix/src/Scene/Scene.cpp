@@ -254,6 +254,35 @@ namespace Phoenix{
                              emissiveMeshes.get<TransformComponent>(entity).Translation);
         }
 
+        // Directional shadow pass: render scene depth from the light's point of view
+        // into the shadow map (must happen before the main lighting pass).
+        if (dirLightExists){
+            PHX_PROFILE("Shadow Pass");
+            glm::vec3 up = (std::abs(lightDir.y) > 0.99f) ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+            glm::vec3 center(0.0f);
+            glm::vec3 lightPos = center - lightDir * 20.0f;
+            glm::mat4 lightView = glm::lookAt(lightPos, center, up);
+            const float orthoHalf = 15.0f;
+            glm::mat4 lightProj = glm::ortho(-orthoHalf, orthoHalf, -orthoHalf, orthoHalf, 0.1f, 50.0f);
+            glm::mat4 lightSpace = lightProj * lightView;
+
+            Renderer::BeginShadowPass(lightSpace);
+            auto cubeCasters = m_Registry.view<CubeComponent, TransformComponent>();
+            for (auto entity : cubeCasters){
+                Renderer::SubmitShadowCube(cubeCasters.get<TransformComponent>(entity).GetTransform());
+            }
+            auto meshCasters = m_Registry.view<MeshComponent, TransformComponent>();
+            for (auto entity : meshCasters){
+                auto& mesh = meshCasters.get<MeshComponent>(entity);
+                if (!mesh.model) { continue; }
+                glm::mat4 transform = meshCasters.get<TransformComponent>(entity).GetTransform();
+                for (const auto& subMesh : mesh.model->GetMeshes()){
+                    Renderer::SubmitShadow(subMesh->GetVertexArray(), transform);
+                }
+            }
+            Renderer::EndShadowPass();
+        }
+
         {
             PHX_PROFILE("Scene Components");
             Renderer::BeginScene(sceneCameraProjection, sceneCameraView, cameraPos);

@@ -10,13 +10,73 @@ namespace Phoenix{
     Scope<RenderDirLightGizmo> Renderer::s_DirLightGizmo = CreateScope<RenderDirLightGizmo>();
     Ref<Shader> Renderer::s_OutlineShader;
 
+    uint32_t Renderer::s_ShadowFBO = 0;
+    uint32_t Renderer::s_ShadowDepthTex = 0;
+    Ref<Shader> Renderer::s_ShadowShader;
+    glm::mat4 Renderer::s_LightSpaceMatrix = glm::mat4(1.0f);
+    bool Renderer::s_ShadowsEnabled = false;
+    int Renderer::s_PrevFBO = 0;
+    int Renderer::s_PrevViewport[4] = { 0, 0, 0, 0 };
+
+    static const uint32_t SHADOW_MAP_SIZE = 2048;
+
 	void Renderer::Init(){
 		RenderCommand::Init();
         s_RenderLightCube->Init();
         s_CameraGizmo->Init();
         s_DirLightGizmo->Init();
         s_OutlineShader = Shader::Create("assets/shaders/outline.glsl");
+        s_ShadowShader = Shader::Create("assets/shaders/shadow_depth.glsl");
+
+        // Depth-only framebuffer for the directional shadow map.
+        glGenTextures(1, &s_ShadowDepthTex);
+        glBindTexture(GL_TEXTURE_2D, s_ShadowDepthTex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+        float border[] = { 1.0f, 1.0f, 1.0f, 1.0f }; // outside the map = max depth = lit
+        glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border);
+
+        glGenFramebuffers(1, &s_ShadowFBO);
+        glBindFramebuffer(GL_FRAMEBUFFER, s_ShadowFBO);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, s_ShadowDepthTex, 0);
+        glDrawBuffer(GL_NONE);
+        glReadBuffer(GL_NONE);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
+
+    void Renderer::BeginShadowPass(const glm::mat4& lightSpaceMatrix){
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &s_PrevFBO);
+        glGetIntegerv(GL_VIEWPORT, s_PrevViewport);
+
+        s_LightSpaceMatrix = lightSpaceMatrix;
+        s_ShadowsEnabled = true;
+
+        glBindFramebuffer(GL_FRAMEBUFFER, s_ShadowFBO);
+        glViewport(0, 0, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
+        glClear(GL_DEPTH_BUFFER_BIT);
+
+        s_ShadowShader->Bind();
+        s_ShadowShader->SetMat4("u_LightSpaceMatrix", lightSpaceMatrix);
+    }
+
+    void Renderer::SubmitShadow(const Ref<VertexArray>& vertexArray, const glm::mat4& transform){
+        s_ShadowShader->SetMat4("model", transform);
+        vertexArray->Bind();
+        RenderCommand::DrawIndexed(vertexArray);
+    }
+
+    void Renderer::SubmitShadowCube(const glm::mat4& transform){
+        SubmitShadow(s_RenderLightCube->m_Vertex_array, transform);
+    }
+
+    void Renderer::EndShadowPass(){
+        s_ShadowShader->Unbind();
+        glBindFramebuffer(GL_FRAMEBUFFER, (uint32_t)s_PrevFBO);
+        glViewport(s_PrevViewport[0], s_PrevViewport[1], s_PrevViewport[2], s_PrevViewport[3]);
+    }
 
 	void Renderer::Shutdown(){
 	}
@@ -35,6 +95,12 @@ namespace Phoenix{
         shader->SetMat4("view", view);
         shader->SetMat4("projection", projection);
         shader->SetFloat3("cameraPos", cameraPos);
+
+        // Shadow map (bound to texture unit 1; the diffuse map uses unit 0).
+        shader->SetMat4("u_LightSpaceMatrix", s_LightSpaceMatrix);
+        shader->SetInt("u_ShadowsEnabled", s_ShadowsEnabled ? 1 : 0);
+        shader->SetInt("u_ShadowMap", 1);
+        glBindTextureUnit(1, s_ShadowDepthTex);
     }
 
     void Renderer::SetLights(
@@ -204,6 +270,8 @@ namespace Phoenix{
 
 	void Renderer::EndScene(){
         s_RenderLightCube->m_Shader->Unbind();
+        // Reset for next frame; if no shadow pass runs, shadows stay disabled.
+        s_ShadowsEnabled = false;
 	}
 
 }
