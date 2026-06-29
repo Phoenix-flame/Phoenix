@@ -24,12 +24,17 @@ namespace Phoenix{
 	}
 
 	void SceneCamera::SetViewportSize(uint32_t width, uint32_t height){
+		if (width == 0 || height == 0) { return; }
 		m_AspectRatio = (float)width / (float)height;
 		RecalculateProjection();
 	}
 
 
 	SceneCamera& SceneCamera::RecalculateProjection(){
+		// Aspect ratio isn't known until the camera gets a viewport size; skip until
+		// then (glm::perspective asserts on a zero/NaN aspect).
+		if (!(m_AspectRatio > 0.0f)) { return *this; }
+
 		if (m_ProjectionType == ProjectionType::Perspective){
 			m_Projection = glm::perspective(m_PerspectiveFOV, m_AspectRatio, m_PerspectiveNear, m_PerspectiveFar);
 		}

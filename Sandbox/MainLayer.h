@@ -1,3 +1,5 @@
+#include <vector>
+#include <string>
 #include <Phoenix/core/layer.h>
 #include <Phoenix/renderer/shader.h>
 #include <Phoenix/event/keyEvent.h>
@@ -33,6 +35,13 @@ private:
     }
     bool OnKeyPressed(KeyPressedEvent& e);
 
+    // Snapshot-based undo/redo. CommitHistory records a snapshot once an edit
+    // settles (no active gizmo/widget); Undo/Redo restore snapshots.
+    void CommitHistory();
+    void Undo();
+    void Redo();
+    void RestoreScene(const std::string& snapshot);
+
 private:
     bool vsync = true;
 private:
@@ -51,6 +60,11 @@ private:
 
     // Active ImGuizmo operation: 0=translate, 1=rotate, 2=scale, -1=none.
     int m_GizmoType = 0;
+
+    // Undo/redo history (YAML scene snapshots).
+    std::vector<std::string> m_UndoStack;
+    std::vector<std::string> m_RedoStack;
+    std::string m_LastSnapshot;
 
 private:
     imgui_addons::ImGuiFileBrowser file_dialog;

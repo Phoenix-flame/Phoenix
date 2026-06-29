@@ -110,10 +110,24 @@ namespace Phoenix{
             out << YAML::EndMap;
         }
 
+        if (entity.HasComponent<RigidBodyComponent>()){
+            auto& rb = entity.GetComponent<RigidBodyComponent>();
+            out << YAML::Key << "RigidBodyComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "Type" << YAML::Value << (int)rb.type;
+            out << YAML::EndMap;
+        }
+
+        if (entity.HasComponent<BoxColliderComponent>()){
+            auto& bc = entity.GetComponent<BoxColliderComponent>();
+            out << YAML::Key << "BoxColliderComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "HalfExtents" << YAML::Value << bc.halfExtents;
+            out << YAML::EndMap;
+        }
+
         out << YAML::EndMap;
     }
 
-    void SceneSerializer::Serialize(const std::string& filepath){
+    std::string SceneSerializer::SerializeToString(){
         YAML::Emitter out;
         out << YAML::BeginMap;
         out << YAML::Key << "Scene" << YAML::Value << "Untitled";
@@ -127,9 +141,12 @@ namespace Phoenix{
 
         out << YAML::EndSeq;
         out << YAML::EndMap;
+        return std::string(out.c_str());
+    }
 
+    void SceneSerializer::Serialize(const std::string& filepath){
         std::ofstream fout(filepath);
-        fout << out.c_str();
+        fout << SerializeToString();
         PHX_CORE_INFO("Serialized scene to '{0}'", filepath);
     }
 
@@ -142,9 +159,24 @@ namespace Phoenix{
             PHX_CORE_ERROR("Failed to load scene '{0}': {1}", filepath, e.what());
             return false;
         }
+        return DeserializeNode(data);
+    }
 
+    bool SceneSerializer::DeserializeFromString(const std::string& data){
+        YAML::Node root;
+        try{
+            root = YAML::Load(data);
+        }
+        catch (const std::exception& e){
+            PHX_CORE_ERROR("Failed to parse scene snapshot: {0}", e.what());
+            return false;
+        }
+        return DeserializeNode(root);
+    }
+
+    bool SceneSerializer::DeserializeNode(const YAML::Node& data){
         if (!data["Entities"]){
-            PHX_CORE_ERROR("Scene file '{0}' has no entities node", filepath);
+            PHX_CORE_ERROR("Scene data has no entities node");
             return false;
         }
 
@@ -207,9 +239,18 @@ namespace Phoenix{
                     mc.model = CreateRef<Model>(path);
                 mc.material = ReadMaterial(mn["Material"]);
             }
+
+            if (auto rn = entityNode["RigidBodyComponent"]){
+                auto& rb = entity.AddComponent<RigidBodyComponent>();
+                rb.type = (RigidBodyComponent::Type)rn["Type"].as<int>();
+            }
+
+            if (auto bn = entityNode["BoxColliderComponent"]){
+                auto& bc = entity.AddComponent<BoxColliderComponent>();
+                bc.halfExtents = ReadVec3(bn["HalfExtents"]);
+            }
         }
 
-        PHX_CORE_INFO("Deserialized scene from '{0}'", filepath);
         return true;
     }
 }

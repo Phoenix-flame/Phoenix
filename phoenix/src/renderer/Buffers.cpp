@@ -15,7 +15,7 @@ namespace Phoenix{
         glBufferData(GL_ARRAY_BUFFER, size, data, GL_STATIC_DRAW);
     }
     VertexBuffer::~VertexBuffer(){
-        glDeleteBuffers(GL_ARRAY_BUFFER, &VBO);
+        glDeleteBuffers(1, &VBO);
     }
     
     void VertexBuffer::Bind(){
@@ -36,7 +36,7 @@ namespace Phoenix{
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, size * sizeof(uint32_t), data, GL_STATIC_DRAW);
     }
     IndexBuffer::~IndexBuffer(){
-        glDeleteBuffers(GL_ELEMENT_ARRAY_BUFFER, &EBO);
+        glDeleteBuffers(1, &EBO);
     }
     
     void IndexBuffer::Bind(){

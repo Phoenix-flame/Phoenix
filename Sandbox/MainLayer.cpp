@@ -75,6 +75,52 @@ void MainLayer::OnAttach() {
     
 
     m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
+
+    m_LastSnapshot = SceneSerializer(m_Scene).SerializeToString();
+}
+
+void MainLayer::CommitHistory() {
+    // Don't record during simulation (transforms change every frame) or while an
+    // edit is in progress (a gizmo drag / held slider) — wait until it settles.
+    if (m_Scene->IsRunning() || ImGuizmo::IsUsing() || ImGui::IsAnyItemActive())
+        return;
+
+    std::string current = SceneSerializer(m_Scene).SerializeToString();
+    if (current == m_LastSnapshot)
+        return;
+
+    m_UndoStack.push_back(m_LastSnapshot);
+    if (m_UndoStack.size() > 100)
+        m_UndoStack.erase(m_UndoStack.begin());
+    m_RedoStack.clear();
+    m_LastSnapshot = std::move(current);
+}
+
+void MainLayer::RestoreScene(const std::string& snapshot) {
+    auto scene = CreateRef<Scene>();
+    SceneSerializer(scene).DeserializeFromString(snapshot);
+    m_Scene = scene;
+    m_Scene->OnResize(m_ViewportSize.x, m_ViewportSize.y);
+    m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
+    m_LastSnapshot = snapshot;
+}
+
+void MainLayer::Undo() {
+    if (m_Scene->IsRunning() || m_UndoStack.empty())
+        return;
+    m_RedoStack.push_back(m_LastSnapshot);
+    std::string snapshot = m_UndoStack.back();
+    m_UndoStack.pop_back();
+    RestoreScene(snapshot);
+}
+
+void MainLayer::Redo() {
+    if (m_Scene->IsRunning() || m_RedoStack.empty())
+        return;
+    m_UndoStack.push_back(m_LastSnapshot);
+    std::string snapshot = m_RedoStack.back();
+    m_RedoStack.pop_back();
+    RestoreScene(snapshot);
 }
 
 void MainLayer::OnDetach() {
@@ -221,8 +267,8 @@ void MainLayer::OnImGuiRender(){
             }
             if (ImGui::BeginMenu("Edit"))
             {
-                if (ImGui::MenuItem("Undo", "CTRL+Z")) {}
-                if (ImGui::MenuItem("Redo", "CTRL+Y", false, false)) {}  // Disabled item
+                if (ImGui::MenuItem("Undo", "CTRL+Z", false, !m_UndoStack.empty())) { Undo(); }
+                if (ImGui::MenuItem("Redo", "CTRL+SHIFT+Z", false, !m_RedoStack.empty())) { Redo(); }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Cut", "CTRL+X")) {}
                 if (ImGui::MenuItem("Copy", "CTRL+C")) {}
@@ -414,6 +460,8 @@ void MainLayer::OnImGuiRender(){
 
     ImGui::End();
 
+    // Record an undo snapshot once the current edit has settled.
+    CommitHistory();
 }
 
 
@@ -425,6 +473,13 @@ bool MainLayer::OnKeyPressed(KeyPressedEvent& e){
 
     bool control = Input::IsKeyPressed(Key::LeftControl) || Input::IsKeyPressed(Key::RightControl);
     bool shift = Input::IsKeyPressed(Key::LeftShift) || Input::IsKeyPressed(Key::RightShift);
+
+    // Undo / redo: Ctrl+Z and Ctrl+Shift+Z.
+    if (control && e.GetKeyCode() == Key::Z){
+        if (shift) { Redo(); }
+        else       { Undo(); }
+        return true;
+    }
 
     // Gizmo operation shortcuts (only when not mid-manipulation).
     if (!ImGuizmo::IsUsing()){
