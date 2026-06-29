@@ -3,8 +3,177 @@
 #include <Phoenix/imGui/imgui_internal.h>
 #include <Phoenix/Scene/Component.h>
 #include <glm/gtc/type_ptr.hpp>
+#include <cstring>
+#include <cctype>
+#include <string>
+#include <vector>
+#include <unordered_set>
 
 namespace Phoenix{
+
+    // ---------- Lua inline-editor helpers ----------
+
+    // Candidates offered by Tab-completion (engine API + common Lua keywords).
+    static const char* s_LuaCompletions[] = {
+        "GetTranslation", "SetTranslation", "GetRotation", "SetRotation",
+        "SetScale", "SetColor", "SetEmissive", "OnUpdate",
+        "function", "local", "return", "then", "else", "elseif", "while", "for",
+        "math.sin", "math.cos", "math.abs", "math.rad", "math.random",
+    };
+
+    static bool LuaIsKeyword(const std::string& w){
+        static const std::unordered_set<std::string> kw = {
+            "and","break","do","else","elseif","end","false","for","function","goto",
+            "if","in","local","nil","not","or","repeat","return","then","true","until","while"
+        };
+        return kw.find(w) != kw.end();
+    }
+    static bool LuaIsApi(const std::string& w){
+        static const std::unordered_set<std::string> api = {
+            "GetTranslation","SetTranslation","GetRotation","SetRotation","SetScale",
+            "SetColor","SetEmissive","OnUpdate","math","print"
+        };
+        return api.find(w) != api.end();
+    }
+
+    // Tab-completion callback: complete the word at the cursor to the longest common
+    // prefix of the matching candidates (full word when there's a single match).
+    static int LuaEditorCallback(ImGuiInputTextCallbackData* data){
+        if (data->EventFlag != ImGuiInputTextFlags_CallbackCompletion) { return 0; }
+        int start = data->CursorPos;
+        while (start > 0){
+            char c = data->Buf[start - 1];
+            if (std::isalnum((unsigned char)c) || c == '_' || c == '.') { start--; }
+            else { break; }
+        }
+        int wordLen = data->CursorPos - start;
+        if (wordLen <= 0){
+            // Not on a word: indent instead.
+            data->InsertChars(data->CursorPos, "    ");
+            return 0;
+        }
+
+        std::string word(data->Buf + start, wordLen);
+        std::vector<std::string> matches;
+        for (const char* cand : s_LuaCompletions){
+            if (std::strncmp(cand, word.c_str(), (size_t)wordLen) == 0) { matches.push_back(cand); }
+        }
+        if (matches.empty()) { return 0; }
+
+        std::string prefix = matches[0];
+        for (const auto& m : matches){
+            size_t j = 0;
+            while (j < prefix.size() && j < m.size() && prefix[j] == m[j]) { j++; }
+            prefix.resize(j);
+        }
+        if ((int)prefix.size() > wordLen){
+            data->DeleteChars(start, wordLen);
+            data->InsertChars(start, prefix.c_str());
+        }
+        return 0;
+    }
+
+    // Draw syntax-highlighted glyphs over an (invisible-text) InputText, at `origin`
+    // (screen-space top-left of the text). The InputText still owns editing, cursor
+    // and selection; this just colours what the user sees.
+    static void DrawLuaColoredOverlay(const char* text, ImVec2 origin){
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImFont* font = ImGui::GetFont();
+        float fontSize = ImGui::GetFontSize();
+        float lineH = ImGui::GetTextLineHeight();
+
+        const ImU32 cDef = ImGui::GetColorU32(ImVec4(0.86f, 0.86f, 0.86f, 1.0f));
+        const ImU32 cKey = ImGui::GetColorU32(ImVec4(0.45f, 0.60f, 0.95f, 1.0f));
+        const ImU32 cApi = ImGui::GetColorU32(ImVec4(0.30f, 0.80f, 0.85f, 1.0f));
+        const ImU32 cStr = ImGui::GetColorU32(ImVec4(0.90f, 0.62f, 0.35f, 1.0f));
+        const ImU32 cCom = ImGui::GetColorU32(ImVec4(0.45f, 0.72f, 0.45f, 1.0f));
+        const ImU32 cNum = ImGui::GetColorU32(ImVec4(0.72f, 0.60f, 0.90f, 1.0f));
+
+        ImVec2 pos = origin;
+        auto draw = [&](const char* a, const char* b, ImU32 col){
+            if (a == b) { return; }
+            dl->AddText(font, fontSize, pos, col, a, b);
+            pos.x += font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, a, b).x;
+        };
+
+        std::string src(text);
+        std::size_t lineStart = 0;
+        while (lineStart <= src.size()){
+            std::size_t eol = src.find('\n', lineStart);
+            std::size_t lineEnd = (eol == std::string::npos) ? src.size() : eol;
+            const char* L = src.c_str();
+            std::size_t i = lineStart;
+            while (i < lineEnd){
+                char c = L[i];
+                if (c == '-' && i + 1 < lineEnd && L[i + 1] == '-'){
+                    draw(L + i, L + lineEnd, cCom);
+                    i = lineEnd;
+                }
+                else if (c == '"' || c == '\''){
+                    std::size_t j = i + 1;
+                    while (j < lineEnd && L[j] != c) { j++; }
+                    if (j < lineEnd) { j++; }
+                    draw(L + i, L + j, cStr);
+                    i = j;
+                }
+                else if (std::isdigit((unsigned char)c)){
+                    std::size_t j = i;
+                    while (j < lineEnd && (std::isalnum((unsigned char)L[j]) || L[j] == '.')) { j++; }
+                    draw(L + i, L + j, cNum);
+                    i = j;
+                }
+                else if (std::isalpha((unsigned char)c) || c == '_'){
+                    std::size_t j = i;
+                    while (j < lineEnd && (std::isalnum((unsigned char)L[j]) || L[j] == '_')) { j++; }
+                    std::string w(L + i, L + j);
+                    draw(L + i, L + j, LuaIsKeyword(w) ? cKey : (LuaIsApi(w) ? cApi : cDef));
+                    i = j;
+                }
+                else{
+                    std::size_t j = i;
+                    while (j < lineEnd){
+                        char d = L[j];
+                        bool starts = std::isalnum((unsigned char)d) || d == '_' || d == '"' || d == '\''
+                                   || (d == '-' && j + 1 < lineEnd && L[j + 1] == '-');
+                        if (starts) { break; }
+                        j++;
+                    }
+                    if (j == i) { j++; }
+                    draw(L + i, L + j, cDef);
+                    i = j;
+                }
+            }
+            pos.x = origin.x;
+            pos.y += lineH;
+            if (eol == std::string::npos) { break; }
+            lineStart = eol + 1;
+        }
+    }
+
+    // A syntax-coloured, editable Lua code field (overlay over a transparent
+    // InputText, sized to its content so the overlay stays aligned while scrolling).
+    static void LuaCodeEditor(const char* id, std::string& source){
+        static char buffer[16384];
+        std::strncpy(buffer, source.c_str(), sizeof(buffer) - 1);
+        buffer[sizeof(buffer) - 1] = '\0';
+
+        int lineCount = 1;
+        for (const char* p = buffer; *p; ++p) { if (*p == '\n') { lineCount++; } }
+
+        const ImGuiStyle& style = ImGui::GetStyle();
+        float height = (lineCount + 1) * ImGui::GetTextLineHeight() + style.FramePadding.y * 2.0f;
+
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 0.0f, 0.0f, 0.0f)); // hide real glyphs
+        bool changed = ImGui::InputTextMultiline(id, buffer, sizeof(buffer),
+            ImVec2(-FLT_MIN, height), ImGuiInputTextFlags_CallbackCompletion, LuaEditorCallback);
+        ImGui::PopStyleColor();
+        if (changed) { source = buffer; }
+
+        ImVec2 origin = ImGui::GetItemRectMin();
+        origin.x += style.FramePadding.x;
+        origin.y += style.FramePadding.y;
+        DrawLuaColoredOverlay(buffer, origin);
+    }
 
     void SceneEditor::ScenePanel(){
         ImGui::Begin("Scene", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
@@ -67,6 +236,24 @@ namespace Phoenix{
 		}
 
 		ImGui::End();
+    }
+
+    void SceneEditor::ScriptEditorPanel(){
+        if (!m_ShowScriptEditor) { return; }
+
+        ImGui::Begin("Script Editor", &m_ShowScriptEditor);
+        if (m_SelectedEntity && m_SelectedEntity.HasComponent<LuaScriptComponent>()){
+            auto& tag = m_SelectedEntity.GetComponent<TagComponent>().Tag;
+            ImGui::Text("%s", tag.c_str());
+            ImGui::SameLine();
+            ImGui::TextDisabled("| Tab: autocomplete/indent  Ctrl+Z: undo  Ctrl+C/V/X");
+            ImGui::Separator();
+            LuaCodeEditor("##ScriptEditorField", m_SelectedEntity.GetComponent<LuaScriptComponent>().source);
+        }
+        else{
+            ImGui::TextDisabled("Select an entity with a Lua Script component.");
+        }
+        ImGui::End();
     }
 
     void SceneEditor::EntityNode(Entity entity){
@@ -467,14 +654,23 @@ namespace Phoenix{
 			ImGui::TextDisabled("Object is drawn as a wireframe.\nRemove this component to hide it.");
 		});
 
-		DrawComponent<LuaScriptComponent>("Lua Script", entity, [](LuaScriptComponent& component){
-			static char buffer[8192];
-			std::strncpy(buffer, component.source.c_str(), sizeof(buffer) - 1);
-			buffer[sizeof(buffer) - 1] = '\0';
-			if (ImGui::InputTextMultiline("##LuaSource", buffer, sizeof(buffer), ImVec2(-1.0f, 220.0f))){
-				component.source = buffer;
+		DrawComponent<LuaScriptComponent>("Lua Script", entity, [this](LuaScriptComponent& component){
+			ImGui::TextWrapped("%d chars. Edit in the Script Editor window (syntax-coloured).",
+				(int)component.source.size());
+			if (ImGui::Button("Open Script Editor")){
+				m_ShowScriptEditor = true;
 			}
-			ImGui::TextDisabled("Runs while playing (Run). Define OnUpdate(dt).\nAPI: GetTranslation/SetTranslation, GetRotation/SetRotation,\nSetScale, SetColor(r,g,b), SetEmissive(r,g,b[,strength]).");
+			if (ImGui::TreeNode("API reference")){
+				ImGui::TextDisabled("Runs while playing (Run). Define OnUpdate(dt).");
+				ImGui::BulletText("GetTranslation() -> x, y, z");
+				ImGui::BulletText("SetTranslation(x, y, z)");
+				ImGui::BulletText("GetRotation() -> x, y, z   (radians)");
+				ImGui::BulletText("SetRotation(x, y, z)");
+				ImGui::BulletText("SetScale(x, y, z)");
+				ImGui::BulletText("SetColor(r, g, b)");
+				ImGui::BulletText("SetEmissive(r, g, b [, strength])  -- glow");
+				ImGui::TreePop();
+			}
 		});
 
 	}

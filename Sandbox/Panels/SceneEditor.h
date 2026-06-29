@@ -17,10 +17,12 @@ namespace Phoenix{
                 m_SelectedEntity = {};
             ScenePanel();
             EntityPanel();
+            ScriptEditorPanel();
         }
 
         void ScenePanel();
         void EntityPanel();
+        void ScriptEditorPanel();
         void EntityNode(Entity entity);
         Entity& GetSelectedEntity() { return m_SelectedEntity; }
         void SetSelectedEntity(Entity entity) { m_SelectedEntity = entity; }
@@ -30,6 +32,7 @@ namespace Phoenix{
     private:
         Ref<Scene> m_ActiveScene;
         Entity m_SelectedEntity;
+        bool m_ShowScriptEditor = true;
     };
 }
 
