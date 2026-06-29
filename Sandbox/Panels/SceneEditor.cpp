@@ -173,6 +173,23 @@ namespace Phoenix{
         origin.x += style.FramePadding.x;
         origin.y += style.FramePadding.y;
         DrawLuaColoredOverlay(buffer, origin);
+
+        // The real caret uses ImGuiCol_Text (which we made transparent), so draw our
+        // own at the active input's cursor position.
+        ImGuiContext& g = *ImGui::GetCurrentContext();
+        ImGuiID fieldId = ImGui::GetID(id);
+        if (g.InputTextState.ID == fieldId){
+            int cursor = g.InputTextState.GetCursorPos(); // ASCII: == char index
+            int line = 0, lineStart = 0;
+            for (int i = 0; i < cursor && buffer[i]; i++){
+                if (buffer[i] == '\n'){ line++; lineStart = i + 1; }
+            }
+            float lineH = ImGui::GetTextLineHeight();
+            float caretX = origin.x + ImGui::CalcTextSize(buffer + lineStart, buffer + cursor).x;
+            float caretY = origin.y + line * lineH;
+            ImGui::GetWindowDrawList()->AddLine(ImVec2(caretX, caretY), ImVec2(caretX, caretY + lineH),
+                ImGui::GetColorU32(ImVec4(0.95f, 0.95f, 0.95f, 1.0f)), 1.0f);
+        }
     }
 
     void SceneEditor::ScenePanel(){
