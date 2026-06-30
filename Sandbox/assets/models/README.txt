@@ -28,10 +28,38 @@ Other sources that also work (single file with skin + one animation):
   - glTF sample models (e.g. CesiumMan.glb) — rename and update the path/extension
   - Any .fbx / .glb / .dae that contains a skinned mesh and at least one animation
 
+Keyboard controller + extra animations (idle / run / jump)
+----------------------------------------------------------
+The Robot Showcase has a Lua controller on the robot: press Run, click the
+viewport, then drive with the arrow keys (Up/Down walk, Left/Right turn, Shift to
+run, Space to jump). With only robot.fbx it walks/idles using the single walk clip.
+To get distinct turn/walk/run/jump animations, add these clips for the SAME
+character and drop them in THIS folder with these EXACT names:
+
+    idle.fbx     <- a "Idle" / "Breathing Idle" animation
+    run.fbx      <- a "Running" animation
+    jump.fbx     <- a "Jump" animation
+
+How to download each from Mixamo:
+  1. mixamo.com -> pick the SAME character you used for robot.fbx (so the
+     skeleton/bone names match -- this is required for the clips to retarget).
+  2. Animations tab -> search "Idle" (then "Running", then "Jump").
+  3. DOWNLOAD as FBX Binary. Skin = "Without Skin" is fine and smaller (the
+     skeleton + animation are still included); "With Skin" also works.
+     Use "In Place" for run/idle so they don't drift.
+  4. Save as idle.fbx / run.fbx / jump.fbx here, then reload the scene
+     (File > Load Robot Showcase). The log prints "Merged 1 animation named ..."
+     for each, and the controller automatically uses them.
+
+The engine merges these onto robot.fbx's skeleton and names each clip after its
+file (idle / run / jump). The controller checks HasAnimation(name) and falls back
+to the walk clip when a file is missing, so you can add them one at a time.
+
 Notes
 -----
 - Mixamo exports are in centimetres (~180 units tall). The showcase scales the
   entity to 0.02 so it fits; tweak Scale in the Transform panel for your model.
-- If the model has several clips, change "Clip" in the Animation component.
+- Clips are selectable by name in the Timeline panel and the Animation component,
+  and by name or index from Lua (CrossFade("run", 0.2), PlayAnimation("idle"), ...).
 - glTF/glb and Collada (.dae) work too — just point the path at your file
   (edit BuildRobotShowcase() in Sandbox/MainLayer.cpp, or load via the editor).

@@ -281,9 +281,17 @@ namespace Phoenix{
             aiProcess_Triangulate | aiProcess_LimitBoneWeights);
 
         if (!scene || !scene->mRootNode || scene->mNumAnimations == 0){
-            PHX_CORE_ERROR("No animations loaded from '{0}': {1}", path, importer.GetErrorString());
+            // Not fatal: the file may simply be absent (the user hasn't added it yet).
+            PHX_CORE_WARN("No animations merged from '{0}': {1}", path, importer.GetErrorString());
             return;
         }
+
+        // Clip name = the file's base name (e.g. "idle.fbx" -> "idle"), because Mixamo
+        // names every clip "mixamo.com" so the embedded name can't distinguish them.
+        size_t slash = path.find_last_of("/\\");
+        size_t dot = path.find_last_of('.');
+        std::string base = path.substr(slash == std::string::npos ? 0 : slash + 1);
+        if (dot != std::string::npos && dot > slash) { base = base.substr(0, base.find_last_of('.')); }
 
         // Start any channel-only nodes after the model's existing bone ids so skinning
         // bone ids/offsets (seeded from m_BoneInfoMap) are preserved for the merged clips.
@@ -295,9 +303,11 @@ namespace Phoenix{
         for (unsigned int i = 0; i < scene->mNumAnimations; i++){
             std::map<std::string, BoneInfo> seed = m_BoneInfoMap; // base ids + offsets
             int boneCounter = baseMax;
-            m_Animations.push_back(LoadAnimation(scene->mAnimations[i], scene, seed, boneCounter, globalInverse));
+            Ref<Animation> a = LoadAnimation(scene->mAnimations[i], scene, seed, boneCounter, globalInverse);
+            a->m_Name = (scene->mNumAnimations == 1) ? base : base + "_" + std::to_string(i);
+            m_Animations.push_back(a);
         }
-        PHX_CORE_INFO("Merged {0} animation(s) from '{1}' (model now has {2} clips)",
-            m_Animations.size() - before, path, m_Animations.size());
+        PHX_CORE_INFO("Merged {0} animation(s) named '{1}' from '{2}' (model now has {3} clips)",
+            m_Animations.size() - before, base, path, m_Animations.size());
     }
 }

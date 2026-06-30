@@ -304,39 +304,65 @@ void MainLayer::BuildRobotShowcase() {
         mesh.material.diffuse  = glm::vec3(0.7f, 0.7f, 0.75f);
         mesh.material.specular = glm::vec3(0.3f);
         mesh.material.shininess = 24.0f;
-        robot.AddComponent<AnimationComponent>(); // clip 0 (the walk)
+        auto& anim = robot.AddComponent<AnimationComponent>(); // clip 0 = robot.fbx's walk
+        anim.crossfade = 0.18f;
+        // Extra clips merged onto the rig if these files exist (named by filename).
+        // Download them from Mixamo for the SAME character (see assets/models/README.txt).
+        anim.extraClips = { "assets/models/idle.fbx", "assets/models/run.fbx", "assets/models/jump.fbx" };
+
         auto& t = robot.GetComponent<TransformComponent>();
         t.Translation = { 0.0f, -0.75f, 0.0f };
         t.Scale = glm::vec3(0.02f); // tune in the Transform panel to fit your model
 
-        // Keyboard controller (runs while playing). Press Run, then drive with the arrow
-        // keys: Up/Down walk, Left/Right turn, Shift to run, Space to jump. Idle freezes
-        // the walk at frame 0. With one clip this varies speed; if you add idle/run clip
-        // files, swap the speed lines for CrossFade("idle", 0.2) / CrossFade("run", 0.2).
+        // Keyboard controller (runs while playing). Press Run, click the viewport, then:
+        //   Up/Down = walk fwd/back, Left/Right = turn, Shift = run, Space = jump.
+        // Uses named clips (idle/run/jump) when present and gracefully falls back to the
+        // built-in walk (clip 0) otherwise -- so it works before you add any extra files.
         auto& script = robot.AddComponent<LuaScriptComponent>();
         script.source =
-            "local turn = 2.0      -- rad/sec\n"
-            "local walk = 2.5      -- units/sec\n"
+            "local WALK = 0           -- robot.fbx's embedded walk is clip 0\n"
+            "local turn = 2.0         -- rad/sec\n"
+            "local walk = 2.5         -- units/sec\n"
             "local groundY = -0.75\n"
             "local vy = 0.0\n"
             "local onGround = true\n"
+            "local state = ''\n"
+            "\n"
+            "local function setState(s, clip)\n"
+            "    if state ~= s then state = s; CrossFade(clip, 0.18); ResumeAnimation() end\n"
+            "end\n"
+            "\n"
             "function OnUpdate(dt)\n"
             "    if IsKeyDown(Key.Left)  then Rotate(0,  turn*dt, 0) end\n"
             "    if IsKeyDown(Key.Right) then Rotate(0, -turn*dt, 0) end\n"
-            "    local run = IsKeyDown(Key.LeftShift)\n"
-            "    local moving = false\n"
-            "    if IsKeyDown(Key.Up)   then MoveForward( walk*(run and 2.0 or 1.0)*dt); moving = true end\n"
-            "    if IsKeyDown(Key.Down) then MoveForward(-walk*dt); moving = true end\n"
-            "    if IsKeyPressed(Key.Space) and onGround then vy = 6.0; onGround = false end\n"
+            "    local run  = IsKeyDown(Key.LeftShift)\n"
+            "    local fwd  = IsKeyDown(Key.Up)\n"
+            "    local back = IsKeyDown(Key.Down)\n"
+            "    if fwd  then MoveForward( walk*(run and 2.0 or 1.0)*dt) end\n"
+            "    if back then MoveForward(-walk*dt) end\n"
+            "\n"
+            "    -- jump (simple script-side gravity; no physics body)\n"
+            "    if IsKeyPressed(Key.Space) and onGround then\n"
+            "        vy = 6.0; onGround = false\n"
+            "        if HasAnimation('jump') then setState('jump', 'jump') end\n"
+            "    end\n"
             "    if not onGround then\n"
             "        local x, y, z = GetTranslation()\n"
-            "        vy = vy - 12.0 * dt\n"
-            "        y = y + vy * dt\n"
+            "        vy = vy - 12.0 * dt; y = y + vy * dt\n"
             "        if y <= groundY then y = groundY; vy = 0.0; onGround = true end\n"
             "        SetTranslation(x, y, z)\n"
             "    end\n"
-            "    if moving then SetAnimationSpeed(run and 2.0 or 1.0); ResumeAnimation()\n"
-            "    else PauseAnimation(); SetAnimationTime(0.0) end\n"
+            "\n"
+            "    -- locomotion state (only when grounded)\n"
+            "    if onGround then\n"
+            "        if fwd or back then\n"
+            "            if run and HasAnimation('run') then setState('run', 'run')\n"
+            "            else setState('walk', WALK); SetAnimationSpeed(run and 2.0 or 1.0) end\n"
+            "        else\n"
+            "            if HasAnimation('idle') then setState('idle', 'idle')\n"
+            "            else state = 'idle'; PauseAnimation(); SetAnimationTime(0.0) end\n"
+            "        end\n"
+            "    end\n"
             "end\n";
     }
 }

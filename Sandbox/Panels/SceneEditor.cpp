@@ -21,7 +21,7 @@ namespace Phoenix{
         "PlayAnimation", "CrossFade", "PauseAnimation", "ResumeAnimation", "StopAnimation",
         "SetAnimationTime", "GetAnimationTime", "GetAnimationDuration", "SetAnimationSpeed",
         "SetAnimationLoop", "IsAnimationPlaying", "IsAnimationFinished", "GetAnimationName",
-        "OnAnimationEvent",
+        "HasAnimation", "OnAnimationEvent",
         "IsKeyDown", "IsKeyPressed", "Translate", "Rotate", "MoveForward",
         "Key.Up", "Key.Down", "Key.Left", "Key.Right", "Key.Space", "Key.LeftShift",
         "function", "local", "return", "then", "else", "elseif", "while", "for",
@@ -42,7 +42,7 @@ namespace Phoenix{
             "PlayAnimation","CrossFade","PauseAnimation","ResumeAnimation","StopAnimation",
             "SetAnimationTime","GetAnimationTime","GetAnimationDuration","SetAnimationSpeed",
             "SetAnimationLoop","IsAnimationPlaying","IsAnimationFinished","GetAnimationName",
-            "OnAnimationEvent",
+            "HasAnimation","OnAnimationEvent",
             "IsKeyDown","IsKeyPressed","Translate","Rotate","MoveForward","Key"
         };
         return api.find(w) != api.end();

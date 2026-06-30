@@ -143,6 +143,20 @@ namespace Phoenix{
         lua_pushboolean(L, a && a->animator && a->animator->IsFinished());
         return 1;
     }
+    static int l_HasAnimation(lua_State* L){
+        Entity e = ScriptEntity(L);
+        bool has = false;
+        if (e.HasComponent<MeshComponent>()){
+            auto& m = e.GetComponent<MeshComponent>();
+            if (m.model){
+                if (lua_isnumber(L, 1)) { int i = (int)lua_tointeger(L, 1); has = (i >= 0 && i < (int)m.model->GetAnimationCount()); }
+                else if (lua_isstring(L, 1)) { has = m.model->GetAnimationIndex(lua_tostring(L, 1)) >= 0; }
+            }
+        }
+        lua_pushboolean(L, has);
+        return 1;
+    }
+
     static int l_GetAnimationName(lua_State* L){
         Entity e = ScriptEntity(L);
         auto* a = ScriptAnim(L);
@@ -222,6 +236,7 @@ namespace Phoenix{
         lua_register(m_L, "IsAnimationPlaying", l_IsAnimationPlaying);
         lua_register(m_L, "IsAnimationFinished",l_IsAnimationFinished);
         lua_register(m_L, "GetAnimationName",   l_GetAnimationName);
+        lua_register(m_L, "HasAnimation",       l_HasAnimation);
 
         // Input + movement helpers
         lua_register(m_L, "IsKeyDown",    l_IsKeyDown);
