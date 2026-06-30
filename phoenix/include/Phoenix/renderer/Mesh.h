@@ -82,6 +82,14 @@ namespace Phoenix{
         Animation* GetAnimation(size_t index) const {
             return index < m_Animations.size() ? m_Animations[index].get() : nullptr;
         }
+        const std::string& GetAnimationName(size_t index) const;
+        int GetAnimationIndex(const std::string& name) const; // -1 if not found
+
+        // Merge animation clips from another file onto THIS model's skeleton (bone names
+        // must match, e.g. extra Mixamo clips for the same character). Reuses this model's
+        // bone ids/offsets so the merged clips skin the same vertices. Main-thread; call
+        // after IsReady(). No-op if the file has no animations or matches nothing.
+        void AddAnimationsFromFile(const std::string& path);
     private:
         std::string m_Path;
         std::vector<Ref<Mesh>> m_Meshes;

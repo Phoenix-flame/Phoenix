@@ -85,42 +85,144 @@ namespace Phoenix{
 
     Animator::Animator(){
         m_FinalBoneMatrices.resize(MAX_BONES, glm::mat4(1.0f));
+        m_PoseA.resize(MAX_BONES, glm::mat4(1.0f));
+        m_PoseB.resize(MAX_BONES, glm::mat4(1.0f));
     }
 
     void Animator::PlayAnimation(Animation* animation){
         m_CurrentAnimation = animation;
         m_CurrentTime = 0.0f;
+        m_Finished = false;
+        m_PingPongDir = 1;
+        m_PrevAnimation = nullptr; // cancel any in-flight crossfade
+        m_BlendElapsed = m_BlendDuration = 0.0f;
+    }
+
+    void Animator::CrossFade(Animation* next, float fadeSeconds){
+        if (!next) { return; }
+        if (!m_CurrentAnimation || fadeSeconds <= 0.0f){ PlayAnimation(next); return; }
+        // Snapshot the outgoing clip as the blend source.
+        m_PrevAnimation = m_CurrentAnimation;
+        m_PrevTime = m_CurrentTime;
+        m_CurrentAnimation = next;
+        m_CurrentTime = 0.0f;
+        m_Finished = false;
+        m_PingPongDir = 1;
+        m_BlendDuration = fadeSeconds;
+        m_BlendElapsed = 0.0f;
+    }
+
+    void Animator::Stop(){
+        m_CurrentTime = 0.0f;
+        m_Paused = true;
+        m_Finished = false;
+        m_PingPongDir = 1;
+        m_PrevAnimation = nullptr;
+        m_BlendElapsed = m_BlendDuration = 0.0f;
+    }
+
+    void Animator::Seek(float seconds){
+        if (!m_CurrentAnimation) { return; }
+        float tps = m_CurrentAnimation->GetTicksPerSecond();
+        float dur = m_CurrentAnimation->GetDuration();
+        m_CurrentTime = glm::clamp(seconds * tps, 0.0f, dur);
+        m_Finished = false;
+        m_PrevAnimation = nullptr; // a manual seek cancels any crossfade
+        m_BlendElapsed = m_BlendDuration = 0.0f;
+    }
+
+    float Animator::GetCurrentSeconds() const{
+        if (!m_CurrentAnimation) { return 0.0f; }
+        float tps = m_CurrentAnimation->GetTicksPerSecond();
+        return tps > 0.0f ? m_CurrentTime / tps : 0.0f;
+    }
+
+    float Animator::GetDurationSeconds() const{
+        if (!m_CurrentAnimation) { return 0.0f; }
+        float tps = m_CurrentAnimation->GetTicksPerSecond();
+        return tps > 0.0f ? m_CurrentAnimation->GetDuration() / tps : 0.0f;
     }
 
     void Animator::UpdateAnimation(float dt){
         if (!m_CurrentAnimation) { return; }
-        m_CurrentTime += m_CurrentAnimation->GetTicksPerSecond() * dt;
-        m_CurrentTime = std::fmod(m_CurrentTime, m_CurrentAnimation->GetDuration());
-        CalculateBoneTransform(&m_CurrentAnimation->GetRootNode(), glm::mat4(1.0f));
+
+        float tps = m_CurrentAnimation->GetTicksPerSecond();
+        float dur = m_CurrentAnimation->GetDuration();
+        float prevTicks = m_CurrentTime;
+        bool wrapped = false;
+
+        if (!m_Paused && dt > 0.0f && dur > 0.0f){
+            float advance = tps * dt * m_Speed * (float)m_PingPongDir;
+            m_CurrentTime += advance;
+            switch (m_LoopMode){
+                case LoopMode::Loop:
+                    if (m_CurrentTime >= dur){ m_CurrentTime = std::fmod(m_CurrentTime, dur); wrapped = true; }
+                    else if (m_CurrentTime < 0.0f){ m_CurrentTime = std::fmod(m_CurrentTime, dur) + dur; wrapped = true; }
+                    break;
+                case LoopMode::Once:
+                    if (m_CurrentTime >= dur){ m_CurrentTime = dur; m_Finished = true; }
+                    else if (m_CurrentTime < 0.0f){ m_CurrentTime = 0.0f; m_Finished = true; }
+                    break;
+                case LoopMode::PingPong:
+                    if (m_CurrentTime >= dur){ m_CurrentTime = dur; m_PingPongDir = -1; }
+                    else if (m_CurrentTime <= 0.0f){ m_CurrentTime = 0.0f; m_PingPongDir = 1; }
+                    break;
+            }
+        }
+
+        // Report the playhead window in seconds for event firing.
+        float invTps = tps > 0.0f ? 1.0f / tps : 0.0f;
+        m_PlayWindow = { prevTicks * invTps, m_CurrentTime * invTps, wrapped };
+
+        // Advance + apply the crossfade, if any.
+        if (m_PrevAnimation){
+            if (!m_Paused && dt > 0.0f){
+                m_BlendElapsed += dt;
+                float pdur = m_PrevAnimation->GetDuration();
+                if (pdur > 0.0f){
+                    m_PrevTime += m_PrevAnimation->GetTicksPerSecond() * dt * m_Speed;
+                    m_PrevTime = std::fmod(m_PrevTime, pdur);
+                }
+            }
+            float t = (m_BlendDuration > 0.0f) ? glm::clamp(m_BlendElapsed / m_BlendDuration, 0.0f, 1.0f) : 1.0f;
+            ComputePose(m_PrevAnimation, m_PrevTime, m_PoseA);
+            ComputePose(m_CurrentAnimation, m_CurrentTime, m_PoseB);
+            for (int i = 0; i < MAX_BONES; i++)
+                m_FinalBoneMatrices[i] = m_PoseA[i] * (1.0f - t) + m_PoseB[i] * t; // matrix lerp (ok for short fades)
+            if (t >= 1.0f){ m_PrevAnimation = nullptr; m_BlendElapsed = m_BlendDuration = 0.0f; }
+        }
+        else{
+            ComputePose(m_CurrentAnimation, m_CurrentTime, m_FinalBoneMatrices);
+        }
     }
 
-    void Animator::CalculateBoneTransform(const AssimpNodeData* node, const glm::mat4& parentTransform){
+    void Animator::ComputePose(Animation* anim, float timeTicks, std::vector<glm::mat4>& out){
+        ComputeNode(anim, &anim->GetRootNode(), glm::mat4(1.0f), timeTicks, out);
+    }
+
+    void Animator::ComputeNode(Animation* anim, const AssimpNodeData* node,
+            const glm::mat4& parentTransform, float timeTicks, std::vector<glm::mat4>& out){
         const std::string& nodeName = node->name;
         glm::mat4 nodeTransform = node->transformation;
 
-        Bone* bone = m_CurrentAnimation->FindBone(nodeName);
+        Bone* bone = anim->FindBone(nodeName);
         if (bone){
-            bone->Update(m_CurrentTime);
+            bone->Update(timeTicks);
             nodeTransform = bone->GetLocalTransform();
         }
 
         glm::mat4 globalTransform = parentTransform * nodeTransform;
 
-        const auto& boneInfoMap = m_CurrentAnimation->GetBoneIDMap();
+        const auto& boneInfoMap = anim->GetBoneIDMap();
         auto it = boneInfoMap.find(nodeName);
         if (it != boneInfoMap.end()){
             int index = it->second.id;
             const glm::mat4& offset = it->second.offset;
             if (index >= 0 && index < MAX_BONES)
-                m_FinalBoneMatrices[index] = m_CurrentAnimation->m_GlobalInverseTransform * globalTransform * offset;
+                out[index] = anim->m_GlobalInverseTransform * globalTransform * offset;
         }
 
         for (const auto& child : node->children)
-            CalculateBoneTransform(&child, globalTransform);
+            ComputeNode(anim, &child, globalTransform, timeTicks, out);
     }
 }

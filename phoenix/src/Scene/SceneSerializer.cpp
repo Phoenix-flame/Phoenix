@@ -174,6 +174,20 @@ namespace Phoenix{
             out << YAML::Key << "Clip" << YAML::Value << a.clip;
             out << YAML::Key << "Playing" << YAML::Value << a.playing;
             out << YAML::Key << "Speed" << YAML::Value << a.speed;
+            out << YAML::Key << "LoopMode" << YAML::Value << a.loopMode;
+            out << YAML::Key << "Crossfade" << YAML::Value << a.crossfade;
+            out << YAML::Key << "ExtraClips" << YAML::Value << YAML::Flow << YAML::BeginSeq;
+            for (const auto& p : a.extraClips) { out << p; }
+            out << YAML::EndSeq;
+            out << YAML::Key << "Events" << YAML::Value << YAML::BeginSeq;
+            for (const auto& ev : a.events){
+                out << YAML::BeginMap;
+                out << YAML::Key << "clip" << YAML::Value << ev.clip;
+                out << YAML::Key << "time" << YAML::Value << ev.time;
+                out << YAML::Key << "name" << YAML::Value << ev.name;
+                out << YAML::EndMap;
+            }
+            out << YAML::EndSeq;
             out << YAML::EndMap;
         }
 
@@ -363,8 +377,23 @@ namespace Phoenix{
             a.clip = n["Clip"].as<int>();
             a.playing = n["Playing"].as<bool>();
             a.speed = n["Speed"].as<float>();
+            if (n["LoopMode"])  a.loopMode = n["LoopMode"].as<int>();
+            if (n["Crossfade"]) a.crossfade = n["Crossfade"].as<float>();
+            a.extraClips.clear();
+            if (n["ExtraClips"]) { for (auto p : n["ExtraClips"]) a.extraClips.push_back(p.as<std::string>()); }
+            a.events.clear();
+            if (n["Events"]){
+                for (auto en : n["Events"]){
+                    AnimEvent ev;
+                    ev.clip = en["clip"].as<int>();
+                    ev.time = en["time"].as<float>();
+                    ev.name = en["name"].as<std::string>();
+                    a.events.push_back(ev);
+                }
+            }
             a.animator = nullptr; // transient; recreated at runtime
             a.activeClip = -1;
+            a.extraClipsLoaded = false;
         }
         else if (entity.HasComponent<AnimationComponent>()) entity.RemoveComponent<AnimationComponent>();
 

@@ -138,19 +138,41 @@ namespace Phoenix{
               amplitude(o.amplitude), waveScale(o.waveScale), speed(o.speed) {}
     };
 
-    // Plays a skeletal animation on the entity's MeshComponent model. `clip` selects
-    // which animation in the model; the live Animator (bone matrices) is transient and
-    // recreated at runtime, so it is not serialized / reset on copy.
-    struct AnimationComponent{
-        int clip = 0;        // index into the model's animations
-        bool playing = true; // advance the animation in edit + play
-        float speed = 1.0f;
+    // An animation event: fire OnAnimationEvent(name) in the entity's Lua script when the
+    // playhead of clip `clip` crosses `time` (seconds) while playing.
+    struct AnimEvent{
+        int clip = 0;
+        float time = 0.0f;       // seconds
+        std::string name;
+    };
 
-        Ref<Animator> animator;       // created lazily once the model is ready
-        int activeClip = -1;          // which clip the animator is currently playing
+    // Plays a skeletal animation on the entity's MeshComponent model. `clip` selects which
+    // animation in the model. The Timeline panel and Lua API only WRITE the config/request
+    // fields here; the Scene animation loop is the single place that drives the live
+    // Animator. The Animator + transient flags are not serialized / reset on copy.
+    struct AnimationComponent{
+        int   clip = 0;          // index into the model's animations (embedded + extra)
+        bool  playing = true;    // advance the animation in edit + play
+        float speed = 1.0f;
+        int   loopMode = 0;      // 0 Loop, 1 Once, 2 PingPong (Animator::LoopMode)
+        float crossfade = 0.2f;  // seconds; blend used when the clip changes
+
+        std::vector<std::string> extraClips; // extra animation files merged onto the rig
+        std::vector<AnimEvent> events;        // fired while playing
+
+        // Requests set by Lua / the timeline, consumed (and reset) by the Scene loop.
+        float pendingSeek = -1.0f;      // >= 0 -> seek to this many seconds
+        int   pendingCrossfade = -1;    // >= 0 -> crossfade to this clip index
+
+        // Transient runtime state (not serialized, not copied).
+        Ref<Animator> animator;         // created lazily once the model is ready
+        int  activeClip = -1;           // which clip the animator is currently playing
+        bool extraClipsLoaded = false;  // extraClips merged into the model yet?
+
         AnimationComponent() = default;
         AnimationComponent(const AnimationComponent& o)
-            : clip(o.clip), playing(o.playing), speed(o.speed) {}
+            : clip(o.clip), playing(o.playing), speed(o.speed), loopMode(o.loopMode),
+              crossfade(o.crossfade), extraClips(o.extraClips), events(o.events) {}
     };
 
     // A Lua script (edited inline, serialized). It runs while the scene is playing;

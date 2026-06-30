@@ -355,8 +355,9 @@ namespace Phoenix{
 			});
 		}
 
-        // Skeletal animation: advance each animator and recompute its bone matrices.
-        // Done before the shadow + main passes so both can read the posed skeleton.
+        // Skeletal animation: this is the SINGLE place that drives each Animator (Lua and
+        // the timeline only write the component's config/request fields). Done before the
+        // shadow + main passes so both can read the posed skeleton.
         {
             PHX_PROFILE("Animation");
             auto animView = m_Registry.view<MeshComponent, AnimationComponent>();
@@ -366,17 +367,56 @@ namespace Phoenix{
                 if (!mesh.model) { continue; }
                 mesh.model->Update(); // ensure GPU upload + animations are available
                 if (!mesh.model->IsReady() || !mesh.model->HasAnimations()) { continue; }
-                if (!anim.animator){ anim.animator = CreateRef<Animator>(); anim.activeClip = -1; }
-                int clip = std::max(0, std::min((int)mesh.model->GetAnimationCount() - 1, anim.clip));
-                if (anim.activeClip != clip){
-                    anim.animator->PlayAnimation(mesh.model->GetAnimation(clip));
-                    anim.activeClip = clip;
+
+                // Merge any extra clip files once, now that the model (skeleton) is ready.
+                if (!anim.extraClipsLoaded){
+                    for (const auto& path : anim.extraClips)
+                        if (!path.empty()) { mesh.model->AddAnimationsFromFile(path); }
+                    anim.extraClipsLoaded = true;
                 }
-                // Always pose the skeleton (advance by 0 when paused). A rigged mesh's
-                // vertices live in bone space, so the bone matrices must be computed even
-                // at rest -- leaving them identity scatters the mesh instead of assembling
-                // it into the bind/rest pose.
-                anim.animator->UpdateAnimation(anim.playing ? (float)ts * anim.speed : 0.0f);
+
+                if (!anim.animator){ anim.animator = CreateRef<Animator>(); anim.activeClip = -1; }
+                Animator& animator = *anim.animator;
+                const int clipCount = (int)mesh.model->GetAnimationCount();
+                anim.clip = std::max(0, std::min(clipCount - 1, anim.clip));
+
+                // Push playback config every frame.
+                animator.SetSpeed(anim.speed);
+                animator.SetLoopMode((LoopMode)anim.loopMode);
+                if (anim.playing) { animator.Resume(); } else { animator.Pause(); }
+
+                // Clip changes: explicit crossfade request, then a plain clip-index change
+                // (first assignment hard-cuts; later changes crossfade).
+                if (anim.pendingCrossfade >= 0){
+                    int c = std::max(0, std::min(clipCount - 1, anim.pendingCrossfade));
+                    animator.CrossFade(mesh.model->GetAnimation(c), anim.crossfade);
+                    anim.clip = c; anim.activeClip = c; anim.pendingCrossfade = -1;
+                }
+                else if (anim.activeClip != anim.clip){
+                    if (anim.activeClip < 0) { animator.PlayAnimation(mesh.model->GetAnimation(anim.clip)); }
+                    else                     { animator.CrossFade(mesh.model->GetAnimation(anim.clip), anim.crossfade); }
+                    anim.activeClip = anim.clip;
+                }
+
+                // Seek request (timeline scrub / Lua). Negative means "no request".
+                if (anim.pendingSeek >= 0.0f){ animator.Seek(anim.pendingSeek); anim.pendingSeek = -1.0f; }
+
+                // Advance (0 when paused -> re-pose at rest); speed is applied inside.
+                animator.UpdateAnimation(anim.playing ? (float)ts : 0.0f);
+
+                // Fire animation events crossed this frame to the entity's running script.
+                if (anim.playing && !anim.events.empty() && !m_Scripts.empty()){
+                    const auto& w = animator.GetPlayWindow();
+                    for (const auto& ev : anim.events){
+                        if (ev.clip != anim.activeClip) { continue; }
+                        bool crossed = w.wrapped
+                            ? (ev.time > w.prevSeconds || ev.time <= w.curSeconds)
+                            : (ev.time > w.prevSeconds && ev.time <= w.curSeconds);
+                        if (!crossed) { continue; }
+                        for (auto& script : m_Scripts)
+                            if ((entt::entity)script->GetEntity() == entity) { script->OnAnimationEvent(ev.name); }
+                    }
+                }
             }
         }
 

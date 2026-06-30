@@ -88,22 +88,69 @@ namespace Phoenix{
         glm::mat4 m_GlobalInverseTransform = glm::mat4(1.0f);
     };
 
+    enum class LoopMode { Loop = 0, Once = 1, PingPong = 2 };
+
     // Advances a playing animation and produces the final bone matrices for skinning.
+    // Supports pause/seek, loop modes, and crossfade blending between two clips. Times
+    // in the public API are in SECONDS; internally the clip is sampled in ticks.
     class Animator{
     public:
         Animator();
 
+        // Switch immediately to `animation` (resets time to 0).
         void PlayAnimation(Animation* animation);
+        // Blend from the current clip to `next` over `fadeSeconds`.
+        void CrossFade(Animation* next, float fadeSeconds);
+
+        // Advance the playing clip by dt seconds and recompute the bone matrices. Pass
+        // dt = 0 to re-pose at the current time without advancing (used when paused or
+        // scrubbing). Does nothing structural when paused except still posing at rest.
         void UpdateAnimation(float dt);
-        void CalculateBoneTransform(const AssimpNodeData* node, const glm::mat4& parentTransform);
+
+        void Pause()  { m_Paused = true; }
+        void Resume() { m_Paused = false; }
+        void Stop();                       // reset to t=0 and pause
+        void Seek(float seconds);          // jump to an absolute time (seconds), clamped
+        void SetLoopMode(LoopMode mode) { m_LoopMode = mode; }
+        void SetSpeed(float speed) { m_Speed = speed; }
 
         const std::vector<glm::mat4>& GetFinalBoneMatrices() const { return m_FinalBoneMatrices; }
         Animation* GetCurrentAnimation() const { return m_CurrentAnimation; }
-        float GetCurrentTime() const { return m_CurrentTime; }
+        float GetCurrentTime() const { return m_CurrentTime; }      // ticks (legacy)
+        float GetCurrentSeconds() const;
+        float GetDurationSeconds() const;
+        bool  IsPaused() const { return m_Paused; }
+        bool  IsFinished() const { return m_Finished; }
+
+        // The [previous, current] playhead window in SECONDS for the clip just advanced,
+        // so the caller can fire events crossed this frame. When a Loop wrapped, `wrapped`
+        // is true and the window is [prevSeconds, duration] + [0, curSeconds].
+        struct PlayWindow { float prevSeconds; float curSeconds; bool wrapped; };
+        const PlayWindow& GetPlayWindow() const { return m_PlayWindow; }
 
     private:
+        // Compute the pose of `anim` at `timeTicks` into `out` (recursive hierarchy walk).
+        void ComputePose(Animation* anim, float timeTicks, std::vector<glm::mat4>& out);
+        void ComputeNode(Animation* anim, const AssimpNodeData* node,
+                         const glm::mat4& parentTransform, float timeTicks, std::vector<glm::mat4>& out);
+
         std::vector<glm::mat4> m_FinalBoneMatrices;
         Animation* m_CurrentAnimation = nullptr;
-        float m_CurrentTime = 0.0f;
+        float m_CurrentTime = 0.0f;        // ticks
+
+        LoopMode m_LoopMode = LoopMode::Loop;
+        bool  m_Paused = false;
+        bool  m_Finished = false;          // set when a Once clip reaches the end
+        float m_Speed = 1.0f;
+        int   m_PingPongDir = 1;           // +1 forward, -1 backward (PingPong)
+        PlayWindow m_PlayWindow{ 0.0f, 0.0f, false };
+
+        // Crossfade state: while m_PrevAnimation is set, blend prev -> current.
+        Animation* m_PrevAnimation = nullptr;
+        float m_PrevTime = 0.0f;           // ticks
+        float m_BlendDuration = 0.0f;      // seconds
+        float m_BlendElapsed = 0.0f;       // seconds
+        std::vector<glm::mat4> m_PoseA;    // scratch (prev)
+        std::vector<glm::mat4> m_PoseB;    // scratch (current)
     };
 }

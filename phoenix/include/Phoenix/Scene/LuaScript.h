@@ -19,6 +19,9 @@ namespace Phoenix{
         LuaScript& operator=(const LuaScript&) = delete;
 
         void OnUpdate(float dt);
+        // Calls the script's global OnAnimationEvent(name) if defined (fired by the Scene
+        // when an animation event time is crossed).
+        void OnAnimationEvent(const std::string& name);
 
         Entity GetEntity() const { return m_Entity; }
     private:

@@ -18,14 +18,18 @@ namespace Phoenix{
             ScenePanel();
             EntityPanel();
             ScriptEditorPanel();
+            TimelinePanel();
         }
 
         void ScenePanel();
         void EntityPanel();
         void ScriptEditorPanel();
+        void TimelinePanel();
         void EntityNode(Entity entity);
         Entity& GetSelectedEntity() { return m_SelectedEntity; }
         void SetSelectedEntity(Entity entity) { m_SelectedEntity = entity; }
+        bool& ShowTimeline() { return m_ShowTimeline; }
+        bool& ShowScriptEditor() { return m_ShowScriptEditor; }
 
     private:
         void DrawComponents(Entity entity);
@@ -33,6 +37,7 @@ namespace Phoenix{
         Ref<Scene> m_ActiveScene;
         Entity m_SelectedEntity;
         bool m_ShowScriptEditor = true;
+        bool m_ShowTimeline = true;
     };
 }
 

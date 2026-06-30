@@ -18,6 +18,10 @@ namespace Phoenix{
     static const char* s_LuaCompletions[] = {
         "GetTranslation", "SetTranslation", "GetRotation", "SetRotation",
         "SetScale", "SetColor", "SetEmissive", "OnUpdate",
+        "PlayAnimation", "CrossFade", "PauseAnimation", "ResumeAnimation", "StopAnimation",
+        "SetAnimationTime", "GetAnimationTime", "GetAnimationDuration", "SetAnimationSpeed",
+        "SetAnimationLoop", "IsAnimationPlaying", "IsAnimationFinished", "GetAnimationName",
+        "OnAnimationEvent",
         "function", "local", "return", "then", "else", "elseif", "while", "for",
         "math.sin", "math.cos", "math.abs", "math.rad", "math.random",
     };
@@ -32,7 +36,11 @@ namespace Phoenix{
     static bool LuaIsApi(const std::string& w){
         static const std::unordered_set<std::string> api = {
             "GetTranslation","SetTranslation","GetRotation","SetRotation","SetScale",
-            "SetColor","SetEmissive","OnUpdate","math","print"
+            "SetColor","SetEmissive","OnUpdate","math","print",
+            "PlayAnimation","CrossFade","PauseAnimation","ResumeAnimation","StopAnimation",
+            "SetAnimationTime","GetAnimationTime","GetAnimationDuration","SetAnimationSpeed",
+            "SetAnimationLoop","IsAnimationPlaying","IsAnimationFinished","GetAnimationName",
+            "OnAnimationEvent"
         };
         return api.find(w) != api.end();
     }
@@ -303,6 +311,84 @@ namespace Phoenix{
         else{
             ImGui::TextDisabled("Select an entity with a Lua Script component.");
         }
+        ImGui::End();
+    }
+
+    void SceneEditor::TimelinePanel(){
+        if (!m_ShowTimeline) { return; }
+        ImGui::Begin("Timeline", &m_ShowTimeline);
+
+        Entity e = m_SelectedEntity;
+        if (!e || !e.HasComponent<AnimationComponent>() || !e.HasComponent<MeshComponent>()){
+            ImGui::TextDisabled("Select an entity with an Animation component.");
+            ImGui::End();
+            return;
+        }
+        auto& comp = e.GetComponent<AnimationComponent>();
+        auto& mc = e.GetComponent<MeshComponent>();
+        if (!mc.model || !mc.model->IsReady() || !mc.model->HasAnimations()){
+            ImGui::TextDisabled("Model still loading or has no animations.");
+            ImGui::End();
+            return;
+        }
+
+        int clipCount = (int)mc.model->GetAnimationCount();
+        if (comp.clip >= clipCount) { comp.clip = clipCount - 1; }
+
+        // Clip selector.
+        std::string preview = mc.model->GetAnimationName((size_t)comp.clip);
+        if (preview.empty()) { preview = "clip " + std::to_string(comp.clip); }
+        ImGui::SetNextItemWidth(220);
+        if (ImGui::BeginCombo("Clip", preview.c_str())){
+            for (int i = 0; i < clipCount; i++){
+                std::string n = mc.model->GetAnimationName((size_t)i);
+                if (n.empty()) { n = "clip " + std::to_string(i); }
+                bool sel = (comp.clip == i);
+                if (ImGui::Selectable(n.c_str(), sel)) { comp.clip = i; }
+                if (sel) { ImGui::SetItemDefaultFocus(); }
+            }
+            ImGui::EndCombo();
+        }
+
+        // Transport.
+        if (ImGui::Button(comp.playing ? "Pause" : "Play ")) { comp.playing = !comp.playing; }
+        ImGui::SameLine();
+        if (ImGui::Button("Stop")){ comp.playing = false; comp.pendingSeek = 0.0f; }
+        ImGui::SameLine();
+        const char* loopModes[] = { "Loop", "Once", "PingPong" };
+        ImGui::SetNextItemWidth(110); ImGui::Combo("##loop", &comp.loopMode, loopModes, IM_ARRAYSIZE(loopModes));
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(120); ImGui::DragFloat("Speed", &comp.speed, 0.05f, 0.0f, 5.0f);
+
+        // Scrubber (dragging pauses + seeks).
+        float dur = comp.animator ? comp.animator->GetDurationSeconds() : 0.0f;
+        float cur = comp.animator ? comp.animator->GetCurrentSeconds() : 0.0f;
+        float t = cur;
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::SliderFloat("##scrub", &t, 0.0f, dur > 0.0f ? dur : 1.0f, "")){
+            comp.playing = false;
+            comp.pendingSeek = t;
+        }
+        ImGui::Text("%.2f / %.2f s   (clip %d/%d)", cur, dur, comp.clip + 1, clipCount);
+
+        // Ruler with playhead + read-only event markers for the current clip.
+        ImVec2 p0 = ImGui::GetCursorScreenPos();
+        float w = ImGui::GetContentRegionAvail().x;
+        float h = 22.0f;
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddRectFilled(p0, ImVec2(p0.x + w, p0.y + h), IM_COL32(35, 35, 40, 255), 3.0f);
+        if (dur > 0.0f){
+            float px = p0.x + w * (cur / dur);
+            dl->AddLine(ImVec2(px, p0.y), ImVec2(px, p0.y + h), IM_COL32(255, 200, 0, 255), 2.0f);
+            for (const auto& ev : comp.events){
+                if (ev.clip != comp.clip) { continue; }
+                float frac = ev.time / dur; frac = frac < 0.0f ? 0.0f : (frac > 1.0f ? 1.0f : frac);
+                float ex = p0.x + w * frac;
+                dl->AddLine(ImVec2(ex, p0.y), ImVec2(ex, p0.y + h), IM_COL32(80, 180, 255, 255), 1.5f);
+            }
+        }
+        ImGui::Dummy(ImVec2(w, h));
+
         ImGui::End();
     }
 
@@ -584,21 +670,68 @@ namespace Phoenix{
 		});
 
         DrawComponent<AnimationComponent>("Animation", entity, [entity](AnimationComponent& component) mutable {
-            int clipCount = 0;
+            Ref<Model> model;
             if (entity.HasComponent<MeshComponent>()){
                 auto& mc = entity.GetComponent<MeshComponent>();
-                if (mc.model && mc.model->IsReady()) { clipCount = (int)mc.model->GetAnimationCount(); }
+                if (mc.model && mc.model->IsReady()) { model = mc.model; }
             }
+            int clipCount = model ? (int)model->GetAnimationCount() : 0;
+
+            // Clip selector by name when the model is loaded.
             if (clipCount > 0){
-                ImGui::Text("Clips available: %d", clipCount);
-                if (ImGui::DragInt("Clip", &component.clip, 0.1f, 0, clipCount - 1)) { component.activeClip = -1; }
+                if (component.clip >= clipCount) { component.clip = clipCount - 1; }
+                std::string preview = model->GetAnimationName((size_t)component.clip);
+                if (preview.empty()) { preview = "clip " + std::to_string(component.clip); }
+                if (ImGui::BeginCombo("Clip", preview.c_str())){
+                    for (int i = 0; i < clipCount; i++){
+                        std::string n = model->GetAnimationName((size_t)i);
+                        if (n.empty()) { n = "clip " + std::to_string(i); }
+                        bool sel = (component.clip == i);
+                        if (ImGui::Selectable(n.c_str(), sel)) { component.clip = i; }
+                        if (sel) { ImGui::SetItemDefaultFocus(); }
+                    }
+                    ImGui::EndCombo();
+                }
             }
             else{
                 ImGui::TextDisabled("Add a rigged Mesh; animations load with it.");
-                if (ImGui::DragInt("Clip", &component.clip, 0.1f, 0, 32)) { component.activeClip = -1; }
+                ImGui::DragInt("Clip", &component.clip, 0.1f, 0, 32);
             }
+
             ImGui::Checkbox("Playing", &component.playing);
             ImGui::DragFloat("Speed", &component.speed, 0.05f, 0.0f, 5.0f);
+            const char* loopModes[] = { "Loop", "Once", "PingPong" };
+            ImGui::Combo("Loop Mode", &component.loopMode, loopModes, IM_ARRAYSIZE(loopModes));
+            ImGui::DragFloat("Crossfade (s)", &component.crossfade, 0.01f, 0.0f, 2.0f);
+
+            // Extra clip files merged onto this skeleton (e.g. more Mixamo clips).
+            ImGui::Separator(); ImGui::TextDisabled("Extra Clip Files");
+            for (size_t i = 0; i < component.extraClips.size(); i++){
+                ImGui::PushID((int)i);
+                char buf[256];
+                std::strncpy(buf, component.extraClips[i].c_str(), sizeof(buf)); buf[sizeof(buf) - 1] = 0;
+                if (ImGui::InputText("##path", buf, sizeof(buf))){ component.extraClips[i] = buf; component.extraClipsLoaded = false; }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("X")){ component.extraClips.erase(component.extraClips.begin() + i); component.extraClipsLoaded = false; ImGui::PopID(); break; }
+                ImGui::PopID();
+            }
+            if (ImGui::SmallButton("Add Clip File")){ component.extraClips.push_back("assets/models/"); component.extraClipsLoaded = false; }
+
+            // Animation events (fire OnAnimationEvent(name) in the entity's Lua script).
+            ImGui::Separator(); ImGui::TextDisabled("Events");
+            for (size_t i = 0; i < component.events.size(); i++){
+                ImGui::PushID(1000 + (int)i);
+                auto& ev = component.events[i];
+                ImGui::SetNextItemWidth(50); ImGui::DragInt("clip", &ev.clip, 0.1f, 0, 64); ImGui::SameLine();
+                ImGui::SetNextItemWidth(70); ImGui::DragFloat("t", &ev.time, 0.01f, 0.0f, 9999.0f); ImGui::SameLine();
+                char nbuf[64]; std::strncpy(nbuf, ev.name.c_str(), sizeof(nbuf)); nbuf[sizeof(nbuf) - 1] = 0;
+                ImGui::SetNextItemWidth(120);
+                if (ImGui::InputText("##name", nbuf, sizeof(nbuf))) { ev.name = nbuf; }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("X")){ component.events.erase(component.events.begin() + i); ImGui::PopID(); break; }
+                ImGui::PopID();
+            }
+            if (ImGui::SmallButton("Add Event")){ AnimEvent e; e.clip = component.clip; e.time = 0.0f; e.name = "event"; component.events.push_back(e); }
 		});
 
         DrawComponent<MeshComponent>("Mesh", entity, [](MeshComponent& component){

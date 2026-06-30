@@ -618,6 +618,14 @@ void MainLayer::OnImGuiRender(){
                 if (ImGui::MenuItem("Paste", "CTRL+V")) {}
                 ImGui::EndMenu();
             }
+            if (ImGui::BeginMenu("View"))
+            {
+                if (m_SceneEditor){
+                    ImGui::MenuItem("Timeline", nullptr, &m_SceneEditor->ShowTimeline());
+                    ImGui::MenuItem("Script Editor", nullptr, &m_SceneEditor->ShowScriptEditor());
+                }
+                ImGui::EndMenu();
+            }
 
             // Run / Stop the physics simulation (right-aligned in the menu bar).
             {

@@ -8,6 +8,7 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <chrono>
+#include <algorithm>
 
 namespace Phoenix{
 
@@ -260,5 +261,43 @@ namespace Phoenix{
         if (m_BoneInfoMap.size() > (size_t)MAX_BONES)
             PHX_CORE_ERROR("Model '{0}' has {1} bones, exceeding MAX_BONES={2}; raise it and u_BoneMatrices[] in the shaders",
                 m_Path, m_BoneInfoMap.size(), MAX_BONES);
+    }
+
+    const std::string& Model::GetAnimationName(size_t index) const{
+        static const std::string empty;
+        return index < m_Animations.size() ? m_Animations[index]->GetName() : empty;
+    }
+
+    int Model::GetAnimationIndex(const std::string& name) const{
+        for (size_t i = 0; i < m_Animations.size(); i++)
+            if (m_Animations[i]->GetName() == name) { return (int)i; }
+        return -1;
+    }
+
+    void Model::AddAnimationsFromFile(const std::string& path){
+        Assimp::Importer importer;
+        importer.SetPropertyBool(AI_CONFIG_IMPORT_FBX_PRESERVE_PIVOTS, false);
+        const aiScene* scene = importer.ReadFile(path,
+            aiProcess_Triangulate | aiProcess_LimitBoneWeights);
+
+        if (!scene || !scene->mRootNode || scene->mNumAnimations == 0){
+            PHX_CORE_ERROR("No animations loaded from '{0}': {1}", path, importer.GetErrorString());
+            return;
+        }
+
+        // Start any channel-only nodes after the model's existing bone ids so skinning
+        // bone ids/offsets (seeded from m_BoneInfoMap) are preserved for the merged clips.
+        int baseMax = 0;
+        for (const auto& kv : m_BoneInfoMap) { baseMax = std::max(baseMax, kv.second.id + 1); }
+
+        glm::mat4 globalInverse = glm::inverse(ToGlm(scene->mRootNode->mTransformation));
+        size_t before = m_Animations.size();
+        for (unsigned int i = 0; i < scene->mNumAnimations; i++){
+            std::map<std::string, BoneInfo> seed = m_BoneInfoMap; // base ids + offsets
+            int boneCounter = baseMax;
+            m_Animations.push_back(LoadAnimation(scene->mAnimations[i], scene, seed, boneCounter, globalInverse));
+        }
+        PHX_CORE_INFO("Merged {0} animation(s) from '{1}' (model now has {2} clips)",
+            m_Animations.size() - before, path, m_Animations.size());
     }
 }
