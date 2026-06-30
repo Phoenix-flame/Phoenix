@@ -433,8 +433,34 @@ namespace Phoenix{
                 editorCamera.SetState(false);
                 anyActiveCamera = true;
                 sceneCameraProjection = camera.camera.GetProjection();
-                sceneCameraView = glm::inverse(transform.GetTransform());
-                cameraPos = transform.Translation;
+
+                glm::vec3 camPos = transform.Translation;
+                glm::mat4 camView = glm::inverse(transform.GetTransform());
+
+                // Third-person follow: place the camera behind+above the target and look
+                // at it, instead of using the camera entity's own transform.
+                if (m_Registry.any_of<CameraFollowComponent>(cam)){
+                    auto& follow = m_Registry.get<CameraFollowComponent>(cam);
+                    TransformComponent* targetT = nullptr;
+                    auto tagged = m_Registry.view<TagComponent, TransformComponent>();
+                    for (auto te : tagged){
+                        if (tagged.get<TagComponent>(te).Tag == follow.target){
+                            targetT = &tagged.get<TransformComponent>(te);
+                            break;
+                        }
+                    }
+                    if (targetT){
+                        float yaw = follow.followYaw ? targetT->Rotation.y : 0.0f;
+                        // The target faces local -Z = (-sin,0,-cos); "behind" is the opposite.
+                        glm::vec3 behind(std::sin(yaw), 0.0f, std::cos(yaw));
+                        camPos = targetT->Translation + behind * follow.distance + glm::vec3(0.0f, follow.height, 0.0f);
+                        glm::vec3 lookAt = targetT->Translation + glm::vec3(0.0f, follow.lookHeight, 0.0f);
+                        camView = glm::lookAt(camPos, lookAt, glm::vec3(0.0f, 1.0f, 0.0f));
+                    }
+                }
+
+                sceneCameraView = camView;
+                cameraPos = camPos;
                 break;
             }
         }
@@ -735,6 +761,10 @@ namespace Phoenix{
 
     template<>
 	void Scene::OnComponentAdded<AnimationComponent>(Entity entity, AnimationComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<CameraFollowComponent>(Entity entity, CameraFollowComponent& component){
 	}
 
     template<>

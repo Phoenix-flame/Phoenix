@@ -24,6 +24,20 @@ namespace Phoenix{
         CameraComponent(const CameraComponent& other) = default;
     };
 
+    // Third-person follow camera. Add it to a camera entity to make that camera track
+    // another entity (named by its Tag). When primary, the Scene positions the view
+    // behind+above the target each frame and looks at it. followYaw orbits the camera
+    // behind the target's facing (turning the character turns the view).
+    struct CameraFollowComponent{
+        std::string target;        // Tag of the entity to follow
+        float distance = 6.0f;     // metres behind the target
+        float height = 2.5f;       // camera height above the target's origin
+        float lookHeight = 1.5f;   // height of the look-at point above the target
+        bool  followYaw = true;    // stay behind the target's facing
+        CameraFollowComponent() = default;
+        CameraFollowComponent(const CameraFollowComponent&) = default;
+    };
+
     struct Material
     {
         glm::vec3 ambient = glm::vec3(1.0f, 0.5f, 0.31f);

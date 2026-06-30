@@ -80,6 +80,17 @@ namespace Phoenix{
             out << YAML::EndMap;
         }
 
+        if (entity.HasComponent<CameraFollowComponent>()){
+            auto& f = entity.GetComponent<CameraFollowComponent>();
+            out << YAML::Key << "CameraFollowComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "Target" << YAML::Value << f.target;
+            out << YAML::Key << "Distance" << YAML::Value << f.distance;
+            out << YAML::Key << "Height" << YAML::Value << f.height;
+            out << YAML::Key << "LookHeight" << YAML::Value << f.lookHeight;
+            out << YAML::Key << "FollowYaw" << YAML::Value << f.followYaw;
+            out << YAML::EndMap;
+        }
+
         if (entity.HasComponent<CubeComponent>()){
             out << YAML::Key << "CubeComponent" << YAML::Value << YAML::BeginMap;
             SerializeMaterial(out, entity.GetComponent<CubeComponent>().material);
@@ -283,6 +294,16 @@ namespace Phoenix{
             camera.SetOrthographicFarClip(n["OrthographicFar"].as<float>());
         }
         else if (entity.HasComponent<CameraComponent>()) entity.RemoveComponent<CameraComponent>();
+
+        if (auto n = node["CameraFollowComponent"]){
+            auto& f = entity.HasComponent<CameraFollowComponent>() ? entity.GetComponent<CameraFollowComponent>() : entity.AddComponent<CameraFollowComponent>();
+            f.target = n["Target"].as<std::string>();
+            f.distance = n["Distance"].as<float>();
+            f.height = n["Height"].as<float>();
+            f.lookHeight = n["LookHeight"].as<float>();
+            f.followYaw = n["FollowYaw"].as<bool>();
+        }
+        else if (entity.HasComponent<CameraFollowComponent>()) entity.RemoveComponent<CameraFollowComponent>();
 
         if (auto n = node["CubeComponent"]){
             auto& cube = entity.HasComponent<CubeComponent>() ? entity.GetComponent<CubeComponent>() : entity.AddComponent<CubeComponent>();

@@ -263,6 +263,14 @@ void MainLayer::BuildRobotShowcase() {
         auto& t = cam.GetComponent<TransformComponent>();
         t.Translation = { 0.0f, 3.0f, 8.0f };
         t.Rotation = { glm::radians(-12.0f), 0.0f, 0.0f };
+        // Third-person follow camera trailing the robot. Check "Primary" on its Camera
+        // component (or uncheck to regain free editor navigation) to view through it.
+        auto& follow = cam.AddComponent<CameraFollowComponent>();
+        follow.target = "Walking Robot";
+        follow.distance = 6.0f;
+        follow.height = 3.0f;
+        follow.lookHeight = 2.0f;
+        follow.followYaw = true; // camera stays behind the robot as it turns
     }
 
     // Sun for clear shadows beneath the walker.

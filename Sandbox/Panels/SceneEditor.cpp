@@ -571,6 +571,11 @@ namespace Phoenix{
                     PHX_CORE_ASSERT("This entity already has the Camera Component!");
                 ImGui::CloseCurrentPopup();
             }
+            if (ImGui::MenuItem("Camera Follow")){
+                if (!m_SelectedEntity.HasComponent<CameraFollowComponent>())
+                    m_SelectedEntity.AddComponent<CameraFollowComponent>();
+                ImGui::CloseCurrentPopup();
+            }
             if (ImGui::MenuItem("Cube")){
                 if (!m_SelectedEntity.HasComponent<CubeComponent>())
                     m_SelectedEntity.AddComponent<CubeComponent>();
@@ -854,6 +859,17 @@ namespace Phoenix{
 				// 	camera.SetOrthographicAcpectRatio(aspect);
 
 			}
+		});
+
+		DrawComponent<CameraFollowComponent>("Camera Follow", entity, [](CameraFollowComponent& component){
+			char buf[128];
+			std::strncpy(buf, component.target.c_str(), sizeof(buf)); buf[sizeof(buf) - 1] = 0;
+			if (ImGui::InputText("Target (Tag)", buf, sizeof(buf))) { component.target = buf; }
+			ImGui::DragFloat("Distance", &component.distance, 0.1f, 0.5f, 50.0f);
+			ImGui::DragFloat("Height", &component.height, 0.1f, -10.0f, 30.0f);
+			ImGui::DragFloat("Look Height", &component.lookHeight, 0.1f, -10.0f, 30.0f);
+			ImGui::Checkbox("Follow Yaw", &component.followYaw);
+			ImGui::TextDisabled("Set the camera Primary to view through it.");
 		});
 
 		DrawComponent<RigidBodyComponent>("Rigid Body", entity, [](auto& component){
