@@ -426,12 +426,14 @@ namespace Phoenix{
         glm::mat4 sceneCameraView = editorCamera.GetView();
         glm::vec3 cameraPos = editorCamera.GetPosition();
         bool anyActiveCamera = false;
+        entt::entity activeCamera = entt::null; // the camera we're viewing THROUGH
         for (auto cam:cameras){
             auto camera = cameras.get<CameraComponent>(cam);
             auto transform = cameras.get<TransformComponent>(cam);
             if (camera.primary){
                 editorCamera.SetState(false);
                 anyActiveCamera = true;
+                activeCamera = cam;
                 sceneCameraProjection = camera.camera.GetProjection();
 
                 glm::vec3 camPos = transform.Translation;
@@ -704,9 +706,11 @@ namespace Phoenix{
         }
 
         // Camera frustum gizmos so camera entities show their position and view angle.
+        // Skip the camera we're looking THROUGH — its own frustum would sit in the view.
         {
             auto cameraView = m_Registry.view<CameraComponent, TransformComponent>();
             for (auto entity : cameraView){
+                if (entity == activeCamera) { continue; }
                 auto& cameraComponent = cameraView.get<CameraComponent>(entity);
                 auto& transform = cameraView.get<TransformComponent>(entity);
                 float fov = cameraComponent.camera.GetPerspectiveVerticalFOV();

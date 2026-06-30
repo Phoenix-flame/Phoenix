@@ -915,9 +915,12 @@ void MainLayer::OnImGuiRender(){
     uint64_t textureID = m_Framebuffer->GetColorAttachmentRendererID();
     ImGui::Image(reinterpret_cast<void*>(textureID), ImVec2{ m_ViewportSize.x, m_ViewportSize.y }, ImVec2{ 0, 1 }, ImVec2{ 1, 0 });
 
-    // Transform gizmo for the selected entity.
+    // Transform gizmo for the selected entity. Skip it for the primary camera, since
+    // we're looking THROUGH that camera and its gizmo would sit in the middle of the view.
     Entity selectedEntity = m_SceneEditor->GetSelectedEntity();
-    if (selectedEntity && m_GizmoType != -1 && selectedEntity.HasComponent<TransformComponent>())
+    bool selectedIsPrimaryCamera = selectedEntity && selectedEntity.HasComponent<CameraComponent>()
+        && selectedEntity.GetComponent<CameraComponent>().primary;
+    if (selectedEntity && m_GizmoType != -1 && !selectedIsPrimaryCamera && selectedEntity.HasComponent<TransformComponent>())
     {
         ImGuizmo::SetOrthographic(false);
         ImGuizmo::SetDrawlist();
