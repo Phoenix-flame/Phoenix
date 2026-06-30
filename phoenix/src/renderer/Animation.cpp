@@ -39,8 +39,8 @@ namespace Phoenix{
 
     glm::mat4 Bone::InterpolatePosition(float t) const{
         if (m_Positions.empty()) { return glm::mat4(1.0f); }
-        if (m_Positions.size() == 1) { return glm::translate(glm::mat4(1.0f), m_Positions[0].position); }
         int p0 = GetPositionIndex(t);
+        if (p0 + 1 >= (int)m_Positions.size()) { return glm::translate(glm::mat4(1.0f), m_Positions[p0].position); }
         int p1 = p0 + 1;
         float factor = GetScaleFactor(m_Positions[p0].timeStamp, m_Positions[p1].timeStamp, t);
         glm::vec3 pos = glm::mix(m_Positions[p0].position, m_Positions[p1].position, factor);
@@ -49,8 +49,8 @@ namespace Phoenix{
 
     glm::mat4 Bone::InterpolateRotation(float t) const{
         if (m_Rotations.empty()) { return glm::mat4(1.0f); }
-        if (m_Rotations.size() == 1) { return glm::mat4_cast(glm::normalize(m_Rotations[0].orientation)); }
         int p0 = GetRotationIndex(t);
+        if (p0 + 1 >= (int)m_Rotations.size()) { return glm::mat4_cast(glm::normalize(m_Rotations[p0].orientation)); }
         int p1 = p0 + 1;
         float factor = GetScaleFactor(m_Rotations[p0].timeStamp, m_Rotations[p1].timeStamp, t);
         glm::quat q = glm::slerp(m_Rotations[p0].orientation, m_Rotations[p1].orientation, factor);
@@ -59,8 +59,8 @@ namespace Phoenix{
 
     glm::mat4 Bone::InterpolateScaling(float t) const{
         if (m_Scales.empty()) { return glm::mat4(1.0f); }
-        if (m_Scales.size() == 1) { return glm::scale(glm::mat4(1.0f), m_Scales[0].scale); }
         int p0 = GetScaleIndex(t);
+        if (p0 + 1 >= (int)m_Scales.size()) { return glm::scale(glm::mat4(1.0f), m_Scales[p0].scale); }
         int p1 = p0 + 1;
         float factor = GetScaleFactor(m_Scales[p0].timeStamp, m_Scales[p1].timeStamp, t);
         glm::vec3 s = glm::mix(m_Scales[p0].scale, m_Scales[p1].scale, factor);

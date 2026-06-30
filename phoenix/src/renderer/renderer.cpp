@@ -239,13 +239,23 @@ namespace Phoenix{
         glPolygonMode(GL_FRONT_AND_BACK, enabled ? GL_LINE : GL_FILL);
     }
 
-    void Renderer::DrawOutline(const std::vector<Ref<VertexArray>>& vertexArrays, const glm::mat4& transform, const glm::vec3& color){
+    void Renderer::DrawOutline(const std::vector<Ref<VertexArray>>& vertexArrays, const glm::mat4& transform, const glm::vec3& color,
+            const std::vector<glm::mat4>* boneMatrices){
         if (vertexArrays.empty()) { return; }
 
         s_OutlineShader->Bind();
         s_OutlineShader->SetMat4("view", s_SceneData->ViewMatrix);
         s_OutlineShader->SetMat4("projection", s_SceneData->ProjectionMatrix);
         s_OutlineShader->SetFloat3("u_Color", color);
+
+        // Skin the silhouette for animated meshes so it tracks the posed geometry.
+        if (boneMatrices && !boneMatrices->empty()){
+            s_OutlineShader->SetInt("u_Animated", 1);
+            s_OutlineShader->SetMat4Array("u_BoneMatrices", boneMatrices->data(), (uint32_t)boneMatrices->size());
+        }
+        else{
+            s_OutlineShader->SetInt("u_Animated", 0);
+        }
 
         glEnable(GL_STENCIL_TEST);
         glClear(GL_STENCIL_BUFFER_BIT);

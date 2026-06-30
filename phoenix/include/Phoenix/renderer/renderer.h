@@ -198,7 +198,8 @@ namespace Phoenix{
 		// enlarged flat-color version only where the stencil is unset, leaving a thin
 		// border line around the outer edge. Pass all of an object's sub-VAOs together
 		// so they share one silhouette. Uses the camera state from the last BeginScene.
-		static void DrawOutline(const std::vector<Ref<VertexArray>>& vertexArrays, const glm::mat4& transform, const glm::vec3& color);
+		static void DrawOutline(const std::vector<Ref<VertexArray>>& vertexArrays, const glm::mat4& transform, const glm::vec3& color,
+			const std::vector<glm::mat4>* boneMatrices = nullptr);
 		static void DrawOutlineCube(const glm::mat4& transform, const glm::vec3& color);
 
 		// Draw a wireframe camera frustum at the given transform. verticalFov is in

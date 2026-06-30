@@ -372,7 +372,11 @@ namespace Phoenix{
                     anim.animator->PlayAnimation(mesh.model->GetAnimation(clip));
                     anim.activeClip = clip;
                 }
-                if (anim.playing) { anim.animator->UpdateAnimation((float)ts * anim.speed); }
+                // Always pose the skeleton (advance by 0 when paused). A rigged mesh's
+                // vertices live in bone space, so the bone matrices must be computed even
+                // at rest -- leaving them identity scatters the mesh instead of assembling
+                // it into the bind/rest pose.
+                anim.animator->UpdateAnimation(anim.playing ? (float)ts * anim.speed : 0.0f);
             }
         }
 
@@ -599,7 +603,10 @@ namespace Phoenix{
                     for (const auto& subMesh : mesh.model->GetMeshes()){
                         vertexArrays.push_back(subMesh->GetVertexArray());
                     }
-                    Renderer::DrawOutline(vertexArrays, transform, outlineColor);
+                    auto* anim = selectedEntity.HasComponent<AnimationComponent>() ? &selectedEntity.GetComponent<AnimationComponent>() : nullptr;
+                    const std::vector<glm::mat4>* bones = (anim && anim->animator && mesh.model->HasAnimations())
+                        ? &anim->animator->GetFinalBoneMatrices() : nullptr;
+                    Renderer::DrawOutline(vertexArrays, transform, outlineColor, bones);
                 }
             }
             if (selectedEntity.HasComponent<PrimitiveComponent>()){
