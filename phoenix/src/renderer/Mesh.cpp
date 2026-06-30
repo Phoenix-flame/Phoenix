@@ -8,9 +8,6 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <chrono>
-#include <set>
-#include <string>
-#include <functional>
 
 namespace Phoenix{
 
@@ -258,42 +255,10 @@ namespace Phoenix{
         }
 
         m_Uploaded = true;
-        PHX_CORE_INFO("Loaded model '{0}' ({1} meshes, {2} animations)", m_Path, m_Meshes.size(), m_Animations.size());
-
-        // Skeleton diagnostics: if total bones exceed MAX_BONES the shader clamps the
-        // overflow to identity, which scatters/splays the limbs that use those bones.
-        size_t boneCount = m_BoneInfoMap.size();
-        PHX_CORE_INFO("  skeleton: {0} bones (shader cap MAX_BONES={1})", boneCount, MAX_BONES);
-        if (boneCount > (size_t)MAX_BONES)
-            PHX_CORE_ERROR("  -> bone count {0} EXCEEDS MAX_BONES {1}: raise MAX_BONES and the u_BoneMatrices[] size in the shaders", boneCount, MAX_BONES);
-        for (size_t i = 0; i < m_Animations.size(); i++)
-            PHX_CORE_INFO("  clip {0}: '{1}' duration={2} ticks @ {3} tps", i, m_Animations[i]->GetName(), m_Animations[i]->GetDuration(), m_Animations[i]->GetTicksPerSecond());
-
-        // Verify every skinning bone is reachable in the animation's node hierarchy.
-        // Any that are missing keep an identity matrix in the shader, which splays the
-        // limbs that depend on them.
-        if (!m_Animations.empty()){
-            std::set<std::string> nodeNames;
-            std::function<void(const AssimpNodeData&)> collect = [&](const AssimpNodeData& n){
-                nodeNames.insert(n.name);
-                for (const auto& c : n.children) { collect(c); }
-            };
-            collect(m_Animations[0]->GetRootNode());
-            int missing = 0;
-            for (const auto& kv : m_BoneInfoMap){
-                if (nodeNames.find(kv.first) == nodeNames.end()){
-                    PHX_CORE_ERROR("  skinning bone '{0}' (id {1}) NOT in node hierarchy -> identity matrix", kv.first, kv.second.id);
-                    missing++;
-                }
-            }
-            PHX_CORE_INFO("  hierarchy has {0} nodes; {1}/{2} skinning bones unreachable", nodeNames.size(), missing, m_BoneInfoMap.size());
-
-            const glm::mat4& gi = m_Animations[0]->m_GlobalInverseTransform;
-            PHX_CORE_INFO("  globalInverse row0=[{0:.3f} {1:.3f} {2:.3f} {3:.3f}] row3=[{4:.3f} {5:.3f} {6:.3f} {7:.3f}]",
-                gi[0][0], gi[1][0], gi[2][0], gi[3][0], gi[0][3], gi[1][3], gi[2][3], gi[3][3]);
-            const glm::mat4& rt = m_Animations[0]->GetRootNode().transformation;
-            PHX_CORE_INFO("  rootNode '{0}' row0=[{1:.3f} {2:.3f} {3:.3f} {4:.3f}]",
-                m_Animations[0]->GetRootNode().name, rt[0][0], rt[1][0], rt[2][0], rt[3][0]);
-        }
+        PHX_CORE_INFO("Loaded model '{0}' ({1} meshes, {2} bones, {3} animations)",
+            m_Path, m_Meshes.size(), m_BoneInfoMap.size(), m_Animations.size());
+        if (m_BoneInfoMap.size() > (size_t)MAX_BONES)
+            PHX_CORE_ERROR("Model '{0}' has {1} bones, exceeding MAX_BONES={2}; raise it and u_BoneMatrices[] in the shaders",
+                m_Path, m_BoneInfoMap.size(), MAX_BONES);
     }
 }
