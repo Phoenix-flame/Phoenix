@@ -304,10 +304,40 @@ void MainLayer::BuildRobotShowcase() {
         mesh.material.diffuse  = glm::vec3(0.7f, 0.7f, 0.75f);
         mesh.material.specular = glm::vec3(0.3f);
         mesh.material.shininess = 24.0f;
-        robot.AddComponent<AnimationComponent>(); // plays clip 0 (the walk) on loop
+        robot.AddComponent<AnimationComponent>(); // clip 0 (the walk)
         auto& t = robot.GetComponent<TransformComponent>();
         t.Translation = { 0.0f, -0.75f, 0.0f };
         t.Scale = glm::vec3(0.02f); // tune in the Transform panel to fit your model
+
+        // Keyboard controller (runs while playing). Press Run, then drive with the arrow
+        // keys: Up/Down walk, Left/Right turn, Shift to run, Space to jump. Idle freezes
+        // the walk at frame 0. With one clip this varies speed; if you add idle/run clip
+        // files, swap the speed lines for CrossFade("idle", 0.2) / CrossFade("run", 0.2).
+        auto& script = robot.AddComponent<LuaScriptComponent>();
+        script.source =
+            "local turn = 2.0      -- rad/sec\n"
+            "local walk = 2.5      -- units/sec\n"
+            "local groundY = -0.75\n"
+            "local vy = 0.0\n"
+            "local onGround = true\n"
+            "function OnUpdate(dt)\n"
+            "    if IsKeyDown(Key.Left)  then Rotate(0,  turn*dt, 0) end\n"
+            "    if IsKeyDown(Key.Right) then Rotate(0, -turn*dt, 0) end\n"
+            "    local run = IsKeyDown(Key.LeftShift)\n"
+            "    local moving = false\n"
+            "    if IsKeyDown(Key.Up)   then MoveForward( walk*(run and 2.0 or 1.0)*dt); moving = true end\n"
+            "    if IsKeyDown(Key.Down) then MoveForward(-walk*dt); moving = true end\n"
+            "    if IsKeyPressed(Key.Space) and onGround then vy = 6.0; onGround = false end\n"
+            "    if not onGround then\n"
+            "        local x, y, z = GetTranslation()\n"
+            "        vy = vy - 12.0 * dt\n"
+            "        y = y + vy * dt\n"
+            "        if y <= groundY then y = groundY; vy = 0.0; onGround = true end\n"
+            "        SetTranslation(x, y, z)\n"
+            "    end\n"
+            "    if moving then SetAnimationSpeed(run and 2.0 or 1.0); ResumeAnimation()\n"
+            "    else PauseAnimation(); SetAnimationTime(0.0) end\n"
+            "end\n";
     }
 }
 

@@ -2,6 +2,7 @@
 #include <Phoenix/core/base.h>
 #include <Phoenix/Scene/Entity.h>
 #include <string>
+#include <unordered_set>
 
 struct lua_State;
 
@@ -24,9 +25,17 @@ namespace Phoenix{
         void OnAnimationEvent(const std::string& name);
 
         Entity GetEntity() const { return m_Entity; }
+
+        // Keyboard queries for scripts. KeyDown = held this frame; KeyPressed = the
+        // press EDGE (true only on the frame the key goes down). Edge state rolls over
+        // in OnUpdate, so a script should query the same keys every frame.
+        bool KeyDown(int keycode);
+        bool KeyPressed(int keycode);
     private:
         Entity m_Entity;
         lua_State* m_L = nullptr;
         bool m_Valid = false;
+        std::unordered_set<int> m_KeysPrev; // keys down at the start of last frame
+        std::unordered_set<int> m_KeysCur;  // keys queried/down this frame
     };
 }

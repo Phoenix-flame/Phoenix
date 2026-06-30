@@ -1,7 +1,10 @@
 #include <Phoenix/Scene/LuaScript.h>
 #include <Phoenix/Scene/Component.h>
 #include <Phoenix/core/log.h>
+#include <Phoenix/core/Input.h>
+#include <Phoenix/core/keyCodes.h>
 #include <algorithm>
+#include <cmath>
 
 extern "C" {
 #include <lua.h>
@@ -11,11 +14,13 @@ extern "C" {
 
 namespace Phoenix{
 
-    // The bound entity is stashed in the lua_State's extra space so the C functions
-    // below can reach it without globals.
+    // The bound LuaScript / entity is stashed in the lua_State's extra space so the C
+    // functions below can reach them without globals.
+    static LuaScript* ScriptSelf(lua_State* L){
+        return *static_cast<LuaScript**>(lua_getextraspace(L));
+    }
     static Entity ScriptEntity(lua_State* L){
-        LuaScript* self = *static_cast<LuaScript**>(lua_getextraspace(L));
-        return self->GetEntity();
+        return ScriptSelf(L)->GetEntity();
     }
 
     static int l_GetTranslation(lua_State* L){
@@ -151,6 +156,45 @@ namespace Phoenix{
         return 1;
     }
 
+    // ---- Keyboard input ----
+
+    static int l_IsKeyDown(lua_State* L){
+        lua_pushboolean(L, ScriptSelf(L)->KeyDown((int)luaL_checkinteger(L, 1)));
+        return 1;
+    }
+    static int l_IsKeyPressed(lua_State* L){
+        lua_pushboolean(L, ScriptSelf(L)->KeyPressed((int)luaL_checkinteger(L, 1)));
+        return 1;
+    }
+
+    // ---- Movement helpers (additive; convenient for keyboard controllers) ----
+
+    static int l_Translate(lua_State* L){
+        Entity e = ScriptEntity(L);
+        if (e.HasComponent<TransformComponent>())
+            e.GetComponent<TransformComponent>().Translation +=
+                glm::vec3((float)luaL_checknumber(L, 1), (float)luaL_checknumber(L, 2), (float)luaL_checknumber(L, 3));
+        return 0;
+    }
+    static int l_Rotate(lua_State* L){ // radians, added to the Euler rotation
+        Entity e = ScriptEntity(L);
+        if (e.HasComponent<TransformComponent>())
+            e.GetComponent<TransformComponent>().Rotation +=
+                glm::vec3((float)luaL_checknumber(L, 1), (float)luaL_checknumber(L, 2), (float)luaL_checknumber(L, 3));
+        return 0;
+    }
+    // Move `dist` along the entity's facing (local -Z rotated by its Y/yaw).
+    static int l_MoveForward(lua_State* L){
+        Entity e = ScriptEntity(L);
+        if (e.HasComponent<TransformComponent>()){
+            auto& t = e.GetComponent<TransformComponent>();
+            float yaw = t.Rotation.y;
+            float dist = (float)luaL_checknumber(L, 1);
+            t.Translation += dist * glm::vec3(-std::sin(yaw), 0.0f, -std::cos(yaw));
+        }
+        return 0;
+    }
+
     LuaScript::LuaScript(const std::string& source, Entity entity) : m_Entity(entity){
         m_L = luaL_newstate();
         luaL_openlibs(m_L);
@@ -179,6 +223,27 @@ namespace Phoenix{
         lua_register(m_L, "IsAnimationFinished",l_IsAnimationFinished);
         lua_register(m_L, "GetAnimationName",   l_GetAnimationName);
 
+        // Input + movement helpers
+        lua_register(m_L, "IsKeyDown",    l_IsKeyDown);
+        lua_register(m_L, "IsKeyPressed", l_IsKeyPressed);
+        lua_register(m_L, "Translate",    l_Translate);
+        lua_register(m_L, "Rotate",       l_Rotate);
+        lua_register(m_L, "MoveForward",  l_MoveForward);
+
+        // A global `Key` table of keycodes, so scripts write Key.Up / Key.Space / Key.W.
+        lua_newtable(m_L);
+        auto setKey = [&](const char* name, int code){
+            lua_pushinteger(m_L, code); lua_setfield(m_L, -2, name);
+        };
+        setKey("Up", Key::Up); setKey("Down", Key::Down); setKey("Left", Key::Left); setKey("Right", Key::Right);
+        setKey("Space", Key::Space); setKey("Enter", Key::Enter); setKey("Escape", Key::Escape); setKey("Tab", Key::Tab);
+        setKey("LeftShift", Key::LeftShift); setKey("RightShift", Key::RightShift);
+        setKey("LeftControl", Key::LeftControl); setKey("RightControl", Key::RightControl);
+        setKey("W", Key::W); setKey("A", Key::A); setKey("S", Key::S); setKey("D", Key::D);
+        setKey("Q", Key::Q); setKey("E", Key::E); setKey("R", Key::R); setKey("F", Key::F);
+        for (int i = 0; i <= 9; i++){ char n[2] = { (char)('0' + i), 0 }; setKey(n, Key::D0 + i); }
+        lua_setglobal(m_L, "Key");
+
         if (luaL_dostring(m_L, source.c_str()) != LUA_OK){
             PHX_CORE_ERROR("Lua load error: {0}", lua_tostring(m_L, -1));
             lua_pop(m_L, 1);
@@ -193,8 +258,23 @@ namespace Phoenix{
         if (m_L) { lua_close(m_L); }
     }
 
+    bool LuaScript::KeyDown(int keycode){
+        bool down = Input::IsKeyPressed((KeyCode)keycode);
+        if (down) { m_KeysCur.insert(keycode); }
+        return down;
+    }
+
+    bool LuaScript::KeyPressed(int keycode){
+        bool down = Input::IsKeyPressed((KeyCode)keycode);
+        if (down) { m_KeysCur.insert(keycode); }
+        return down && m_KeysPrev.find(keycode) == m_KeysPrev.end();
+    }
+
     void LuaScript::OnUpdate(float dt){
         if (!m_Valid) { return; }
+        // Roll this frame's key state to "previous" for edge detection.
+        m_KeysPrev = m_KeysCur;
+        m_KeysCur.clear();
         lua_getglobal(m_L, "OnUpdate");
         if (lua_isfunction(m_L, -1)){
             lua_pushnumber(m_L, dt);
