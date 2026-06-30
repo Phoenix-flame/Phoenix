@@ -12,11 +12,9 @@ layout(location = 4) in vec4 aWeights;
 out vec3 Normal;
 out vec3 FragPos;
 out vec2 TexCoords;
-out vec4 FragPosLightSpace;
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
-uniform mat4 u_LightSpaceMatrix;
 
 // Skeletal animation: when u_Animated, blend the bone matrices by the vertex weights.
 const int MAX_BONES = 100;
@@ -46,12 +44,11 @@ void main()
     Normal = mat3(transpose(inverse(model))) * localNormal;
     FragPos = vec3(model * vec4(localPos, 1.0));
     TexCoords = aTexCoords;
-    FragPosLightSpace = u_LightSpaceMatrix * vec4(FragPos, 1.0);
 }
 
 #type fragment
 #version 300 es
-precision mediump float;
+precision highp float;
 
 struct Material {
     vec3 ambient;
@@ -62,7 +59,6 @@ struct Material {
 
 struct DirLight {
     vec3 direction;
-
     vec3 ambient;
     vec3 diffuse;
     vec3 specular;
@@ -80,28 +76,31 @@ struct PointLight {
     vec3 specular;
 };
 #define NR_POINT_LIGHTS 4
+#define NR_DIR_LIGHTS 4
+#define NR_SHADOWS 4
 uniform PointLight pointLights[NR_POINT_LIGHTS];
 
-
-
+// Multiple directional lights, each optionally casting its own shadow. Directional
+// light i is shadowed by u_ShadowMaps[i] / u_LightSpaceMatrices[i] when i < u_NumShadows.
+uniform DirLight dirLights[NR_DIR_LIGHTS];
+uniform int u_NumDirLights;
 
 in vec3 Normal;
 in vec3 FragPos;
 in vec2 TexCoords;
-in vec4 FragPosLightSpace;
 out vec4 FragColor;
 
-// Directional shadow map (comparison sampler -> hardware PCF).
-// GLES requires an explicit precision for shadow samplers.
-uniform highp sampler2DShadow u_ShadowMap;
+// Directional shadow maps (comparison samplers -> hardware PCF). GLES requires an
+// explicit precision for shadow samplers. Indexed only by the loop counter below
+// (a constant-index-expression, which GLSL ES 3.00 requires for sampler arrays).
+uniform highp sampler2DShadow u_ShadowMaps[NR_SHADOWS];
+uniform mat4 u_LightSpaceMatrices[NR_SHADOWS];
+uniform int u_NumShadows;
 uniform bool u_ShadowsEnabled;
-uniform vec3 boxColor;
-uniform vec3 lightColor;
-uniform vec3 lightPos;
+
 uniform vec3 cameraPos;
 
 uniform Material material;
-uniform DirLight dirLight;
 
 // Global ambient light, applied to every fragment regardless of light sources.
 uniform vec3 u_Ambient;
@@ -116,36 +115,6 @@ uniform float u_Reflectivity;
 uniform sampler2D u_DiffuseMap;
 uniform bool u_HasDiffuseMap;
 
-float ShadowCalculation(vec3 normal, vec3 lightDir)
-{
-    if (!u_ShadowsEnabled) { return 0.0; }
-    // perspective divide + map to [0,1]
-    vec3 projCoords = FragPosLightSpace.xyz / FragPosLightSpace.w;
-    projCoords = projCoords * 0.5 + 0.5;
-    if (projCoords.z > 1.0) { return 0.0; } // beyond the shadow frustum -> lit
-
-    float currentDepth = projCoords.z;
-    // slope-scaled bias to avoid shadow acne
-    float bias = max(0.0025 * (1.0 - dot(normal, lightDir)), 0.0008);
-
-    // 5x5 hardware PCF (each tap is a bilinearly filtered comparison) with a wider
-    // spread for smooth, unbanded soft shadow edges.
-    float shadow = 0.0;
-    float samples = 0.0;
-    const float spread = 1.6;
-    float refDepth = currentDepth - bias;
-    vec2 texelSize = (1.0 / vec2(textureSize(u_ShadowMap, 0))) * spread;
-    for (int x = -2; x <= 2; ++x){
-        for (int y = -2; y <= 2; ++y){
-            // texture(sampler2DShadow, vec3(uv, ref)) returns 1.0 when lit, filtered.
-            float lit = texture(u_ShadowMap, vec3(projCoords.xy + vec2(float(x), float(y)) * texelSize, refDepth));
-            shadow += 1.0 - lit;
-            samples += 1.0;
-        }
-    }
-    return shadow / samples;
-}
-
 // Procedural environment: a sky gradient above the horizon, dim ground below.
 vec3 SampleEnvironment(vec3 dir)
 {
@@ -157,36 +126,28 @@ vec3 SampleEnvironment(vec3 dir)
     return mix(ground, sky, smoothstep(0.45, 0.55, t));
 }
 
-vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 diffuseColor)
+vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 diffuseColor, float shadow)
 {
     vec3 lightDir = normalize(-light.direction);
-    // diffuse shading
     float diff = max(dot(normal, lightDir), 0.0);
-    // specular shading
     vec3 reflectDir = reflect(-lightDir, normal);
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), material.shininess);
-    // combine results
     vec3 ambient  = light.ambient  * diffuseColor;
     vec3 diffuse  = light.diffuse  * diff * diffuseColor;
     vec3 specular = light.specular * spec * material.specular;
-    // directional light is shadowed; ambient still applies
-    float shadow = ShadowCalculation(normal, lightDir);
-    return (ambient + (1.0 - shadow) * (diffuse + specular));
+    // ambient still applies in shadow; diffuse+specular are occluded
+    return ambient + (1.0 - shadow) * (diffuse + specular);
 }
 
 vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 diffuseColor)
 {
     vec3 lightDir = normalize(light.position - fragPos);
-    // diffuse shading
     float diff = max(dot(normal, lightDir), 0.0);
-    // specular shading
     vec3 reflectDir = reflect(-lightDir, normal);
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), material.shininess);
-    // attenuation
     float distance    = length(light.position - fragPos);
     float attenuation = 1.0 / (light.constant + light.linear * distance +
   			     light.quadratic * (distance * distance));
-    // combine results
     vec3 ambient  = light.ambient  * diffuseColor;
     vec3 diffuse  = light.diffuse  * diff * diffuseColor;
     vec3 specular = light.specular * spec * material.specular;
@@ -198,16 +159,43 @@ vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, v
 
 void main()
 {
-    // properties
     vec3 norm = normalize(Normal);
     vec3 viewDir = normalize(cameraPos - FragPos);
     vec3 diffuseColor = u_HasDiffuseMap ? texture(u_DiffuseMap, TexCoords).rgb : material.diffuse;
+
     // global ambient
     vec3 result = u_Ambient * diffuseColor;
-    // phase 1: Directional lighting
-    result += CalcDirLight(dirLight, norm, viewDir, diffuseColor);
-    // phase 2: Point lights
-    for(int i = 0; i < NR_POINT_LIGHTS; i++)
+
+    // Directional lights, each with its own shadow map. The shadow sampling is INLINE
+    // here so u_ShadowMaps[] is indexed by the loop counter (required by GLSL ES 3.00).
+    for (int i = 0; i < NR_DIR_LIGHTS; i++){
+        if (i >= u_NumDirLights) { break; }
+
+        float shadow = 0.0;
+        if (u_ShadowsEnabled && i < u_NumShadows){
+            vec3 lightDir = normalize(-dirLights[i].direction);
+            vec4 fls = u_LightSpaceMatrices[i] * vec4(FragPos, 1.0);
+            vec3 proj = fls.xyz / fls.w;
+            proj = proj * 0.5 + 0.5;
+            if (proj.z <= 1.0){
+                float bias = max(0.0025 * (1.0 - dot(norm, lightDir)), 0.0008);
+                float refDepth = proj.z - bias;
+                vec2 texel = (1.0 / vec2(textureSize(u_ShadowMaps[i], 0))) * 1.4;
+                float s = 0.0;
+                for (int x = -1; x <= 1; x++){
+                    for (int y = -1; y <= 1; y++){
+                        s += 1.0 - texture(u_ShadowMaps[i], vec3(proj.xy + vec2(float(x), float(y)) * texel, refDepth));
+                    }
+                }
+                shadow = s / 9.0;
+            }
+        }
+
+        result += CalcDirLight(dirLights[i], norm, viewDir, diffuseColor, shadow);
+    }
+
+    // Point lights (unshadowed).
+    for (int i = 0; i < NR_POINT_LIGHTS; i++)
         result += CalcPointLight(pointLights[i], norm, FragPos, viewDir, diffuseColor);
 
     // environment reflection (mirror a procedural sky/ground)

@@ -213,6 +213,7 @@ namespace Phoenix{
         glm::vec3 diffuse = glm::vec3(0.8f);
         glm::vec3 specular = glm::vec3(1.0f);
         bool isActive = true;
+        bool castsShadow = true; // render a shadow map for this light
         DirLightComponent() = default;
         DirLightComponent(const DirLightComponent&) = default;
     };

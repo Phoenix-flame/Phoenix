@@ -375,6 +375,68 @@ void MainLayer::BuildRobotShowcase() {
     }
 }
 
+void MainLayer::BuildMultiShadowShowcase() {
+    // Three coloured directional lights from different angles, each casting its OWN
+    // shadow map -> the central objects cast three shadows fanning out, tinted where the
+    // coloured lights overlap. Toggle "Casts Shadow" / "Active" per light to compare.
+    m_Scene->AmbientColor() = glm::vec3(0.05f);
+
+    {
+        auto cam = m_Scene->CreateEntity("Camera");
+        cam.AddComponent<CameraComponent>();
+        auto& t = cam.GetComponent<TransformComponent>();
+        t.Translation = { 0.0f, 7.0f, 13.0f };
+        t.Rotation = { glm::radians(-22.0f), 0.0f, 0.0f };
+    }
+
+    // Three suns, 120 deg apart around Y, each tilted down and a different colour.
+    struct Sun { const char* name; float yawDeg; glm::vec3 color; };
+    const Sun suns[] = {
+        { "Sun Red",   0.0f,   { 1.0f, 0.3f, 0.3f } },
+        { "Sun Green", 120.0f, { 0.3f, 1.0f, 0.4f } },
+        { "Sun Blue",  240.0f, { 0.4f, 0.5f, 1.0f } },
+    };
+    for (const auto& s : suns){
+        auto sun = m_Scene->CreateDirLightEntity(s.name);
+        auto& t = sun.GetComponent<TransformComponent>();
+        t.Rotation = { glm::radians(-50.0f), glm::radians(s.yawDeg), 0.0f };
+        auto& dl = sun.GetComponent<DirLightComponent>();
+        dl.ambient  = glm::vec3(0.02f);
+        dl.diffuse  = s.color;
+        dl.specular = s.color;
+        dl.castsShadow = true;
+    }
+
+    // Floor (receives the three shadows).
+    {
+        auto floor = m_Scene->CreateEntity("Floor");
+        auto& c = floor.AddComponent<CubeComponent>();
+        c.material.ambient = glm::vec3(0.6f);
+        c.material.diffuse = glm::vec3(0.7f);
+        c.material.specular = glm::vec3(0.1f);
+        c.material.shininess = 8.0f;
+        auto& t = floor.GetComponent<TransformComponent>();
+        t.Translation = { 0.0f, -1.0f, 0.0f };
+        t.Scale = { 26.0f, 0.5f, 26.0f };
+    }
+
+    // Central caster + a couple of shapes, white-ish so the coloured lights tint them.
+    auto makeShape = [&](const char* name, PrimitiveComponent::Type type, glm::vec3 pos, glm::vec3 scale){
+        auto e = m_Scene->CreateEntity(name);
+        auto& p = e.AddComponent<PrimitiveComponent>(type);
+        p.material.ambient = glm::vec3(0.25f);
+        p.material.diffuse = glm::vec3(0.85f);
+        p.material.specular = glm::vec3(0.4f);
+        p.material.shininess = 32.0f;
+        auto& t = e.GetComponent<TransformComponent>();
+        t.Translation = pos;
+        t.Scale = scale;
+    };
+    makeShape("Pillar", PrimitiveComponent::Type::Cylinder, { 0.0f, 1.0f, 0.0f }, { 1.2f, 4.0f, 1.2f });
+    makeShape("Sphere", PrimitiveComponent::Type::Sphere,   { 3.5f, 0.0f, 1.0f }, glm::vec3(1.5f));
+    makeShape("Cone",   PrimitiveComponent::Type::Cone,     { -3.5f, 0.0f, -1.0f }, { 1.6f, 2.6f, 1.6f });
+}
+
 void MainLayer::SculptTerrain(TerrainComponent& terrain, const glm::vec3& terrainPos,
                               const glm::vec3& terrainScale, const glm::vec3& rayOrigin,
                               const glm::vec3& rayDir, float dt) {
@@ -649,6 +711,15 @@ void MainLayer::OnImGuiRender(){
                     m_Scene = CreateRef<Scene>();
                     m_Scene->OnResize(m_ViewportSize.x, m_ViewportSize.y);
                     BuildRobotShowcase();
+                    m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
+                    m_UndoStack.clear();
+                    m_RedoStack.clear();
+                    m_LastSnapshot = SceneSerializer(m_Scene).SerializeToString();
+                }
+                if (ImGui::MenuItem("Load Multi-Shadow Showcase")) {
+                    m_Scene = CreateRef<Scene>();
+                    m_Scene->OnResize(m_ViewportSize.x, m_ViewportSize.y);
+                    BuildMultiShadowShowcase();
                     m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
                     m_UndoStack.clear();
                     m_RedoStack.clear();

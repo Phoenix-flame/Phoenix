@@ -118,6 +118,7 @@ namespace Phoenix{
             out << YAML::Key << "diffuse"  << YAML::Value << dl.diffuse;
             out << YAML::Key << "specular" << YAML::Value << dl.specular;
             out << YAML::Key << "isActive" << YAML::Value << dl.isActive;
+            out << YAML::Key << "castsShadow" << YAML::Value << dl.castsShadow;
             out << YAML::EndMap;
         }
 
@@ -329,6 +330,7 @@ namespace Phoenix{
             dl.diffuse  = ReadVec3(n["diffuse"]);
             dl.specular = ReadVec3(n["specular"]);
             dl.isActive = n["isActive"].as<bool>();
+            if (n["castsShadow"]) dl.castsShadow = n["castsShadow"].as<bool>();
         }
         else if (entity.HasComponent<DirLightComponent>()) entity.RemoveComponent<DirLightComponent>();
 

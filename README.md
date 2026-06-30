@@ -97,10 +97,11 @@ per entity via the `WireframeComponent`.
   attenuation.
 - **Emissive objects also emit light**: any material with `emissiveStrength > 0` is added
   as a gentle coloured point light onto its surroundings (until the 4-light cap).
-- **Shadows**: directional shadow mapping rendered depth-first from the light's POV into a
-  2048² depth texture, sampled with a 5×5 **hardware PCF** kernel (`sampler2DShadow`) for
-  smooth edges. Animated meshes are skinned in the shadow pass too, so a walking character
-  casts a correctly posed shadow.
+- **Shadows**: **multi-light** directional shadow mapping — up to 4 directional lights,
+  each with its own 2048² depth map rendered from its POV and sampled with **hardware PCF**
+  (`sampler2DShadow`) for smooth edges. Toggle per light with *Casts Shadow*. Animated
+  meshes are skinned in the shadow pass too, so a walking character casts a correctly posed
+  shadow. (Point lights light the scene but don't cast shadows yet.)
 
 ### Post-Processing (Bloom / Glow)
 

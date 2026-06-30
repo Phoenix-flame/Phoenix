@@ -51,6 +51,8 @@ private:
     void BuildWaterShowcase();
     // Populate m_Scene with the skeletal-animation (walking robot) showcase.
     void BuildRobotShowcase();
+    // Populate m_Scene with the multi-light shadow showcase (3 coloured suns).
+    void BuildMultiShadowShowcase();
 
     // Terrain sculpting: raycast to the terrain plane and raise/lower/smooth heights.
     void SculptTerrain(TerrainComponent& terrain, const glm::vec3& terrainPos,

@@ -468,22 +468,30 @@ namespace Phoenix{
         {
             editorCamera.SetState(true);
         }
-        glm::vec3 lightDir = glm::vec3(0.0f, -1.0f, 0.0f);
-        DirLightComponent lightComponent;
-        bool dirLightExists = false;
+        // Collect up to MAX_DIR_LIGHTS active directional lights. Each can cast its own
+        // shadow (shadow map i for directional light i). PointLightComponent derives from
+        // DirLightComponent, so exclude point-light entities here.
+        const int MAX_DIR = Renderer::MAX_DIR_LIGHTS;
+        DirLightComponent dirLightComp[Renderer::MAX_DIR_LIGHTS];
+        glm::vec3 dirLightDir[Renderer::MAX_DIR_LIGHTS];
+        int numDirLights = 0;
         auto lightsView = m_Registry.view<TransformComponent,DirLightComponent>();
         for(auto entity:lightsView){
+            if (numDirLights >= MAX_DIR) { break; }
+            if (m_Registry.any_of<PointLightComponent>(entity)) { continue; }
             auto light = lightsView.get<DirLightComponent>(entity);
             if (!light.isActive) { continue; }
             auto transform = lightsView.get<TransformComponent>(entity);
-            lightComponent = light;
+            dirLightComp[numDirLights] = light;
             // A directional light points along its local forward (-Z), rotated by the
             // entity's orientation. The shader uses lightDir = -direction, so the lit
             // faces are the ones facing into the arrow (the arrow shows where the light
             // travels; surfaces facing the source light up).
-            lightDir = glm::normalize(glm::mat3(transform.GetTransform()) * glm::vec3(0.0f, 0.0f, -1.0f));
-            dirLightExists = true;
+            dirLightDir[numDirLights] = glm::normalize(glm::mat3(transform.GetTransform()) * glm::vec3(0.0f, 0.0f, -1.0f));
+            numDirLights++;
         }
+        // Representative direction for the water surface (uses one sun).
+        glm::vec3 lightDir = numDirLights > 0 ? dirLightDir[0] : glm::vec3(0.0f, -1.0f, 0.0f);
 
         glm::vec3 pointLightPos[4] = {glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(0.0f)};
         PointLightComponent pLightComponent[4];
@@ -536,58 +544,68 @@ namespace Phoenix{
                              emissivePrimitives.get<TransformComponent>(entity).Translation);
         }
 
-        // Directional shadow pass: render scene depth from the light's point of view
-        // into the shadow map (must happen before the main lighting pass).
-        if (dirLightExists){
+        // Directional shadow pass: render scene depth from each shadow-casting light into
+        // its own shadow map (all before the main lighting pass). One map per light.
+        if (numDirLights > 0){
             PHX_PROFILE("Shadow Pass");
-            glm::vec3 up = (std::abs(lightDir.y) > 0.99f) ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
-            glm::vec3 center(0.0f);
-            glm::vec3 lightPos = center - lightDir * 20.0f;
-            glm::mat4 lightView = glm::lookAt(lightPos, center, up);
+
+            // Submit every shadow caster once (shared by all lights this frame).
+            auto submitCasters = [&](){
+                auto cubeCasters = m_Registry.view<CubeComponent, TransformComponent>();
+                for (auto entity : cubeCasters)
+                    Renderer::SubmitShadowCube(cubeCasters.get<TransformComponent>(entity).GetTransform());
+
+                auto meshCasters = m_Registry.view<MeshComponent, TransformComponent>();
+                for (auto entity : meshCasters){
+                    auto& mesh = meshCasters.get<MeshComponent>(entity);
+                    if (!mesh.model) { continue; }
+                    glm::mat4 transform = meshCasters.get<TransformComponent>(entity).GetTransform();
+                    auto* anim = m_Registry.try_get<AnimationComponent>(entity);
+                    bool animated = anim && anim->animator && mesh.model->HasAnimations();
+                    for (const auto& subMesh : mesh.model->GetMeshes()){
+                        if (animated)
+                            Renderer::SubmitShadowAnimated(subMesh->GetVertexArray(), transform, anim->animator->GetFinalBoneMatrices());
+                        else
+                            Renderer::SubmitShadow(subMesh->GetVertexArray(), transform);
+                    }
+                }
+                auto terrainCasters = m_Registry.view<TerrainComponent, TransformComponent>();
+                for (auto entity : terrainCasters){
+                    auto& terrain = terrainCasters.get<TerrainComponent>(entity);
+                    if (!terrain.mesh) { continue; } // built lazily in the main pass
+                    Renderer::SubmitShadow(terrain.mesh->GetVertexArray(),
+                        terrainCasters.get<TransformComponent>(entity).GetTransform());
+                }
+                auto primitiveCasters = m_Registry.view<PrimitiveComponent, TransformComponent>();
+                for (auto entity : primitiveCasters){
+                    Ref<Mesh> mesh = GetPrimitiveMesh(primitiveCasters.get<PrimitiveComponent>(entity).type);
+                    if (!mesh) { continue; }
+                    Renderer::SubmitShadow(mesh->GetVertexArray(),
+                        primitiveCasters.get<TransformComponent>(entity).GetTransform());
+                }
+            };
+
             const float orthoHalf = 15.0f;
             glm::mat4 lightProj = glm::ortho(-orthoHalf, orthoHalf, -orthoHalf, orthoHalf, 0.1f, 50.0f);
-            glm::mat4 lightSpace = lightProj * lightView;
+            for (int i = 0; i < numDirLights; i++){
+                glm::vec3 dir = dirLightDir[i];
+                glm::vec3 up = (std::abs(dir.y) > 0.99f) ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+                glm::vec3 center(0.0f);
+                glm::mat4 lightView = glm::lookAt(center - dir * 20.0f, center, up);
+                glm::mat4 lightSpace = lightProj * lightView;
 
-            Renderer::BeginShadowPass(lightSpace);
-            auto cubeCasters = m_Registry.view<CubeComponent, TransformComponent>();
-            for (auto entity : cubeCasters){
-                Renderer::SubmitShadowCube(cubeCasters.get<TransformComponent>(entity).GetTransform());
+                // A non-casting light still gets a (cleared = fully lit) map so the 1:1
+                // light->map mapping holds and it contributes no shadow.
+                Renderer::BeginShadowPass(i, lightSpace);
+                if (dirLightComp[i].castsShadow) { submitCasters(); }
+                Renderer::EndShadowPass();
             }
-            auto meshCasters = m_Registry.view<MeshComponent, TransformComponent>();
-            for (auto entity : meshCasters){
-                auto& mesh = meshCasters.get<MeshComponent>(entity);
-                if (!mesh.model) { continue; }
-                glm::mat4 transform = meshCasters.get<TransformComponent>(entity).GetTransform();
-                auto* anim = m_Registry.try_get<AnimationComponent>(entity);
-                bool animated = anim && anim->animator && mesh.model->HasAnimations();
-                for (const auto& subMesh : mesh.model->GetMeshes()){
-                    if (animated)
-                        Renderer::SubmitShadowAnimated(subMesh->GetVertexArray(), transform, anim->animator->GetFinalBoneMatrices());
-                    else
-                        Renderer::SubmitShadow(subMesh->GetVertexArray(), transform);
-                }
-            }
-            auto terrainCasters = m_Registry.view<TerrainComponent, TransformComponent>();
-            for (auto entity : terrainCasters){
-                auto& terrain = terrainCasters.get<TerrainComponent>(entity);
-                if (!terrain.mesh) { continue; } // built lazily in the main pass
-                Renderer::SubmitShadow(terrain.mesh->GetVertexArray(),
-                    terrainCasters.get<TransformComponent>(entity).GetTransform());
-            }
-            auto primitiveCasters = m_Registry.view<PrimitiveComponent, TransformComponent>();
-            for (auto entity : primitiveCasters){
-                Ref<Mesh> mesh = GetPrimitiveMesh(primitiveCasters.get<PrimitiveComponent>(entity).type);
-                if (!mesh) { continue; }
-                Renderer::SubmitShadow(mesh->GetVertexArray(),
-                    primitiveCasters.get<TransformComponent>(entity).GetTransform());
-            }
-            Renderer::EndShadowPass();
         }
 
         {
             PHX_PROFILE("Scene Components");
             Renderer::BeginScene(sceneCameraProjection, sceneCameraView, cameraPos);
-            Renderer::SetLights(m_AmbientColor, dirLightExists, lightComponent, lightDir, pLightComponent, pointLightPos, numPointLight);
+            Renderer::SetLights(m_AmbientColor, dirLightComp, dirLightDir, numDirLights, pLightComponent, pointLightPos, numPointLight);
             auto view = m_Registry.view<CubeComponent, TransformComponent>();
             for (auto entity : view) {
                 auto cube = view.get<CubeComponent>(entity);

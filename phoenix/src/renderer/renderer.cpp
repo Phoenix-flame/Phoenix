@@ -2,6 +2,7 @@
 #include <Phoenix/renderer/renderer_command.h>
 #include <Phoenix/core/base.h>
 #include <cmath>
+#include <string>
 
 namespace Phoenix{
     Scope<Renderer::SceneData> Renderer::s_SceneData = CreateScope<Renderer::SceneData>();
@@ -11,10 +12,11 @@ namespace Phoenix{
     Ref<Shader> Renderer::s_OutlineShader;
     Ref<Shader> Renderer::s_WaterShader;
 
-    uint32_t Renderer::s_ShadowFBO = 0;
-    uint32_t Renderer::s_ShadowDepthTex = 0;
+    uint32_t Renderer::s_ShadowFBO[Renderer::MAX_DIR_LIGHTS] = { 0 };
+    uint32_t Renderer::s_ShadowDepthTex[Renderer::MAX_DIR_LIGHTS] = { 0 };
     Ref<Shader> Renderer::s_ShadowShader;
-    glm::mat4 Renderer::s_LightSpaceMatrix = glm::mat4(1.0f);
+    glm::mat4 Renderer::s_LightSpaceMatrix[Renderer::MAX_DIR_LIGHTS] = { glm::mat4(1.0f) };
+    int Renderer::s_NumShadows = 0;
     bool Renderer::s_ShadowsEnabled = false;
     int Renderer::s_PrevFBO = 0;
     int Renderer::s_PrevViewport[4] = { 0, 0, 0, 0 };
@@ -30,38 +32,42 @@ namespace Phoenix{
         s_WaterShader = Shader::Create("assets/shaders/water.glsl");
         s_ShadowShader = Shader::Create("assets/shaders/shadow_depth.glsl");
 
-        // Depth-only framebuffer for the directional shadow map.
-        glGenTextures(1, &s_ShadowDepthTex);
-        glBindTexture(GL_TEXTURE_2D, s_ShadowDepthTex);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
-        // LINEAR + compare mode = hardware PCF: each sample is a bilinearly filtered
-        // 0..1 occlusion test, which (with the shader's kernel) gives smooth, unbanded
-        // soft shadows.
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-        float border[] = { 1.0f, 1.0f, 1.0f, 1.0f }; // outside the map = max depth = lit
-        glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border);
+        // One depth-only framebuffer per directional shadow map.
+        for (int i = 0; i < MAX_DIR_LIGHTS; i++){
+            glGenTextures(1, &s_ShadowDepthTex[i]);
+            glBindTexture(GL_TEXTURE_2D, s_ShadowDepthTex[i]);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+            // LINEAR + compare mode = hardware PCF: each sample is a bilinearly filtered
+            // 0..1 occlusion test, which (with the shader's kernel) gives smooth, unbanded
+            // soft shadows.
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+            float border[] = { 1.0f, 1.0f, 1.0f, 1.0f }; // outside the map = max depth = lit
+            glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border);
 
-        glGenFramebuffers(1, &s_ShadowFBO);
-        glBindFramebuffer(GL_FRAMEBUFFER, s_ShadowFBO);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, s_ShadowDepthTex, 0);
-        glDrawBuffer(GL_NONE);
-        glReadBuffer(GL_NONE);
+            glGenFramebuffers(1, &s_ShadowFBO[i]);
+            glBindFramebuffer(GL_FRAMEBUFFER, s_ShadowFBO[i]);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, s_ShadowDepthTex[i], 0);
+            glDrawBuffer(GL_NONE);
+            glReadBuffer(GL_NONE);
+        }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 
-    void Renderer::BeginShadowPass(const glm::mat4& lightSpaceMatrix){
+    void Renderer::BeginShadowPass(int index, const glm::mat4& lightSpaceMatrix){
+        if (index < 0 || index >= MAX_DIR_LIGHTS) { return; }
         glGetIntegerv(GL_FRAMEBUFFER_BINDING, &s_PrevFBO);
         glGetIntegerv(GL_VIEWPORT, s_PrevViewport);
 
-        s_LightSpaceMatrix = lightSpaceMatrix;
+        s_LightSpaceMatrix[index] = lightSpaceMatrix;
         s_ShadowsEnabled = true;
+        if (index + 1 > s_NumShadows) { s_NumShadows = index + 1; }
 
-        glBindFramebuffer(GL_FRAMEBUFFER, s_ShadowFBO);
+        glBindFramebuffer(GL_FRAMEBUFFER, s_ShadowFBO[index]);
         glViewport(0, 0, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
         glClear(GL_DEPTH_BUFFER_BIT);
 
@@ -115,18 +121,24 @@ namespace Phoenix{
         shader->SetMat4("projection", projection);
         shader->SetFloat3("cameraPos", cameraPos);
 
-        // Shadow map (bound to texture unit 1; the diffuse map uses unit 0).
-        shader->SetMat4("u_LightSpaceMatrix", s_LightSpaceMatrix);
+        // Shadow maps: one per directional light, bound to texture units 1..MAX_DIR_LIGHTS
+        // (the diffuse map uses unit 0). All maps are bound every frame so the samplers
+        // are always valid; u_NumShadows controls how many are actually sampled.
         shader->SetInt("u_ShadowsEnabled", s_ShadowsEnabled ? 1 : 0);
-        shader->SetInt("u_ShadowMap", 1);
-        glBindTextureUnit(1, s_ShadowDepthTex);
+        shader->SetInt("u_NumShadows", s_NumShadows);
+        for (int i = 0; i < MAX_DIR_LIGHTS; i++){
+            std::string idx = "[" + std::to_string(i) + "]";
+            shader->SetMat4("u_LightSpaceMatrices" + idx, s_LightSpaceMatrix[i]);
+            shader->SetInt("u_ShadowMaps" + idx, 1 + i);
+            glBindTextureUnit(1 + i, s_ShadowDepthTex[i]);
+        }
     }
 
     void Renderer::SetLights(
             const glm::vec3& ambient,
-            bool dirLightExists,
-            const DirLightComponent& dirLight,
-            const glm::vec3& dirLightDir,
+            const DirLightComponent dirLights[],
+            const glm::vec3 dirLightDirs[],
+            int numDirLights,
             PointLightComponent pointLight[],
             const glm::vec3 pointLightPos[],
             int numOfPointLight ){
@@ -135,18 +147,22 @@ namespace Phoenix{
 
         shader->SetFloat3("u_Ambient", ambient);
 
-        if (dirLightExists)
-        {
-            shader->SetFloat3("dirLight.ambient", dirLight.ambient);
-            shader->SetFloat3("dirLight.diffuse", dirLight.diffuse);
-            shader->SetFloat3("dirLight.specular", dirLight.specular);
-            shader->SetFloat3("dirLight.direction", dirLightDir);
-        }
-        else {
-            shader->SetFloat3("dirLight.ambient", glm::vec3(0.0, 0.0, 0.0));
-            shader->SetFloat3("dirLight.diffuse", glm::vec3(0.0, 0.0, 0.0));
-            shader->SetFloat3("dirLight.specular", glm::vec3(0.0, 0.0, 0.0));
-            shader->SetFloat3("dirLight.direction", glm::vec3(0.0, 0.0, 0.0));
+        if (numDirLights > MAX_DIR_LIGHTS) { numDirLights = MAX_DIR_LIGHTS; }
+        shader->SetInt("u_NumDirLights", numDirLights);
+        for (int i = 0; i < MAX_DIR_LIGHTS; i++){
+            std::string base = "dirLights[" + std::to_string(i) + "].";
+            if (i < numDirLights){
+                shader->SetFloat3(base + "ambient", dirLights[i].ambient);
+                shader->SetFloat3(base + "diffuse", dirLights[i].diffuse);
+                shader->SetFloat3(base + "specular", dirLights[i].specular);
+                shader->SetFloat3(base + "direction", dirLightDirs[i]);
+            }
+            else{
+                shader->SetFloat3(base + "ambient", glm::vec3(0.0f));
+                shader->SetFloat3(base + "diffuse", glm::vec3(0.0f));
+                shader->SetFloat3(base + "specular", glm::vec3(0.0f));
+                shader->SetFloat3(base + "direction", glm::vec3(0.0f, -1.0f, 0.0f));
+            }
         }
 
         for (int i = 0 ; i < 4 ; i ++)
@@ -360,6 +376,7 @@ namespace Phoenix{
         s_RenderLightCube->m_Shader->Unbind();
         // Reset for next frame; if no shadow pass runs, shadows stay disabled.
         s_ShadowsEnabled = false;
+        s_NumShadows = 0;
 	}
 
 }

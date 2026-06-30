@@ -158,12 +158,17 @@ namespace Phoenix{
 		static void BeginScene(const glm::mat4& projection, const glm::mat4& view, const glm::vec3& cameraPos);
 		static void EndScene();
 
+		// Up to this many directional lights, each with its own shadow map.
+		static const int MAX_DIR_LIGHTS = 4;
+
 		// Upload the lighting environment once per scene, before any Submit calls.
+		// Pass arrays of directional lights (with their world-space directions) and point
+		// lights. Directional light i is shadowed by shadow map i (see BeginShadowPass).
 		static void SetLights(
 			const glm::vec3& ambient,
-			bool dirLightExists,
-			const DirLightComponent& dirLight,
-			const glm::vec3& dirLightDir,
+			const DirLightComponent dirLights[],
+			const glm::vec3 dirLightDirs[],
+			int numDirLights,
 			PointLightComponent pointLight[],
 			const glm::vec3 pointLightPos[],
 			int numOfPointLight);
@@ -184,10 +189,11 @@ namespace Phoenix{
 		// after drawing the affected objects.
 		static void SetWireframe(bool enabled);
 
-		// Directional shadow map. Call BeginShadowPass, submit all shadow casters,
-		// then EndShadowPass BEFORE BeginScene; the lighting pass then samples the
-		// resulting depth map. The pass saves/restores the bound framebuffer+viewport.
-		static void BeginShadowPass(const glm::mat4& lightSpaceMatrix);
+		// Directional shadow maps (one per directional light, up to MAX_DIR_LIGHTS). For
+		// each shadow-casting light call BeginShadowPass(index, lightSpace), submit all
+		// casters, then EndShadowPass — all BEFORE BeginScene. The lighting pass samples
+		// shadow map i for directional light i. Each pass saves/restores the FBO+viewport.
+		static void BeginShadowPass(int index, const glm::mat4& lightSpaceMatrix);
 		static void SubmitShadow(const Ref<VertexArray>& vertexArray, const glm::mat4& transform);
 		static void SubmitShadowAnimated(const Ref<VertexArray>& vertexArray, const glm::mat4& transform,
 			const std::vector<glm::mat4>& boneMatrices);
@@ -229,10 +235,13 @@ namespace Phoenix{
         static Ref<Shader> s_OutlineShader;
         static Ref<Shader> s_WaterShader;
 
-        // Directional shadow map state.
-        static uint32_t s_ShadowFBO, s_ShadowDepthTex;
+        // Directional shadow maps: one depth FBO/texture + light-space matrix per
+        // directional light. s_NumShadows = how many are valid this frame.
+        static uint32_t s_ShadowFBO[MAX_DIR_LIGHTS];
+        static uint32_t s_ShadowDepthTex[MAX_DIR_LIGHTS];
         static Ref<Shader> s_ShadowShader;
-        static glm::mat4 s_LightSpaceMatrix;
+        static glm::mat4 s_LightSpaceMatrix[MAX_DIR_LIGHTS];
+        static int s_NumShadows;
         static bool s_ShadowsEnabled;
         static int s_PrevFBO;
         static int s_PrevViewport[4];
