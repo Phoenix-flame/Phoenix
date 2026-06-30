@@ -270,7 +270,8 @@ void MainLayer::BuildRobotShowcase() {
         follow.distance = 6.0f;
         follow.height = 3.0f;
         follow.lookHeight = 2.0f;
-        follow.followYaw = true; // camera stays behind the robot as it turns
+        follow.followYaw = true;     // camera stays behind the robot as it turns
+        follow.modelForwardZ = true; // Mixamo robot mesh faces +Z
     }
 
     // Sun for clear shadows beneath the walker.
@@ -312,11 +313,14 @@ void MainLayer::BuildRobotShowcase() {
         mesh.material.diffuse  = glm::vec3(0.7f, 0.7f, 0.75f);
         mesh.material.specular = glm::vec3(0.3f);
         mesh.material.shininess = 24.0f;
-        auto& anim = robot.AddComponent<AnimationComponent>(); // clip 0 = robot.fbx's walk
+        auto& anim = robot.AddComponent<AnimationComponent>(); // clip 0 = robot.fbx's embedded clip
         anim.crossfade = 0.18f;
-        // Extra clips merged onto the rig if these files exist (named by filename).
+        // Named clips merged onto the rig if the files exist (clip name = filename).
         // Download them from Mixamo for the SAME character (see assets/models/README.txt).
-        anim.extraClips = { "assets/models/idle.fbx", "assets/models/run.fbx", "assets/models/jump.fbx" };
+        // walk.fbx is optional (robot.fbx already has a walk = clip 0); missing files are
+        // skipped and the controller falls back to clip 0.
+        anim.extraClips = { "assets/models/walk.fbx", "assets/models/idle.fbx",
+                            "assets/models/run.fbx",  "assets/models/jump.fbx" };
 
         auto& t = robot.GetComponent<TransformComponent>();
         t.Translation = { 0.0f, -0.75f, 0.0f };
@@ -324,18 +328,23 @@ void MainLayer::BuildRobotShowcase() {
 
         // Keyboard controller (runs while playing). Press Run, click the viewport, then:
         //   Up/Down = walk fwd/back, Left/Right = turn, Shift = run, Space = jump.
-        // Uses named clips (idle/run/jump) when present and gracefully falls back to the
-        // built-in walk (clip 0) otherwise -- so it works before you add any extra files.
+        // Crossfades between the idle / walk / run / jump clips when present, and falls
+        // back to clip 0 (the embedded walk) for any clip you haven't added yet.
         auto& script = robot.AddComponent<LuaScriptComponent>();
         script.source =
             "local WALK = 0           -- robot.fbx's embedded walk is clip 0\n"
             "local turn = 2.0         -- rad/sec\n"
-            "local walk = 2.5         -- units/sec\n"
+            "local speed = 2.5        -- units/sec\n"
+            "local FWD = -1.0         -- this mesh faces +Z; -1 makes Up walk that way\n"
             "local groundY = -0.75\n"
             "local vy = 0.0\n"
             "local onGround = true\n"
             "local state = ''\n"
             "\n"
+            "-- use a named clip when it was loaded, else a fallback clip\n"
+            "local function clipFor(name, fallback)\n"
+            "    if HasAnimation(name) then return name else return fallback end\n"
+            "end\n"
             "local function setState(s, clip)\n"
             "    if state ~= s then state = s; CrossFade(clip, 0.18); ResumeAnimation() end\n"
             "end\n"
@@ -346,30 +355,33 @@ void MainLayer::BuildRobotShowcase() {
             "    local run  = IsKeyDown(Key.LeftShift)\n"
             "    local fwd  = IsKeyDown(Key.Up)\n"
             "    local back = IsKeyDown(Key.Down)\n"
-            "    if fwd  then MoveForward( walk*(run and 2.0 or 1.0)*dt) end\n"
-            "    if back then MoveForward(-walk*dt) end\n"
+            "    if fwd  then MoveForward( FWD * speed*(run and 2.0 or 1.0)*dt) end\n"
+            "    if back then MoveForward(-FWD * speed*dt) end\n"
             "\n"
             "    -- jump (simple script-side gravity; no physics body)\n"
             "    if IsKeyPressed(Key.Space) and onGround then\n"
             "        vy = 6.0; onGround = false\n"
-            "        if HasAnimation('jump') then setState('jump', 'jump') end\n"
+            "        setState('jump', clipFor('jump', clipFor('walk', WALK)))\n"
             "    end\n"
             "    if not onGround then\n"
             "        local x, y, z = GetTranslation()\n"
             "        vy = vy - 12.0 * dt; y = y + vy * dt\n"
             "        if y <= groundY then y = groundY; vy = 0.0; onGround = true end\n"
             "        SetTranslation(x, y, z)\n"
+            "        return -- hold the jump pose until we land\n"
             "    end\n"
             "\n"
-            "    -- locomotion state (only when grounded)\n"
-            "    if onGround then\n"
-            "        if fwd or back then\n"
-            "            if run and HasAnimation('run') then setState('run', 'run')\n"
-            "            else setState('walk', WALK); SetAnimationSpeed(run and 2.0 or 1.0) end\n"
+            "    -- grounded locomotion: idle / walk / run\n"
+            "    if fwd or back then\n"
+            "        if run then\n"
+            "            setState('run', clipFor('run', clipFor('walk', WALK)))\n"
+            "            SetAnimationSpeed(HasAnimation('run') and 1.0 or 2.0)\n"
             "        else\n"
-            "            if HasAnimation('idle') then setState('idle', 'idle')\n"
-            "            else state = 'idle'; PauseAnimation(); SetAnimationTime(0.0) end\n"
+            "            setState('walk', clipFor('walk', WALK)); SetAnimationSpeed(1.0)\n"
             "        end\n"
+            "    else\n"
+            "        if HasAnimation('idle') then setState('idle', 'idle')\n"
+            "        else state = 'idle'; PauseAnimation(); SetAnimationTime(0.0) end\n"
             "    end\n"
             "end\n";
     }

@@ -34,6 +34,9 @@ namespace Phoenix{
         float height = 2.5f;       // camera height above the target's origin
         float lookHeight = 1.5f;   // height of the look-at point above the target
         bool  followYaw = true;    // stay behind the target's facing
+        // Engine forward is local -Z. Some rigs (e.g. many Mixamo characters) face +Z;
+        // set this so the camera sits behind the model's actual back, not its front.
+        bool  modelForwardZ = false;
         CameraFollowComponent() = default;
         CameraFollowComponent(const CameraFollowComponent&) = default;
     };

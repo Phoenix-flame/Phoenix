@@ -92,6 +92,7 @@ namespace Phoenix{
             out << YAML::Key << "Height" << YAML::Value << f.height;
             out << YAML::Key << "LookHeight" << YAML::Value << f.lookHeight;
             out << YAML::Key << "FollowYaw" << YAML::Value << f.followYaw;
+            out << YAML::Key << "ModelForwardZ" << YAML::Value << f.modelForwardZ;
             out << YAML::EndMap;
         }
 
@@ -307,6 +308,7 @@ namespace Phoenix{
             f.height = n["Height"].as<float>();
             f.lookHeight = n["LookHeight"].as<float>();
             f.followYaw = n["FollowYaw"].as<bool>();
+            if (n["ModelForwardZ"]) f.modelForwardZ = n["ModelForwardZ"].as<bool>();
         }
         else if (entity.HasComponent<CameraFollowComponent>()) entity.RemoveComponent<CameraFollowComponent>();
 

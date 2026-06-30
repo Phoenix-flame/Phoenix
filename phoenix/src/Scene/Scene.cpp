@@ -452,7 +452,9 @@ namespace Phoenix{
                     if (targetT){
                         float yaw = follow.followYaw ? targetT->Rotation.y : 0.0f;
                         // The target faces local -Z = (-sin,0,-cos); "behind" is the opposite.
+                        // For a +Z-facing model, behind is the other way.
                         glm::vec3 behind(std::sin(yaw), 0.0f, std::cos(yaw));
+                        if (follow.modelForwardZ) { behind = -behind; }
                         camPos = targetT->Translation + behind * follow.distance + glm::vec3(0.0f, follow.height, 0.0f);
                         glm::vec3 lookAt = targetT->Translation + glm::vec3(0.0f, follow.lookHeight, 0.0f);
                         camView = glm::lookAt(camPos, lookAt, glm::vec3(0.0f, 1.0f, 0.0f));

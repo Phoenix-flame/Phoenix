@@ -942,6 +942,7 @@ namespace Phoenix{
 			ImGui::DragFloat("Height", &component.height, 0.1f, -10.0f, 30.0f);
 			ImGui::DragFloat("Look Height", &component.lookHeight, 0.1f, -10.0f, 30.0f);
 			ImGui::Checkbox("Follow Yaw", &component.followYaw);
+			ImGui::Checkbox("Model Faces +Z", &component.modelForwardZ);
 			ImGui::TextDisabled("Set the camera Primary to view through it.");
 		});
 

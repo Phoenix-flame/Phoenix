@@ -36,6 +36,7 @@ run, Space to jump). With only robot.fbx it walks/idles using the single walk cl
 To get distinct turn/walk/run/jump animations, add these clips for the SAME
 character and drop them in THIS folder with these EXACT names:
 
+    walk.fbx     <- a "Walking" animation (optional; robot.fbx already has a walk)
     idle.fbx     <- a "Idle" / "Breathing Idle" animation
     run.fbx      <- a "Running" animation
     jump.fbx     <- a "Jump" animation
@@ -43,7 +44,7 @@ character and drop them in THIS folder with these EXACT names:
 How to download each from Mixamo:
   1. mixamo.com -> pick the SAME character you used for robot.fbx (so the
      skeleton/bone names match -- this is required for the clips to retarget).
-  2. Animations tab -> search "Idle" (then "Running", then "Jump").
+  2. Animations tab -> search "Walking" (then "Idle", "Running", "Jump").
   3. DOWNLOAD as FBX Binary. Skin = "Without Skin" is fine and smaller (the
      skeleton + animation are still included); "With Skin" also works.
      Use "In Place" for run/idle so they don't drift.
