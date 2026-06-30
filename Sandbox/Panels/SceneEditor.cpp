@@ -395,6 +395,78 @@ namespace Phoenix{
         ImGui::End();
     }
 
+    // The editable Material of an entity (cube / primitive / mesh / terrain), if any.
+    static Material* EntityMaterial(Entity e){
+        if (!e) { return nullptr; }
+        if (e.HasComponent<CubeComponent>())      { return &e.GetComponent<CubeComponent>().material; }
+        if (e.HasComponent<PrimitiveComponent>()) { return &e.GetComponent<PrimitiveComponent>().material; }
+        if (e.HasComponent<MeshComponent>())      { return &e.GetComponent<MeshComponent>().material; }
+        if (e.HasComponent<TerrainComponent>())   { return &e.GetComponent<TerrainComponent>().material; }
+        return nullptr;
+    }
+
+    void SceneEditor::TexturePanel(){
+        if (!m_ShowTextures) { return; }
+        ImGui::Begin("Textures", &m_ShowTextures);
+
+        // Load a texture file into the palette (path relative to the executable, e.g.
+        // "assets/textures/brick.png"). Texture2D caches by path.
+        ImGui::SetNextItemWidth(-90.0f);
+        ImGui::InputText("##texpath", m_TextureLoadBuf, sizeof(m_TextureLoadBuf));
+        ImGui::SameLine();
+        if (ImGui::Button("Load", ImVec2(80, 0))){
+            std::string p = m_TextureLoadBuf;
+            if (!p.empty() && std::find(m_LoadedTextures.begin(), m_LoadedTextures.end(), p) == m_LoadedTextures.end()){
+                Texture2D::Create(p); // triggers load + cache (and logs on failure)
+                m_LoadedTextures.push_back(p);
+            }
+        }
+
+        // Selected object's current maps (auto-add their paths to the palette so they show).
+        Material* mat = EntityMaterial(m_SelectedEntity);
+        ImGui::Separator();
+        if (mat){
+            for (const std::string& pth : { mat->diffusePath, mat->normalPath })
+                if (!pth.empty() && std::find(m_LoadedTextures.begin(), m_LoadedTextures.end(), pth) == m_LoadedTextures.end())
+                    m_LoadedTextures.push_back(pth);
+
+            ImGui::Text("Selected: %s", m_SelectedEntity.GetComponent<TagComponent>().Tag.c_str());
+            ImGui::Text("Diffuse: %s", mat->diffusePath.empty() ? "(none)" : mat->diffusePath.c_str());
+            ImGui::SameLine(); if (ImGui::SmallButton("Clear##diff")) { mat->diffusePath.clear(); }
+            ImGui::Text("Normal:  %s", mat->normalPath.empty() ? "(none)" : mat->normalPath.c_str());
+            ImGui::SameLine(); if (ImGui::SmallButton("Clear##norm")) { mat->normalPath.clear(); }
+        }
+        else{
+            ImGui::TextDisabled("Select an object with a material to assign textures.");
+        }
+
+        ImGui::Separator();
+        ImGui::TextDisabled("Palette  (Diffuse / Normal assigns to the selected object)");
+
+        for (size_t i = 0; i < m_LoadedTextures.size(); i++){
+            ImGui::PushID((int)i);
+            const std::string& path = m_LoadedTextures[i];
+            Ref<Texture2D> tex = Texture2D::Create(path); // cached
+            // Thumbnail (flip V so it shows upright).
+            if (tex){
+                ImGui::Image((ImTextureID)(intptr_t)tex->GetRendererID(), ImVec2(56, 56), ImVec2(0, 1), ImVec2(1, 0));
+                ImGui::SameLine();
+            }
+            ImGui::BeginGroup();
+            ImGui::TextWrapped("%s", path.c_str());
+            if (ImGui::SmallButton("Diffuse") && mat) { mat->diffusePath = path; }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Normal") && mat)  { mat->normalPath = path; }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Remove")){ m_LoadedTextures.erase(m_LoadedTextures.begin() + i); ImGui::EndGroup(); ImGui::PopID(); break; }
+            ImGui::EndGroup();
+            ImGui::Separator();
+            ImGui::PopID();
+        }
+
+        ImGui::End();
+    }
+
     void SceneEditor::EntityNode(Entity entity){
         auto& tag = entity.GetComponent<TagComponent>().Tag;
 		

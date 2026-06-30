@@ -158,8 +158,10 @@ namespace Phoenix{
 		static void BeginScene(const glm::mat4& projection, const glm::mat4& view, const glm::vec3& cameraPos);
 		static void EndScene();
 
-		// Up to this many directional lights, each with its own shadow map.
-		static const int MAX_DIR_LIGHTS = 4;
+		// Up to this many directional lights, each with its own shadow map. Must match
+		// NR_DIR_LIGHTS / NR_SHADOWS in lighting.glsl. Shadow maps bind to units 1..N,
+		// so the normal map uses unit 1 + MAX_DIR_LIGHTS.
+		static const int MAX_DIR_LIGHTS = 8;
 
 		// Upload the lighting environment once per scene, before any Submit calls.
 		// Pass arrays of directional lights (with their world-space directions) and point
@@ -235,10 +237,12 @@ namespace Phoenix{
         static Ref<Shader> s_OutlineShader;
         static Ref<Shader> s_WaterShader;
 
-        // Directional shadow maps: one depth FBO/texture + light-space matrix per
-        // directional light. s_NumShadows = how many are valid this frame.
-        static uint32_t s_ShadowFBO[MAX_DIR_LIGHTS];
-        static uint32_t s_ShadowDepthTex[MAX_DIR_LIGHTS];
+        // Directional shadow maps packed into ONE depth-texture ATLAS (a grid of tiles,
+        // one tile per light). The fragment shader picks a light's tile by UV-offset math
+        // on a plain sampler2DShadow — avoiding sampler arrays / array-samplers, which
+        // this GLSL-ES-on-desktop driver won't dynamically index. s_NumShadows = tiles used.
+        static uint32_t s_ShadowFBO;
+        static uint32_t s_ShadowAtlasTex;
         static Ref<Shader> s_ShadowShader;
         static glm::mat4 s_LightSpaceMatrix[MAX_DIR_LIGHTS];
         static int s_NumShadows;

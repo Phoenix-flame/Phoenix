@@ -51,6 +51,12 @@ namespace Phoenix{
         // Environment (sky/ground) reflection blended in by this amount (0 = none,
         // 1 = mirror). Reflects a procedural environment, not the scene itself.
         float reflectivity = 0.0f;
+        // Optional textures loaded from disk (assigned via the Textures panel). The
+        // diffuse map overrides the flat diffuse colour / any mesh-embedded texture; the
+        // normal map adds tangent-space surface detail. Stored by path (serialized); the
+        // GL texture is resolved/cached from the path at draw time.
+        std::string diffusePath;
+        std::string normalPath;
     };
 
     struct MeshComponent{

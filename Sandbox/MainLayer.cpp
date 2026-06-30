@@ -758,6 +758,7 @@ void MainLayer::OnImGuiRender(){
                 if (m_SceneEditor){
                     ImGui::MenuItem("Timeline", nullptr, &m_SceneEditor->ShowTimeline());
                     ImGui::MenuItem("Script Editor", nullptr, &m_SceneEditor->ShowScriptEditor());
+                    ImGui::MenuItem("Textures", nullptr, &m_SceneEditor->ShowTextures());
                 }
                 ImGui::EndMenu();
             }

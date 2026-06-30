@@ -3,6 +3,8 @@
 #include <Phoenix/Scene/Scene.h>
 #include <Phoenix/Scene/Entity.h>
 #include <glm/glm.hpp>
+#include <vector>
+#include <string>
 
 namespace Phoenix{
     class SceneEditor{
@@ -19,17 +21,20 @@ namespace Phoenix{
             EntityPanel();
             ScriptEditorPanel();
             TimelinePanel();
+            TexturePanel();
         }
 
         void ScenePanel();
         void EntityPanel();
         void ScriptEditorPanel();
         void TimelinePanel();
+        void TexturePanel();
         void EntityNode(Entity entity);
         Entity& GetSelectedEntity() { return m_SelectedEntity; }
         void SetSelectedEntity(Entity entity) { m_SelectedEntity = entity; }
         bool& ShowTimeline() { return m_ShowTimeline; }
         bool& ShowScriptEditor() { return m_ShowScriptEditor; }
+        bool& ShowTextures() { return m_ShowTextures; }
 
     private:
         void DrawComponents(Entity entity);
@@ -38,6 +43,11 @@ namespace Phoenix{
         Entity m_SelectedEntity;
         bool m_ShowScriptEditor = true;
         bool m_ShowTimeline = true;
+        bool m_ShowTextures = true;
+
+        // Texture palette: paths loaded via the Textures panel, assignable to materials.
+        std::vector<std::string> m_LoadedTextures;
+        char m_TextureLoadBuf[256] = "assets/";
     };
 }
 

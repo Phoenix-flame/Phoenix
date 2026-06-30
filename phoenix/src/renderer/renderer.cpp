@@ -12,8 +12,8 @@ namespace Phoenix{
     Ref<Shader> Renderer::s_OutlineShader;
     Ref<Shader> Renderer::s_WaterShader;
 
-    uint32_t Renderer::s_ShadowFBO[Renderer::MAX_DIR_LIGHTS] = { 0 };
-    uint32_t Renderer::s_ShadowDepthTex[Renderer::MAX_DIR_LIGHTS] = { 0 };
+    uint32_t Renderer::s_ShadowFBO = 0;
+    uint32_t Renderer::s_ShadowAtlasTex = 0;
     Ref<Shader> Renderer::s_ShadowShader;
     glm::mat4 Renderer::s_LightSpaceMatrix[Renderer::MAX_DIR_LIGHTS] = { glm::mat4(1.0f) };
     int Renderer::s_NumShadows = 0;
@@ -21,7 +21,14 @@ namespace Phoenix{
     int Renderer::s_PrevFBO = 0;
     int Renderer::s_PrevViewport[4] = { 0, 0, 0, 0 };
 
-    static const uint32_t SHADOW_MAP_SIZE = 2048;
+    // Shadow atlas: a SHADOW_COLS x SHADOW_ROWS grid of SHADOW_TILE-sized tiles, one per
+    // directional light. COLS*ROWS must be >= MAX_DIR_LIGHTS and the grid must match the
+    // SHADOW_COLS/SHADOW_ROWS #defines in lighting.glsl.
+    static const uint32_t SHADOW_TILE = 1024;
+    static const int      SHADOW_COLS = 4;
+    static const int      SHADOW_ROWS = 2; // 4x2 = 8 tiles = MAX_DIR_LIGHTS
+    static const uint32_t SHADOW_ATLAS_W = SHADOW_TILE * SHADOW_COLS;
+    static const uint32_t SHADOW_ATLAS_H = SHADOW_TILE * SHADOW_ROWS;
 
 	void Renderer::Init(){
 		RenderCommand::Init();
@@ -32,29 +39,26 @@ namespace Phoenix{
         s_WaterShader = Shader::Create("assets/shaders/water.glsl");
         s_ShadowShader = Shader::Create("assets/shaders/shadow_depth.glsl");
 
-        // One depth-only framebuffer per directional shadow map.
-        for (int i = 0; i < MAX_DIR_LIGHTS; i++){
-            glGenTextures(1, &s_ShadowDepthTex[i]);
-            glBindTexture(GL_TEXTURE_2D, s_ShadowDepthTex[i]);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
-            // LINEAR + compare mode = hardware PCF: each sample is a bilinearly filtered
-            // 0..1 occlusion test, which (with the shader's kernel) gives smooth, unbanded
-            // soft shadows.
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-            float border[] = { 1.0f, 1.0f, 1.0f, 1.0f }; // outside the map = max depth = lit
-            glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border);
+        // One big depth-texture atlas; each light renders into its own tile (set by the
+        // viewport in BeginShadowPass). LINEAR + compare mode = hardware PCF. Sampled as a
+        // plain sampler2DShadow with per-tile UV math (portable; no array samplers).
+        glGenTextures(1, &s_ShadowAtlasTex);
+        glBindTexture(GL_TEXTURE_2D, s_ShadowAtlasTex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, SHADOW_ATLAS_W, SHADOW_ATLAS_H, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+        float border[] = { 1.0f, 1.0f, 1.0f, 1.0f }; // outside the map = max depth = lit
+        glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border);
 
-            glGenFramebuffers(1, &s_ShadowFBO[i]);
-            glBindFramebuffer(GL_FRAMEBUFFER, s_ShadowFBO[i]);
-            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, s_ShadowDepthTex[i], 0);
-            glDrawBuffer(GL_NONE);
-            glReadBuffer(GL_NONE);
-        }
+        glGenFramebuffers(1, &s_ShadowFBO);
+        glBindFramebuffer(GL_FRAMEBUFFER, s_ShadowFBO);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, s_ShadowAtlasTex, 0);
+        glDrawBuffer(GL_NONE);
+        glReadBuffer(GL_NONE);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 
@@ -67,9 +71,16 @@ namespace Phoenix{
         s_ShadowsEnabled = true;
         if (index + 1 > s_NumShadows) { s_NumShadows = index + 1; }
 
-        glBindFramebuffer(GL_FRAMEBUFFER, s_ShadowFBO[index]);
-        glViewport(0, 0, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
-        glClear(GL_DEPTH_BUFFER_BIT);
+        glBindFramebuffer(GL_FRAMEBUFFER, s_ShadowFBO);
+        // Clear the WHOLE atlas once (on the first light) -> empty tiles read as "lit".
+        if (index == 0){
+            glViewport(0, 0, SHADOW_ATLAS_W, SHADOW_ATLAS_H);
+            glClear(GL_DEPTH_BUFFER_BIT);
+        }
+        // Restrict rasterization to this light's tile.
+        int col = index % SHADOW_COLS;
+        int row = index / SHADOW_COLS;
+        glViewport(col * SHADOW_TILE, row * SHADOW_TILE, SHADOW_TILE, SHADOW_TILE);
 
         s_ShadowShader->Bind();
         s_ShadowShader->SetMat4("u_LightSpaceMatrix", lightSpaceMatrix);
@@ -121,17 +132,14 @@ namespace Phoenix{
         shader->SetMat4("projection", projection);
         shader->SetFloat3("cameraPos", cameraPos);
 
-        // Shadow maps: one per directional light, bound to texture units 1..MAX_DIR_LIGHTS
-        // (the diffuse map uses unit 0). All maps are bound every frame so the samplers
-        // are always valid; u_NumShadows controls how many are actually sampled.
+        // Shadow atlas on texture unit 1 (diffuse=0, normal map=2). The light matrices are
+        // a plain uniform array (dynamic indexing of non-samplers IS allowed).
         shader->SetInt("u_ShadowsEnabled", s_ShadowsEnabled ? 1 : 0);
         shader->SetInt("u_NumShadows", s_NumShadows);
-        for (int i = 0; i < MAX_DIR_LIGHTS; i++){
-            std::string idx = "[" + std::to_string(i) + "]";
-            shader->SetMat4("u_LightSpaceMatrices" + idx, s_LightSpaceMatrix[i]);
-            shader->SetInt("u_ShadowMaps" + idx, 1 + i);
-            glBindTextureUnit(1 + i, s_ShadowDepthTex[i]);
-        }
+        shader->SetInt("u_ShadowMap", 1);
+        glBindTextureUnit(1, s_ShadowAtlasTex);
+        for (int i = 0; i < MAX_DIR_LIGHTS; i++)
+            shader->SetMat4("u_LightSpaceMatrices[" + std::to_string(i) + "]", s_LightSpaceMatrix[i]);
     }
 
     void Renderer::SetLights(
@@ -190,9 +198,13 @@ namespace Phoenix{
         }
     }
 
-    void Renderer::Submit(const Ref<VertexArray>& vertexArray, const Material& material, const glm::mat4& transform, const Ref<Texture2D>& diffuseMap){
-        auto& shader = s_RenderLightCube->m_Shader;
+    // Texture units: 0 = diffuse, 1 = shadow map array, 2 = normal map.
+    static const uint32_t NORMAL_MAP_UNIT = 2;
 
+    // Upload material params + bind its textures. The material's own diffuse path (set via
+    // the Textures panel) overrides the mesh-embedded `diffuseMap`; the normal path adds
+    // tangent-space detail. Both are resolved from path through Texture2D's path cache.
+    static void BindMaterial(const Ref<Shader>& shader, const Material& material, const Ref<Texture2D>& diffuseMap){
         shader->SetFloat3("material.ambient", material.ambient);
         shader->SetFloat3("material.diffuse", material.diffuse);
         shader->SetFloat3("material.specular", material.specular);
@@ -200,8 +212,9 @@ namespace Phoenix{
         shader->SetFloat3("u_Emissive", material.emissive * material.emissiveStrength);
         shader->SetFloat("u_Reflectivity", material.reflectivity);
 
-        if (diffuseMap){
-            diffuseMap->Bind(0);
+        Ref<Texture2D> diffuse = !material.diffusePath.empty() ? Texture2D::Create(material.diffusePath) : diffuseMap;
+        if (diffuse){
+            diffuse->Bind(0);
             shader->SetInt("u_DiffuseMap", 0);
             shader->SetInt("u_HasDiffuseMap", 1);
         }
@@ -209,6 +222,25 @@ namespace Phoenix{
             shader->SetInt("u_HasDiffuseMap", 0);
         }
 
+        if (!material.normalPath.empty()){
+            Ref<Texture2D> normal = Texture2D::Create(material.normalPath);
+            if (normal){
+                normal->Bind(NORMAL_MAP_UNIT);
+                shader->SetInt("u_NormalMap", (int)NORMAL_MAP_UNIT);
+                shader->SetInt("u_HasNormalMap", 1);
+            }
+            else{
+                shader->SetInt("u_HasNormalMap", 0);
+            }
+        }
+        else{
+            shader->SetInt("u_HasNormalMap", 0);
+        }
+    }
+
+    void Renderer::Submit(const Ref<VertexArray>& vertexArray, const Material& material, const glm::mat4& transform, const Ref<Texture2D>& diffuseMap){
+        auto& shader = s_RenderLightCube->m_Shader;
+        BindMaterial(shader, material, diffuseMap);
         shader->SetMat4("model", transform);
         shader->SetInt("u_Animated", 0);
 
@@ -219,23 +251,7 @@ namespace Phoenix{
     void Renderer::SubmitAnimated(const Ref<VertexArray>& vertexArray, const Material& material, const glm::mat4& transform,
             const std::vector<glm::mat4>& boneMatrices, const Ref<Texture2D>& diffuseMap){
         auto& shader = s_RenderLightCube->m_Shader;
-
-        shader->SetFloat3("material.ambient", material.ambient);
-        shader->SetFloat3("material.diffuse", material.diffuse);
-        shader->SetFloat3("material.specular", material.specular);
-        shader->SetFloat("material.shininess", material.shininess);
-        shader->SetFloat3("u_Emissive", material.emissive * material.emissiveStrength);
-        shader->SetFloat("u_Reflectivity", material.reflectivity);
-
-        if (diffuseMap){
-            diffuseMap->Bind(0);
-            shader->SetInt("u_DiffuseMap", 0);
-            shader->SetInt("u_HasDiffuseMap", 1);
-        }
-        else{
-            shader->SetInt("u_HasDiffuseMap", 0);
-        }
-
+        BindMaterial(shader, material, diffuseMap);
         shader->SetMat4("model", transform);
         shader->SetInt("u_Animated", 1);
         if (!boneMatrices.empty())

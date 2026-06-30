@@ -76,8 +76,8 @@ struct PointLight {
     vec3 specular;
 };
 #define NR_POINT_LIGHTS 4
-#define NR_DIR_LIGHTS 4
-#define NR_SHADOWS 4
+#define NR_DIR_LIGHTS 8
+#define NR_SHADOWS 8
 uniform PointLight pointLights[NR_POINT_LIGHTS];
 
 // Multiple directional lights, each optionally casting its own shadow. Directional
@@ -90,10 +90,14 @@ in vec3 FragPos;
 in vec2 TexCoords;
 out vec4 FragColor;
 
-// Directional shadow maps (comparison samplers -> hardware PCF). GLES requires an
-// explicit precision for shadow samplers. Indexed only by the loop counter below
-// (a constant-index-expression, which GLSL ES 3.00 requires for sampler arrays).
-uniform highp sampler2DShadow u_ShadowMaps[NR_SHADOWS];
+// Directional shadow maps packed into one depth ATLAS (a SHADOW_COLS x SHADOW_ROWS grid
+// of tiles, one per light) sampled with a plain sampler2DShadow + per-tile UV math. This
+// avoids array samplers, which this driver won't dynamically index. The grid must match
+// SHADOW_COLS/SHADOW_ROWS in renderer.cpp. GLES requires explicit precision on shadow
+// samplers.
+#define SHADOW_COLS 4
+#define SHADOW_ROWS 2
+uniform highp sampler2DShadow u_ShadowMap;
 uniform mat4 u_LightSpaceMatrices[NR_SHADOWS];
 uniform int u_NumShadows;
 uniform bool u_ShadowsEnabled;
@@ -114,6 +118,27 @@ uniform float u_Reflectivity;
 // Optional diffuse texture. When u_HasDiffuseMap is false, material.diffuse is used.
 uniform sampler2D u_DiffuseMap;
 uniform bool u_HasDiffuseMap;
+
+// Optional tangent-space normal map ("depth"/surface detail). The tangent frame is
+// derived from screen-space derivatives, so no per-vertex tangents are needed.
+uniform sampler2D u_NormalMap;
+uniform bool u_HasNormalMap;
+
+vec3 PerturbNormal(vec3 N, vec2 uv)
+{
+    vec3 mapN = texture(u_NormalMap, uv).xyz * 2.0 - 1.0;
+    vec3 dp1 = dFdx(FragPos);
+    vec3 dp2 = dFdy(FragPos);
+    vec2 duv1 = dFdx(uv);
+    vec2 duv2 = dFdy(uv);
+    vec3 dp2perp = cross(dp2, N);
+    vec3 dp1perp = cross(N, dp1);
+    vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
+    vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
+    float invmax = inversesqrt(max(dot(T, T), dot(B, B)));
+    mat3 TBN = mat3(T * invmax, B * invmax, N);
+    return normalize(TBN * mapN);
+}
 
 // Procedural environment: a sky gradient above the horizon, dim ground below.
 vec3 SampleEnvironment(vec3 dir)
@@ -160,6 +185,7 @@ vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, v
 void main()
 {
     vec3 norm = normalize(Normal);
+    if (u_HasNormalMap) { norm = PerturbNormal(norm, TexCoords); }
     vec3 viewDir = normalize(cameraPos - FragPos);
     vec3 diffuseColor = u_HasDiffuseMap ? texture(u_DiffuseMap, TexCoords).rgb : material.diffuse;
 
@@ -177,14 +203,20 @@ void main()
             vec4 fls = u_LightSpaceMatrices[i] * vec4(FragPos, 1.0);
             vec3 proj = fls.xyz / fls.w;
             proj = proj * 0.5 + 0.5;
-            if (proj.z <= 1.0){
+            // Only shadow fragments inside this light's frustum (else the kernel would
+            // bleed into a neighbouring tile of the atlas).
+            if (proj.z <= 1.0 && proj.x >= 0.0 && proj.x <= 1.0 && proj.y >= 0.0 && proj.y <= 1.0){
                 float bias = max(0.0025 * (1.0 - dot(norm, lightDir)), 0.0008);
                 float refDepth = proj.z - bias;
-                vec2 texel = (1.0 / vec2(textureSize(u_ShadowMaps[i], 0))) * 1.4;
+                // Map this light's [0,1] coords into its atlas tile.
+                vec2 tileScale = vec2(1.0 / float(SHADOW_COLS), 1.0 / float(SHADOW_ROWS));
+                vec2 tileOffset = vec2(float(i % SHADOW_COLS), float(i / SHADOW_COLS)) * tileScale;
+                vec2 baseUV = tileOffset + proj.xy * tileScale;
+                vec2 texel = (1.0 / vec2(textureSize(u_ShadowMap, 0))) * 1.4;
                 float s = 0.0;
                 for (int x = -1; x <= 1; x++){
                     for (int y = -1; y <= 1; y++){
-                        s += 1.0 - texture(u_ShadowMaps[i], vec3(proj.xy + vec2(float(x), float(y)) * texel, refDepth));
+                        s += 1.0 - texture(u_ShadowMap, vec3(baseUV + vec2(float(x), float(y)) * texel, refDepth));
                     }
                 }
                 shadow = s / 9.0;
