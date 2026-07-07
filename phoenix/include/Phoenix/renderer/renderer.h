@@ -217,11 +217,25 @@ namespace Phoenix{
 		// Draw an arrow showing a directional light's aim (the transform's -Z).
 		static void DrawDirLightGizmo(const glm::mat4& transform, const glm::vec3& color);
 
+		// Water surface render inputs (Gerstner waves + optional dynamic ripple texture).
+		struct WaterParams{
+			glm::vec3 color = glm::vec3(0.05f, 0.22f, 0.35f);
+			float alpha = 0.7f;
+			glm::vec3 lightDir = glm::vec3(0.0f, -1.0f, 0.0f);
+			float time = 0.0f;
+			float amplitude = 0.15f;
+			float waveScale = 0.6f;
+			float speed = 1.2f;
+			float choppiness = 0.6f;   // Gerstner crest sharpness (0 = plain sines)
+			float foam = 0.5f;         // crest/ripple foam intensity
+			float size = 40.0f;        // world width of the grid (ripple slope scale)
+			uint32_t rippleTexture = 0; // R32F heightfield; 0 = no dynamic ripples
+		};
+
 		// Draw an animated transparent water surface (flat grid displaced in the shader).
 		// Call after the opaque scene; uses the camera state from the last BeginScene.
 		static void SubmitWater(const Ref<VertexArray>& vertexArray, const glm::mat4& transform,
-			const glm::vec3& color, float alpha, const glm::vec3& lightDir, float time,
-			float amplitude, float waveScale, float speed);
+			const WaterParams& params);
 
 		static RendererAPI::API GetAPI() { return RendererAPI::GetAPI(); }
 	private:

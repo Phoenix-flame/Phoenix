@@ -107,6 +107,24 @@ namespace Phoenix{
     Scene::Scene() = default;
     Scene::~Scene() = default;
 
+    // Vertical height of the procedural Gerstner wave set at world position p —
+    // the CPU mirror used for buoyancy and splash detection. The wave constants
+    // MUST match the ones in water.glsl.
+    static float WaterWaveHeight(const WaterComponent& water, const glm::vec2& p, float time){
+        static const glm::vec2 DIR[4] = { { 0.9438798f, 0.3303579f }, { -0.4103913f, 0.9119215f },
+                                          { 0.7071068f, -0.7071068f }, { -0.9048187f, -0.4258407f } };
+        static const float FRQ[4] = { 1.0f, 1.9f, 3.1f, 5.3f };
+        static const float AMP[4] = { 1.0f, 0.5f, 0.25f, 0.12f };
+        static const float SPD[4] = { 1.0f, 1.25f, 1.7f, 2.3f };
+        float h = 0.0f;
+        for (int i = 0; i < 4; i++){
+            float w = water.waveScale * FRQ[i];
+            float a = water.amplitude * AMP[i];
+            h += a * std::sin(glm::dot(p, DIR[i]) * w + time * water.speed * SPD[i]);
+        }
+        return h;
+    }
+
     // Collect the rigid body's material/mass settings for body creation.
     static PhysicsWorld::BodyProps MakeBodyProps(const RigidBodyComponent& rb){
         PhysicsWorld::BodyProps props;
@@ -279,6 +297,7 @@ namespace Phoenix{
         m_PhysicsWorld.reset();
         m_Scripts.clear();
         m_BodyToEntity.clear();
+        m_SubmergedBodies.clear();
     }
 
     Entity Scene::FindEntityByBodyID(uint32_t bodyID){
@@ -412,6 +431,66 @@ namespace Phoenix{
                 if (rb.runtimeBodyID == 0xffffffff || rb.type != RigidBodyComponent::Type::Kinematic) { continue; }
                 auto& transform = view.get<TransformComponent>(entity);
                 m_PhysicsWorld->MoveKinematic(rb.runtimeBodyID, transform.Translation, transform.Rotation, (float)ts);
+            }
+
+            // Water coupling: buoyancy + fluid drag on dynamic bodies over a water
+            // surface, splash ripples on entry, and a wake while moving in it. The
+            // surface height includes the Gerstner waves AND the live ripples, so
+            // floating bodies bob on both.
+            {
+                auto waterView = m_Registry.view<WaterComponent, TransformComponent>();
+                for (auto wEntity : waterView){
+                    auto& water = waterView.get<WaterComponent>(wEntity);
+                    if (water.buoyancy <= 0.0f) { continue; }
+                    auto& wTransform = waterView.get<TransformComponent>(wEntity);
+                    float half = water.size * 0.5f;
+
+                    for (auto entity : view){
+                        auto& rb = view.get<RigidBodyComponent>(entity);
+                        if (rb.runtimeBodyID == 0xffffffff || rb.type != RigidBodyComponent::Type::Dynamic) { continue; }
+                        auto& t = view.get<TransformComponent>(entity);
+                        float lx = t.Translation.x - wTransform.Translation.x;
+                        float lz = t.Translation.z - wTransform.Translation.z;
+                        if (std::abs(lx) > half || std::abs(lz) > half) { continue; }
+
+                        float u = lx / water.size + 0.5f;
+                        float v = lz / water.size + 0.5f;
+                        float surfaceY = wTransform.Translation.y
+                            + WaterWaveHeight(water, { t.Translation.x, t.Translation.z }, m_Time)
+                            + (water.ripples ? water.ripples->SampleHeight(u, v) : 0.0f);
+                        if (t.Translation.y - surfaceY > 4.0f){ // far above: can't touch
+                            m_SubmergedBodies.erase(rb.runtimeBodyID);
+                            continue;
+                        }
+
+                        // Jolt's buoyancy factor is fluid density RELATIVE TO THE BODY
+                        // (>1 floats, <1 sinks), so derive it from the body's density:
+                        // water.buoyancy is the water's density in units of 1000 kg/m3.
+                        float factor = std::min(8.0f, water.buoyancy * 1000.0f / std::max(1.0f, rb.density));
+                        bool touching = m_PhysicsWorld->ApplyBuoyancy(rb.runtimeBodyID,
+                            { t.Translation.x, surfaceY, t.Translation.z }, { 0.0f, 1.0f, 0.0f },
+                            factor, water.linearDrag, water.angularDrag, (float)ts);
+
+                        if (water.ripples && touching){
+                            glm::vec3 vel = m_PhysicsWorld->GetLinearVelocity(rb.runtimeBodyID);
+                            bool wasTouching = m_SubmergedBodies.count(rb.runtimeBodyID) > 0;
+                            if (!wasTouching && vel.y < -1.0f){
+                                // Splash: radius/strength grow with impact speed.
+                                float strength = std::min(0.4f, 0.06f * -vel.y);
+                                water.ripples->AddImpulse(u, v, 0.03f + 0.002f * -vel.y, strength);
+                            }
+                            else{
+                                float speed = glm::length(glm::vec2(vel.x, vel.z));
+                                if (speed > 0.5f){ // wake behind moving bodies
+                                    water.ripples->AddImpulse(u, v, 0.02f,
+                                        std::min(0.05f, 0.25f * speed * (float)ts));
+                                }
+                            }
+                        }
+                        if (touching) { m_SubmergedBodies.insert(rb.runtimeBodyID); }
+                        else          { m_SubmergedBodies.erase(rb.runtimeBodyID); }
+                    }
+                }
             }
 
             m_PhysicsWorld->Step((float)ts);
@@ -776,15 +855,38 @@ namespace Phoenix{
             Renderer::EndScene();
         }
 
-        // Transparent water surfaces (drawn after the opaque scene).
+        // Transparent water surfaces (drawn after the opaque scene). The ripple sim
+        // steps in edit AND play so leftover splashes keep propagating and decay.
         {
             auto waterView = m_Registry.view<WaterComponent, TransformComponent>();
             for (auto entity : waterView){
                 auto& water = waterView.get<WaterComponent>(entity);
                 auto transform = waterView.get<TransformComponent>(entity);
                 if (!water.mesh) { water.mesh = BuildGridMesh(water.size, water.resolution); }
-                Renderer::SubmitWater(water.mesh->GetVertexArray(), transform.GetTransform(),
-                    water.color, water.alpha, lightDir, m_Time, water.amplitude, water.waveScale, water.speed);
+                if (water.interactiveRipples && !water.ripples){
+                    water.ripples = CreateRef<WaterRipples>(water.rippleResolution);
+                }
+                else if (!water.interactiveRipples && water.ripples){
+                    water.ripples.reset();
+                }
+                if (water.ripples){
+                    water.ripples->Step((float)ts);
+                    water.ripples->Upload();
+                }
+
+                Renderer::WaterParams params;
+                params.color = water.color;
+                params.alpha = water.alpha;
+                params.lightDir = lightDir;
+                params.time = m_Time;
+                params.amplitude = water.amplitude;
+                params.waveScale = water.waveScale;
+                params.speed = water.speed;
+                params.choppiness = water.choppiness;
+                params.foam = water.foam;
+                params.size = water.size;
+                params.rippleTexture = water.ripples ? water.ripples->GetTextureID() : 0;
+                Renderer::SubmitWater(water.mesh->GetVertexArray(), transform.GetTransform(), params);
             }
         }
 

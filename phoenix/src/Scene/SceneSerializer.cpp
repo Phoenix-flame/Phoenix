@@ -228,6 +228,13 @@ namespace Phoenix{
             out << YAML::Key << "Amplitude" << YAML::Value << w.amplitude;
             out << YAML::Key << "WaveScale" << YAML::Value << w.waveScale;
             out << YAML::Key << "Speed" << YAML::Value << w.speed;
+            out << YAML::Key << "Choppiness" << YAML::Value << w.choppiness;
+            out << YAML::Key << "Foam" << YAML::Value << w.foam;
+            out << YAML::Key << "InteractiveRipples" << YAML::Value << w.interactiveRipples;
+            out << YAML::Key << "RippleResolution" << YAML::Value << w.rippleResolution;
+            out << YAML::Key << "Buoyancy" << YAML::Value << w.buoyancy;
+            out << YAML::Key << "LinearDrag" << YAML::Value << w.linearDrag;
+            out << YAML::Key << "AngularDrag" << YAML::Value << w.angularDrag;
             out << YAML::EndMap;
         }
 
@@ -488,6 +495,13 @@ namespace Phoenix{
             w.amplitude = n["Amplitude"].as<float>();
             w.waveScale = n["WaveScale"].as<float>();
             w.speed = n["Speed"].as<float>();
+            w.choppiness = n["Choppiness"] ? n["Choppiness"].as<float>() : 0.6f;
+            w.foam = n["Foam"] ? n["Foam"].as<float>() : 0.5f;
+            w.interactiveRipples = n["InteractiveRipples"] ? n["InteractiveRipples"].as<bool>() : true;
+            w.rippleResolution = n["RippleResolution"] ? n["RippleResolution"].as<int>() : 128;
+            w.buoyancy = n["Buoyancy"] ? n["Buoyancy"].as<float>() : 1.0f;
+            w.linearDrag = n["LinearDrag"] ? n["LinearDrag"].as<float>() : 0.6f;
+            w.angularDrag = n["AngularDrag"] ? n["AngularDrag"].as<float>() : 0.3f;
             w.mesh = nullptr;
         }
         else if (entity.HasComponent<WaterComponent>()) entity.RemoveComponent<WaterComponent>();

@@ -6,6 +6,7 @@
 #include <Phoenix/renderer/shader.h>
 #include <Phoenix/renderer/VertexArray.h>
 #include <Phoenix/renderer/Mesh.h>
+#include <Phoenix/renderer/WaterRipples.h>
 #include <Phoenix/Scene/ScriptableEntity.h>
 namespace Phoenix{
 
@@ -199,9 +200,11 @@ namespace Phoenix{
               material(o.material), generateCollider(o.generateCollider), dirty(true) {}
     };
 
-    // An animated transparent water surface (a flat grid displaced by waves in the
-    // water shader). Place it at a water level over a sculpted terrain basin to make
-    // a lake. The grid mesh is transient (regenerated, not serialized).
+    // An animated transparent water surface: Gerstner waves in the shader plus an
+    // interactive ripple simulation (CPU wave equation) that reacts to physics
+    // bodies. While playing, dynamic bodies get buoyancy/drag from the surface and
+    // splash ripples when they hit it. Place at a water level over a terrain basin
+    // to make a lake. The grid mesh and ripple sim are transient (not serialized).
     struct WaterComponent{
         float size = 40.0f;
         int resolution = 96;
@@ -210,12 +213,28 @@ namespace Phoenix{
         float amplitude = 0.15f;
         float waveScale = 0.6f;
         float speed = 1.2f;
+        float choppiness = 0.6f;   // Gerstner crest sharpness (0 = plain sine waves)
+        float foam = 0.5f;         // crest/ripple foam intensity (0 = off)
 
-        Ref<Mesh> mesh; // flat grid; not serialized
+        bool interactiveRipples = true; // splash/wake heightfield simulation
+        int rippleResolution = 128;     // sim grid (per water surface)
+
+        // Physics coupling while playing (0 buoyancy = objects ignore the water).
+        // buoyancy = the water's density in units of 1000 kg/m3 (1 = real water):
+        // rigid bodies with density below buoyancy*1000 float, denser ones sink.
+        float buoyancy = 1.0f;
+        float linearDrag = 0.6f;
+        float angularDrag = 0.3f;
+
+        Ref<Mesh> mesh;             // flat grid; not serialized
+        Ref<WaterRipples> ripples;  // live ripple sim; not serialized
         WaterComponent() = default;
         WaterComponent(const WaterComponent& o)
             : size(o.size), resolution(o.resolution), color(o.color), alpha(o.alpha),
-              amplitude(o.amplitude), waveScale(o.waveScale), speed(o.speed) {}
+              amplitude(o.amplitude), waveScale(o.waveScale), speed(o.speed),
+              choppiness(o.choppiness), foam(o.foam),
+              interactiveRipples(o.interactiveRipples), rippleResolution(o.rippleResolution),
+              buoyancy(o.buoyancy), linearDrag(o.linearDrag), angularDrag(o.angularDrag) {}
     };
 
     // An animation event: fire OnAnimationEvent(name) in the entity's Lua script when the

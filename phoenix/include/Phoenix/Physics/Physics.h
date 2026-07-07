@@ -94,6 +94,13 @@ namespace Phoenix{
         // needed so it properly pushes dynamic bodies out of the way.
         void MoveKinematic(uint32_t bodyID, const glm::vec3& position, const glm::vec3& rotationEuler, float dt);
 
+        // Apply one step of buoyancy + fluid drag to a body against a water surface
+        // plane through surfacePoint with the given normal. buoyancy ~1 = neutral for
+        // a body of the fluid's density; Jolt computes the submerged volume from the
+        // shape. Returns true if the body intersected the fluid. Call before Step.
+        bool ApplyBuoyancy(uint32_t bodyID, const glm::vec3& surfacePoint, const glm::vec3& surfaceNormal,
+                           float buoyancy, float linearDrag, float angularDrag, float dt);
+
         // First body hit along origin + direction * [0, maxDistance], or false.
         bool RayCast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
                      uint32_t& outBody, glm::vec3& outPoint) const;

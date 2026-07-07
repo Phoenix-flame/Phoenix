@@ -363,8 +363,7 @@ namespace Phoenix{
     }
 
     void Renderer::SubmitWater(const Ref<VertexArray>& vertexArray, const glm::mat4& transform,
-            const glm::vec3& color, float alpha, const glm::vec3& lightDir, float time,
-            float amplitude, float waveScale, float speed){
+            const WaterParams& params){
         glEnable(GL_BLEND);
         glDepthMask(GL_FALSE); // transparent: test against depth but don't write it
 
@@ -373,13 +372,25 @@ namespace Phoenix{
         s_WaterShader->SetMat4("projection", s_SceneData->ProjectionMatrix);
         s_WaterShader->SetMat4("model", transform);
         s_WaterShader->SetFloat3("u_CameraPos", s_SceneData->CameraPos);
-        s_WaterShader->SetFloat3("u_Color", color);
-        s_WaterShader->SetFloat("u_Alpha", alpha);
-        s_WaterShader->SetFloat3("u_LightDir", lightDir);
-        s_WaterShader->SetFloat("u_Time", time);
-        s_WaterShader->SetFloat("u_Amplitude", amplitude);
-        s_WaterShader->SetFloat("u_WaveScale", waveScale);
-        s_WaterShader->SetFloat("u_Speed", speed);
+        s_WaterShader->SetFloat3("u_Color", params.color);
+        s_WaterShader->SetFloat("u_Alpha", params.alpha);
+        s_WaterShader->SetFloat3("u_LightDir", params.lightDir);
+        s_WaterShader->SetFloat("u_Time", params.time);
+        s_WaterShader->SetFloat("u_Amplitude", params.amplitude);
+        s_WaterShader->SetFloat("u_WaveScale", params.waveScale);
+        s_WaterShader->SetFloat("u_Speed", params.speed);
+        s_WaterShader->SetFloat("u_Choppiness", params.choppiness);
+        s_WaterShader->SetFloat("u_Foam", params.foam);
+        s_WaterShader->SetFloat("u_WaterSize", params.size);
+
+        // Dynamic ripple heightfield on unit 3 (0 diffuse, 1 shadow atlas, 2 normal map).
+        s_WaterShader->SetInt("u_HasRipples", params.rippleTexture ? 1 : 0);
+        if (params.rippleTexture){
+            glActiveTexture(GL_TEXTURE3);
+            glBindTexture(GL_TEXTURE_2D, params.rippleTexture);
+            s_WaterShader->SetInt("u_RippleTex", 3);
+            glActiveTexture(GL_TEXTURE0);
+        }
 
         vertexArray->Bind();
         RenderCommand::DrawIndexed(vertexArray);

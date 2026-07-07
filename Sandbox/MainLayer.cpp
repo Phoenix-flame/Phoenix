@@ -221,7 +221,8 @@ void MainLayer::BuildWaterShowcase() {
         }
     }
 
-    // Water filling the basin up to y = -1.5.
+    // Water filling the basin up to y = -1.5: Gerstner waves + interactive ripples,
+    // buoyancy coupling for the floating bodies below.
     {
         auto e = m_Scene->CreateEntity("Water");
         auto& w = e.AddComponent<WaterComponent>();
@@ -232,14 +233,21 @@ void MainLayer::BuildWaterShowcase() {
         w.amplitude = 0.12f;
         w.waveScale = 0.5f;
         w.speed = 1.0f;
+        w.choppiness = 0.7f;
+        w.foam = 0.6f;
+        w.interactiveRipples = true;
+        w.buoyancy = 1.0f; // real-water density: wood/buoys float, the cannonball sinks
+        w.linearDrag = 0.7f;
+        w.angularDrag = 0.4f;
         e.GetComponent<TransformComponent>().Translation = { 0.0f, -1.5f, 0.0f };
     }
 
-    // Glowing buoys floating at the waterline (bloom + reflection in the water).
+    // Glowing buoys: dynamic light bodies that bob on the waves and trail wakes
+    // (press Run). They start above the surface and splash in.
     struct Buoy { const char* name; glm::vec3 pos; glm::vec3 color; };
     const Buoy buoys[] = {
-        { "Buoy Red",  { -6.0f, -1.0f,  4.0f }, { 1.0f, 0.2f, 0.1f } },
-        { "Buoy Blue", {  7.0f, -1.0f, -3.0f }, { 0.1f, 0.5f, 1.0f } },
+        { "Buoy Red",  { -6.0f, 0.5f,  4.0f }, { 1.0f, 0.2f, 0.1f } },
+        { "Buoy Blue", {  7.0f, 0.5f, -3.0f }, { 0.1f, 0.5f, 1.0f } },
     };
     for (const auto& b : buoys){
         auto e = m_Scene->CreateEntity(b.name);
@@ -250,6 +258,59 @@ void MainLayer::BuildWaterShowcase() {
         auto& t = e.GetComponent<TransformComponent>();
         t.Translation = b.pos;
         t.Scale = glm::vec3(0.5f);
+        auto& rb = e.AddComponent<RigidBodyComponent>();
+        rb.density = 250.0f; // light: floats high
+        e.AddComponent<BoxColliderComponent>();
+    }
+
+    // Wooden crates dropped from height: splash ripples on entry, then float.
+    const glm::vec3 cratePos[] = { { -2.0f, 4.0f, 1.0f }, { 1.5f, 6.0f, -2.0f }, { 3.5f, 8.0f, 3.0f } };
+    for (int i = 0; i < 3; i++){
+        auto e = m_Scene->CreateEntity("Crate " + std::to_string(i + 1));
+        auto& c = e.AddComponent<CubeComponent>();
+        c.material.ambient = glm::vec3(0.4f, 0.3f, 0.18f);
+        c.material.diffuse = glm::vec3(0.72f, 0.54f, 0.32f);
+        c.material.specular = glm::vec3(0.1f);
+        auto& t = e.GetComponent<TransformComponent>();
+        t.Translation = cratePos[i];
+        t.Rotation = { 0.3f * i, 0.5f * i, 0.2f };
+        t.Scale = glm::vec3(0.9f);
+        auto& rb = e.AddComponent<RigidBodyComponent>();
+        rb.density = 500.0f; // wood: floats half-submerged
+        rb.friction = 0.5f;
+        e.AddComponent<BoxColliderComponent>();
+    }
+
+    // A beach ball (very light, bobs high) and a cannonball (dense, splashes and
+    // sinks to the lakebed — the terrain collider catches it).
+    {
+        auto e = m_Scene->CreateEntity("Beach Ball");
+        auto& p = e.AddComponent<PrimitiveComponent>(PrimitiveComponent::Type::Sphere);
+        p.material.ambient = glm::vec3(0.5f, 0.15f, 0.1f);
+        p.material.diffuse = glm::vec3(1.0f, 0.35f, 0.25f);
+        p.material.specular = glm::vec3(0.6f);
+        p.material.shininess = 64.0f;
+        auto& t = e.GetComponent<TransformComponent>();
+        t.Translation = { -4.0f, 5.0f, -4.0f };
+        t.Scale = glm::vec3(1.1f);
+        auto& rb = e.AddComponent<RigidBodyComponent>();
+        rb.density = 80.0f;
+        rb.restitution = 0.3f;
+        e.AddComponent<SphereColliderComponent>();
+    }
+    {
+        auto e = m_Scene->CreateEntity("Cannonball");
+        auto& p = e.AddComponent<PrimitiveComponent>(PrimitiveComponent::Type::Sphere);
+        p.material.ambient = glm::vec3(0.1f);
+        p.material.diffuse = glm::vec3(0.25f, 0.25f, 0.3f);
+        p.material.specular = glm::vec3(0.8f);
+        p.material.shininess = 96.0f;
+        auto& t = e.GetComponent<TransformComponent>();
+        t.Translation = { 5.0f, 7.0f, 5.0f };
+        t.Scale = glm::vec3(0.8f);
+        auto& rb = e.AddComponent<RigidBodyComponent>();
+        rb.density = 4000.0f; // denser than water: sinks
+        e.AddComponent<SphereColliderComponent>();
     }
 }
 

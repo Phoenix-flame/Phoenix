@@ -1099,6 +1099,18 @@ namespace Phoenix{
 			ImGui::DragFloat("Wave Height", &component.amplitude, 0.01f, 0.0f, 2.0f);
 			ImGui::DragFloat("Wave Scale", &component.waveScale, 0.01f, 0.05f, 3.0f);
 			ImGui::DragFloat("Wave Speed", &component.speed, 0.05f, 0.0f, 6.0f);
+			ImGui::SliderFloat("Choppiness", &component.choppiness, 0.0f, 1.2f);
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Gerstner crest sharpness. 0 = smooth sine swells.");
+			ImGui::SliderFloat("Foam", &component.foam, 0.0f, 1.5f);
+			ImGui::Separator();
+			ImGui::Checkbox("Interactive Ripples", &component.interactiveRipples);
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Simulated splash/wake ripples from physics bodies.");
+			ImGui::Separator();
+			ImGui::TextDisabled("Physics coupling (while playing):");
+			ImGui::SliderFloat("Water Density", &component.buoyancy, 0.0f, 3.0f);
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("In units of 1000 kg/m3 (1 = real water). 0 disables.\nBodies with a lower Rigid Body density float; denser ones sink.");
+			ImGui::SliderFloat("Linear Drag", &component.linearDrag, 0.0f, 3.0f);
+			ImGui::SliderFloat("Angular Drag", &component.angularDrag, 0.0f, 3.0f);
 			ImGui::TextDisabled("Position at the water level over a terrain basin to fill a lake.");
 		});
 

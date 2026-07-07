@@ -10,6 +10,7 @@
 #include <Phoenix/renderer/VertexArray.h>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace Phoenix{
     class Entity;
@@ -75,6 +76,8 @@ namespace Phoenix{
         std::vector<Ref<LuaScript>> m_Scripts; // live Lua runtimes while playing
         // Runtime body id -> owning entity, for contact-event dispatch (rebuilt each run).
         std::unordered_map<uint32_t, entt::entity> m_BodyToEntity;
+        // Bodies currently touching a water surface (splash edge detection).
+        std::unordered_set<uint32_t> m_SubmergedBodies;
     };
 
 }

@@ -394,6 +394,16 @@ namespace Phoenix{
             JPH::RVec3(position.x, position.y, position.z), JPH::Quat(q.x, q.y, q.z, q.w), dt);
     }
 
+    bool PhysicsWorld::ApplyBuoyancy(uint32_t bodyID, const glm::vec3& surfacePoint, const glm::vec3& surfaceNormal,
+                                     float buoyancy, float linearDrag, float angularDrag, float dt){
+        if (bodyID == InvalidBody || dt <= 0.0f) { return false; }
+        return m_Impl->physicsSystem.GetBodyInterface().ApplyBuoyancyImpulse(JPH::BodyID(bodyID),
+            JPH::RVec3(surfacePoint.x, surfacePoint.y, surfacePoint.z),
+            JPH::Vec3(surfaceNormal.x, surfaceNormal.y, surfaceNormal.z),
+            buoyancy, linearDrag, angularDrag,
+            JPH::Vec3::sZero(), m_Impl->physicsSystem.GetGravity(), dt);
+    }
+
     bool PhysicsWorld::RayCast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
                                uint32_t& outBody, glm::vec3& outPoint) const{
         using namespace JPH;
