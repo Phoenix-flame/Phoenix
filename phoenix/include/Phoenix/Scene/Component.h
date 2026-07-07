@@ -91,9 +91,21 @@ namespace Phoenix{
 
     // Physics. Type values match PhysicsWorld::BodyType. runtimeBodyID is filled in
     // when the scene's physics simulation starts (0xffffffff = no body / not running).
+    // The material/mass fields are applied to the Jolt body on Run.
     struct RigidBodyComponent{
         enum class Type { Static = 0, Dynamic = 1, Kinematic = 2 };
         Type type = Type::Dynamic;
+
+        float friction = 0.5f;
+        float restitution = 0.0f;      // bounciness (0 = dead, 1 = superball)
+        float density = 1000.0f;       // kg/m^3; mass follows from the collider volume
+        float linearDamping = 0.05f;
+        float angularDamping = 0.05f;
+        float gravityFactor = 1.0f;    // 0 = floats, 1 = normal gravity
+        bool  continuousCollision = false; // for fast movers (bullets) so they don't tunnel
+        bool  isSensor = false;        // trigger volume: detects contacts, no response
+        glm::vec3 initialVelocity = { 0.0f, 0.0f, 0.0f };
+
         uint32_t runtimeBodyID = 0xffffffff;
         RigidBodyComponent() = default;
         RigidBodyComponent(const RigidBodyComponent&) = default;
@@ -105,12 +117,57 @@ namespace Phoenix{
         BoxColliderComponent(const BoxColliderComponent&) = default;
     };
 
+    struct SphereColliderComponent{
+        float radius = 0.5f;
+        SphereColliderComponent() = default;
+        SphereColliderComponent(const SphereColliderComponent&) = default;
+    };
+
+    // A vertical capsule (Y axis). Total height = 2 * (halfHeight + radius);
+    // halfHeight is the straight cylindrical section only.
+    struct CapsuleColliderComponent{
+        float radius = 0.3f;
+        float halfHeight = 0.5f;
+        CapsuleColliderComponent() = default;
+        CapsuleColliderComponent(const CapsuleColliderComponent&) = default;
+    };
+
+    struct CylinderColliderComponent{
+        float radius = 0.5f;
+        float halfHeight = 0.5f;
+        CylinderColliderComponent() = default;
+        CylinderColliderComponent(const CylinderColliderComponent&) = default;
+    };
+
     // Collider built from the entity's MeshComponent geometry. convex = convex hull
     // (works for dynamic bodies); otherwise an exact triangle mesh (static only).
     struct MeshColliderComponent{
         bool convex = true;
         MeshColliderComponent() = default;
         MeshColliderComponent(const MeshColliderComponent&) = default;
+    };
+
+    // Connects this entity's rigid body to another body (found by Tag; leave the tag
+    // empty to anchor to the world) when the simulation starts. Anchor points/axes are
+    // given in WORLD space of the edit-time layout.
+    //  - Point: ball-and-socket at `pivot` (chains, ropes, wrecking balls).
+    //  - Distance: keeps own center and the other body's center (or `pivot` when
+    //    world-anchored) between min/max distance (-1 = starting distance).
+    //  - Hinge: rotates around `axis` through `pivot`, optional angle limits
+    //    (doors, seesaws, pendulums).
+    struct JointComponent{
+        enum class Type { Point = 0, Distance = 1, Hinge = 2 };
+        Type type = Type::Point;
+        std::string connectedTag;          // other rigid-body entity; empty = world
+        glm::vec3 pivot = { 0.0f, 0.0f, 0.0f };
+        glm::vec3 axis = { 0.0f, 0.0f, 1.0f }; // hinge axis
+        float minDistance = -1.0f;         // distance joint; -1 = use starting distance
+        float maxDistance = -1.0f;
+        bool  limitAngles = false;         // hinge limits (radians, about the rest pose)
+        float minAngle = -1.5708f;
+        float maxAngle =  1.5708f;
+        JointComponent() = default;
+        JointComponent(const JointComponent&) = default;
     };
 
     // When present, the entity is drawn as a wireframe ("mesh network"). The bool

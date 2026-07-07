@@ -22,6 +22,8 @@ namespace Phoenix{
         "SetAnimationTime", "GetAnimationTime", "GetAnimationDuration", "SetAnimationSpeed",
         "SetAnimationLoop", "IsAnimationPlaying", "IsAnimationFinished", "GetAnimationName",
         "HasAnimation", "OnAnimationEvent",
+        "ApplyImpulse", "ApplyForce", "SetVelocity", "GetVelocity", "SetAngularVelocity",
+        "RayCast", "OnCollisionEnter", "OnCollisionExit",
         "IsKeyDown", "IsKeyPressed", "Translate", "Rotate", "MoveForward",
         "Key.Up", "Key.Down", "Key.Left", "Key.Right", "Key.Space", "Key.LeftShift",
         "function", "local", "return", "then", "else", "elseif", "while", "for",
@@ -43,6 +45,8 @@ namespace Phoenix{
             "SetAnimationTime","GetAnimationTime","GetAnimationDuration","SetAnimationSpeed",
             "SetAnimationLoop","IsAnimationPlaying","IsAnimationFinished","GetAnimationName",
             "HasAnimation","OnAnimationEvent",
+            "ApplyImpulse","ApplyForce","SetVelocity","GetVelocity","SetAngularVelocity",
+            "RayCast","OnCollisionEnter","OnCollisionExit",
             "IsKeyDown","IsKeyPressed","Translate","Rotate","MoveForward","Key"
         };
         return api.find(w) != api.end();
@@ -672,9 +676,29 @@ namespace Phoenix{
                     m_SelectedEntity.AddComponent<BoxColliderComponent>();
                 ImGui::CloseCurrentPopup();
             }
+            if (ImGui::MenuItem("Sphere Collider")){
+                if (!m_SelectedEntity.HasComponent<SphereColliderComponent>())
+                    m_SelectedEntity.AddComponent<SphereColliderComponent>();
+                ImGui::CloseCurrentPopup();
+            }
+            if (ImGui::MenuItem("Capsule Collider")){
+                if (!m_SelectedEntity.HasComponent<CapsuleColliderComponent>())
+                    m_SelectedEntity.AddComponent<CapsuleColliderComponent>();
+                ImGui::CloseCurrentPopup();
+            }
+            if (ImGui::MenuItem("Cylinder Collider")){
+                if (!m_SelectedEntity.HasComponent<CylinderColliderComponent>())
+                    m_SelectedEntity.AddComponent<CylinderColliderComponent>();
+                ImGui::CloseCurrentPopup();
+            }
             if (ImGui::MenuItem("Mesh Collider")){
                 if (!m_SelectedEntity.HasComponent<MeshColliderComponent>())
                     m_SelectedEntity.AddComponent<MeshColliderComponent>();
+                ImGui::CloseCurrentPopup();
+            }
+            if (ImGui::MenuItem("Joint")){
+                if (!m_SelectedEntity.HasComponent<JointComponent>())
+                    m_SelectedEntity.AddComponent<JointComponent>();
                 ImGui::CloseCurrentPopup();
             }
             if (ImGui::MenuItem("Wireframe")){
@@ -959,6 +983,20 @@ namespace Phoenix{
 				}
 				ImGui::EndCombo();
 			}
+			ImGui::SliderFloat("Friction", &component.friction, 0.0f, 1.5f);
+			ImGui::SliderFloat("Restitution", &component.restitution, 0.0f, 1.0f);
+			ImGui::DragFloat("Density", &component.density, 10.0f, 1.0f, 30000.0f, "%.0f kg/m3");
+			ImGui::SliderFloat("Linear Damping", &component.linearDamping, 0.0f, 2.0f);
+			ImGui::SliderFloat("Angular Damping", &component.angularDamping, 0.0f, 2.0f);
+			ImGui::SliderFloat("Gravity Factor", &component.gravityFactor, 0.0f, 4.0f);
+			float vel[] = { component.initialVelocity.x, component.initialVelocity.y, component.initialVelocity.z };
+			if (ImGui::DragFloat3("Initial Velocity", vel, 0.1f)){
+				component.initialVelocity = { vel[0], vel[1], vel[2] };
+			}
+			ImGui::Checkbox("Continuous Collision", &component.continuousCollision);
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("For fast movers (bullets) so they don't tunnel through walls.");
+			ImGui::Checkbox("Sensor (Trigger)", &component.isSensor);
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Detects contacts (Lua OnCollisionEnter/Exit) without colliding.");
 			ImGui::TextDisabled("Applied on Run");
 		});
 
@@ -970,6 +1008,76 @@ namespace Phoenix{
 				component.halfExtents.z = extents[2];
 			}
 			ImGui::TextDisabled("Scaled by Transform on Run");
+		});
+
+		DrawComponent<SphereColliderComponent>("Sphere Collider", entity, [](SphereColliderComponent& component){
+			ImGui::DragFloat("Radius", &component.radius, 0.05f, 0.01f, 100.0f, "%.2f");
+			ImGui::TextDisabled("Scaled by the largest Transform scale axis on Run");
+		});
+
+		DrawComponent<CapsuleColliderComponent>("Capsule Collider", entity, [](CapsuleColliderComponent& component){
+			ImGui::DragFloat("Radius", &component.radius, 0.05f, 0.01f, 100.0f, "%.2f");
+			ImGui::DragFloat("Half Height", &component.halfHeight, 0.05f, 0.01f, 100.0f, "%.2f");
+			ImGui::TextDisabled("Vertical (Y). Total height = 2 x (half height + radius).");
+		});
+
+		DrawComponent<CylinderColliderComponent>("Cylinder Collider", entity, [](CylinderColliderComponent& component){
+			ImGui::DragFloat("Radius", &component.radius, 0.05f, 0.01f, 100.0f, "%.2f");
+			ImGui::DragFloat("Half Height", &component.halfHeight, 0.05f, 0.01f, 100.0f, "%.2f");
+			ImGui::TextDisabled("Vertical (Y) cylinder.");
+		});
+
+		DrawComponent<JointComponent>("Joint", entity, [](JointComponent& component){
+			const char* typeStrings[] = { "Point (ball-socket)", "Distance", "Hinge" };
+			const char* currentType = typeStrings[(int)component.type];
+			if (ImGui::BeginCombo("Joint Type", currentType)){
+				for (int i = 0; i < 3; i++){
+					bool isSelected = currentType == typeStrings[i];
+					if (ImGui::Selectable(typeStrings[i], isSelected))
+						component.type = (JointComponent::Type)i;
+					if (isSelected)
+						ImGui::SetItemDefaultFocus();
+				}
+				ImGui::EndCombo();
+			}
+			char buf[128];
+			std::strncpy(buf, component.connectedTag.c_str(), sizeof(buf) - 1);
+			buf[sizeof(buf) - 1] = 0;
+			if (ImGui::InputText("Connected Body (Tag)", buf, sizeof(buf))) { component.connectedTag = buf; }
+			ImGui::TextDisabled("Empty tag = anchored to the world.");
+
+			if (component.type != JointComponent::Type::Distance){
+				float pivot[] = { component.pivot.x, component.pivot.y, component.pivot.z };
+				if (ImGui::DragFloat3("Pivot (world)", pivot, 0.1f)){
+					component.pivot = { pivot[0], pivot[1], pivot[2] };
+				}
+			}
+			if (component.type == JointComponent::Type::Distance){
+				float pivot[] = { component.pivot.x, component.pivot.y, component.pivot.z };
+				if (ImGui::DragFloat3("World Anchor", pivot, 0.1f)){
+					component.pivot = { pivot[0], pivot[1], pivot[2] };
+				}
+				ImGui::TextDisabled("Used when no connected body; else the other body's center.");
+				ImGui::DragFloat("Min Distance", &component.minDistance, 0.05f, -1.0f, 100.0f, "%.2f");
+				ImGui::DragFloat("Max Distance", &component.maxDistance, 0.05f, -1.0f, 100.0f, "%.2f");
+				ImGui::TextDisabled("-1 keeps the starting distance.");
+			}
+			if (component.type == JointComponent::Type::Hinge){
+				float axis[] = { component.axis.x, component.axis.y, component.axis.z };
+				if (ImGui::DragFloat3("Axis (world)", axis, 0.05f)){
+					component.axis = { axis[0], axis[1], axis[2] };
+				}
+				ImGui::Checkbox("Limit Angles", &component.limitAngles);
+				if (component.limitAngles){
+					float minDeg = glm::degrees(component.minAngle);
+					float maxDeg = glm::degrees(component.maxAngle);
+					if (ImGui::DragFloat("Min Angle", &minDeg, 1.0f, -180.0f, 0.0f, "%.0f deg"))
+						component.minAngle = glm::radians(minDeg);
+					if (ImGui::DragFloat("Max Angle", &maxDeg, 1.0f, 0.0f, 180.0f, "%.0f deg"))
+						component.maxAngle = glm::radians(maxDeg);
+				}
+			}
+			ImGui::TextDisabled("Connected on Run; needs a Rigid Body + collider.");
 		});
 
 		DrawComponent<TerrainComponent>("Terrain", entity, [](TerrainComponent& component){
@@ -1022,6 +1130,14 @@ namespace Phoenix{
 				ImGui::BulletText("SetScale(x, y, z)");
 				ImGui::BulletText("SetColor(r, g, b)");
 				ImGui::BulletText("SetEmissive(r, g, b [, strength])  -- glow");
+				ImGui::Separator();
+				ImGui::TextDisabled("Physics (needs a Rigid Body, while playing):");
+				ImGui::BulletText("ApplyImpulse(x, y, z) / ApplyForce(x, y, z)");
+				ImGui::BulletText("SetVelocity(x, y, z) / GetVelocity() -> x, y, z");
+				ImGui::BulletText("SetAngularVelocity(x, y, z)");
+				ImGui::BulletText("RayCast(ox,oy,oz, dx,dy,dz, maxDist)\n-> tag, hx, hy, hz (or nil)");
+				ImGui::BulletText("OnCollisionEnter(otherTag) -- callback");
+				ImGui::BulletText("OnCollisionExit(otherTag)  -- callback");
 				ImGui::TreePop();
 			}
 		});

@@ -139,6 +139,15 @@ namespace Phoenix{
             auto& rb = entity.GetComponent<RigidBodyComponent>();
             out << YAML::Key << "RigidBodyComponent" << YAML::Value << YAML::BeginMap;
             out << YAML::Key << "Type" << YAML::Value << (int)rb.type;
+            out << YAML::Key << "Friction" << YAML::Value << rb.friction;
+            out << YAML::Key << "Restitution" << YAML::Value << rb.restitution;
+            out << YAML::Key << "Density" << YAML::Value << rb.density;
+            out << YAML::Key << "LinearDamping" << YAML::Value << rb.linearDamping;
+            out << YAML::Key << "AngularDamping" << YAML::Value << rb.angularDamping;
+            out << YAML::Key << "GravityFactor" << YAML::Value << rb.gravityFactor;
+            out << YAML::Key << "ContinuousCollision" << YAML::Value << rb.continuousCollision;
+            out << YAML::Key << "IsSensor" << YAML::Value << rb.isSensor;
+            out << YAML::Key << "InitialVelocity" << YAML::Value << rb.initialVelocity;
             out << YAML::EndMap;
         }
 
@@ -149,9 +158,46 @@ namespace Phoenix{
             out << YAML::EndMap;
         }
 
+        if (entity.HasComponent<SphereColliderComponent>()){
+            out << YAML::Key << "SphereColliderComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "Radius" << YAML::Value << entity.GetComponent<SphereColliderComponent>().radius;
+            out << YAML::EndMap;
+        }
+
+        if (entity.HasComponent<CapsuleColliderComponent>()){
+            auto& cc = entity.GetComponent<CapsuleColliderComponent>();
+            out << YAML::Key << "CapsuleColliderComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "Radius" << YAML::Value << cc.radius;
+            out << YAML::Key << "HalfHeight" << YAML::Value << cc.halfHeight;
+            out << YAML::EndMap;
+        }
+
+        if (entity.HasComponent<CylinderColliderComponent>()){
+            auto& cc = entity.GetComponent<CylinderColliderComponent>();
+            out << YAML::Key << "CylinderColliderComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "Radius" << YAML::Value << cc.radius;
+            out << YAML::Key << "HalfHeight" << YAML::Value << cc.halfHeight;
+            out << YAML::EndMap;
+        }
+
         if (entity.HasComponent<MeshColliderComponent>()){
             out << YAML::Key << "MeshColliderComponent" << YAML::Value << YAML::BeginMap;
             out << YAML::Key << "Convex" << YAML::Value << entity.GetComponent<MeshColliderComponent>().convex;
+            out << YAML::EndMap;
+        }
+
+        if (entity.HasComponent<JointComponent>()){
+            auto& j = entity.GetComponent<JointComponent>();
+            out << YAML::Key << "JointComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "Type" << YAML::Value << (int)j.type;
+            out << YAML::Key << "ConnectedTag" << YAML::Value << j.connectedTag;
+            out << YAML::Key << "Pivot" << YAML::Value << j.pivot;
+            out << YAML::Key << "Axis" << YAML::Value << j.axis;
+            out << YAML::Key << "MinDistance" << YAML::Value << j.minDistance;
+            out << YAML::Key << "MaxDistance" << YAML::Value << j.maxDistance;
+            out << YAML::Key << "LimitAngles" << YAML::Value << j.limitAngles;
+            out << YAML::Key << "MinAngle" << YAML::Value << j.minAngle;
+            out << YAML::Key << "MaxAngle" << YAML::Value << j.maxAngle;
             out << YAML::EndMap;
         }
 
@@ -354,8 +400,53 @@ namespace Phoenix{
         if (auto n = node["RigidBodyComponent"]){
             auto& rb = entity.HasComponent<RigidBodyComponent>() ? entity.GetComponent<RigidBodyComponent>() : entity.AddComponent<RigidBodyComponent>();
             rb.type = (RigidBodyComponent::Type)n["Type"].as<int>();
+            // Assign every field (with its default when absent): the component may be
+            // reused from the live scene, so stale values must not survive.
+            rb.friction = n["Friction"] ? n["Friction"].as<float>() : 0.5f;
+            rb.restitution = n["Restitution"] ? n["Restitution"].as<float>() : 0.0f;
+            rb.density = n["Density"] ? n["Density"].as<float>() : 1000.0f;
+            rb.linearDamping = n["LinearDamping"] ? n["LinearDamping"].as<float>() : 0.05f;
+            rb.angularDamping = n["AngularDamping"] ? n["AngularDamping"].as<float>() : 0.05f;
+            rb.gravityFactor = n["GravityFactor"] ? n["GravityFactor"].as<float>() : 1.0f;
+            rb.continuousCollision = n["ContinuousCollision"] ? n["ContinuousCollision"].as<bool>() : false;
+            rb.isSensor = n["IsSensor"] ? n["IsSensor"].as<bool>() : false;
+            rb.initialVelocity = n["InitialVelocity"] ? ReadVec3(n["InitialVelocity"]) : glm::vec3(0.0f);
         }
         else if (entity.HasComponent<RigidBodyComponent>()) entity.RemoveComponent<RigidBodyComponent>();
+
+        if (auto n = node["SphereColliderComponent"]){
+            auto& sc = entity.HasComponent<SphereColliderComponent>() ? entity.GetComponent<SphereColliderComponent>() : entity.AddComponent<SphereColliderComponent>();
+            sc.radius = n["Radius"].as<float>();
+        }
+        else if (entity.HasComponent<SphereColliderComponent>()) entity.RemoveComponent<SphereColliderComponent>();
+
+        if (auto n = node["CapsuleColliderComponent"]){
+            auto& cc = entity.HasComponent<CapsuleColliderComponent>() ? entity.GetComponent<CapsuleColliderComponent>() : entity.AddComponent<CapsuleColliderComponent>();
+            cc.radius = n["Radius"].as<float>();
+            cc.halfHeight = n["HalfHeight"].as<float>();
+        }
+        else if (entity.HasComponent<CapsuleColliderComponent>()) entity.RemoveComponent<CapsuleColliderComponent>();
+
+        if (auto n = node["CylinderColliderComponent"]){
+            auto& cc = entity.HasComponent<CylinderColliderComponent>() ? entity.GetComponent<CylinderColliderComponent>() : entity.AddComponent<CylinderColliderComponent>();
+            cc.radius = n["Radius"].as<float>();
+            cc.halfHeight = n["HalfHeight"].as<float>();
+        }
+        else if (entity.HasComponent<CylinderColliderComponent>()) entity.RemoveComponent<CylinderColliderComponent>();
+
+        if (auto n = node["JointComponent"]){
+            auto& j = entity.HasComponent<JointComponent>() ? entity.GetComponent<JointComponent>() : entity.AddComponent<JointComponent>();
+            j.type = (JointComponent::Type)n["Type"].as<int>();
+            j.connectedTag = n["ConnectedTag"] ? n["ConnectedTag"].as<std::string>() : std::string();
+            j.pivot = n["Pivot"] ? ReadVec3(n["Pivot"]) : glm::vec3(0.0f);
+            j.axis = n["Axis"] ? ReadVec3(n["Axis"]) : glm::vec3(0.0f, 0.0f, 1.0f);
+            j.minDistance = n["MinDistance"] ? n["MinDistance"].as<float>() : -1.0f;
+            j.maxDistance = n["MaxDistance"] ? n["MaxDistance"].as<float>() : -1.0f;
+            j.limitAngles = n["LimitAngles"] ? n["LimitAngles"].as<bool>() : false;
+            j.minAngle = n["MinAngle"] ? n["MinAngle"].as<float>() : -1.5708f;
+            j.maxAngle = n["MaxAngle"] ? n["MaxAngle"].as<float>() : 1.5708f;
+        }
+        else if (entity.HasComponent<JointComponent>()) entity.RemoveComponent<JointComponent>();
 
         if (auto n = node["BoxColliderComponent"]){
             auto& bc = entity.HasComponent<BoxColliderComponent>() ? entity.GetComponent<BoxColliderComponent>() : entity.AddComponent<BoxColliderComponent>();

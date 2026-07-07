@@ -12,6 +12,8 @@
 #include <cmath>
 #include <algorithm>
 #include <unordered_map>
+#include <set>
+#include <tuple>
 namespace Phoenix{
 
     // Built-in primitive meshes are unit-sized and identical across all entities of a
@@ -105,71 +107,88 @@ namespace Phoenix{
     Scene::Scene() = default;
     Scene::~Scene() = default;
 
+    // Collect the rigid body's material/mass settings for body creation.
+    static PhysicsWorld::BodyProps MakeBodyProps(const RigidBodyComponent& rb){
+        PhysicsWorld::BodyProps props;
+        props.friction = rb.friction;
+        props.restitution = rb.restitution;
+        props.density = rb.density;
+        props.linearDamping = rb.linearDamping;
+        props.angularDamping = rb.angularDamping;
+        props.gravityFactor = rb.gravityFactor;
+        props.continuousCollision = rb.continuousCollision;
+        props.isSensor = rb.isSensor;
+        props.initialVelocity = rb.initialVelocity;
+        return props;
+    }
+
     void Scene::OnRuntimeStart(){
         m_PhysicsWorld = CreateScope<PhysicsWorld>();
+        m_BodyToEntity.clear();
 
-        auto view = m_Registry.view<RigidBodyComponent, BoxColliderComponent, TransformComponent>();
-        for (auto entity : view){
-            auto& rb = view.get<RigidBodyComponent>(entity);
-            auto& collider = view.get<BoxColliderComponent>(entity);
-            auto& transform = view.get<TransformComponent>(entity);
-
-            glm::vec3 halfExtents = collider.halfExtents * transform.Scale;
+        // One body per rigid-body entity. Shape priority: explicit primitive colliders
+        // (box/sphere/capsule/cylinder) first, then a mesh collider built from the
+        // entity's model or primitive-shape geometry.
+        auto rbView = m_Registry.view<RigidBodyComponent, TransformComponent>();
+        for (auto entity : rbView){
+            auto& rb = rbView.get<RigidBodyComponent>(entity);
+            auto& transform = rbView.get<TransformComponent>(entity);
             PhysicsWorld::BodyType type = (PhysicsWorld::BodyType)(int)rb.type;
-            rb.runtimeBodyID = m_PhysicsWorld->CreateBox(transform.Translation, transform.Rotation, halfExtents, type);
-        }
+            PhysicsWorld::BodyProps props = MakeBodyProps(rb);
+            const glm::vec3& s = transform.Scale;
 
-        // Mesh colliders: build the shape from the entity's mesh geometry (scaled into
-        // local space), preferring the box collider above if both are present.
-        auto meshColliderView = m_Registry.view<RigidBodyComponent, MeshColliderComponent, MeshComponent, TransformComponent>();
-        for (auto entity : meshColliderView){
-            auto& rb = meshColliderView.get<RigidBodyComponent>(entity);
-            if (rb.runtimeBodyID != 0xffffffff) { continue; } // already has a (box) body
-            auto& meshCollider = meshColliderView.get<MeshColliderComponent>(entity);
-            auto& mesh = meshColliderView.get<MeshComponent>(entity);
-            auto& transform = meshColliderView.get<TransformComponent>(entity);
-            if (!mesh.model || mesh.model->GetMeshes().empty()) { continue; } // not loaded yet
+            if (auto* box = m_Registry.try_get<BoxColliderComponent>(entity)){
+                rb.runtimeBodyID = m_PhysicsWorld->CreateBox(transform.Translation, transform.Rotation,
+                    box->halfExtents * s, type, props);
+            }
+            else if (auto* sphere = m_Registry.try_get<SphereColliderComponent>(entity)){
+                float scale = std::max(s.x, std::max(s.y, s.z));
+                rb.runtimeBodyID = m_PhysicsWorld->CreateSphere(transform.Translation, transform.Rotation,
+                    sphere->radius * scale, type, props);
+            }
+            else if (auto* capsule = m_Registry.try_get<CapsuleColliderComponent>(entity)){
+                float radialScale = std::max(s.x, s.z);
+                rb.runtimeBodyID = m_PhysicsWorld->CreateCapsule(transform.Translation, transform.Rotation,
+                    capsule->halfHeight * s.y, capsule->radius * radialScale, type, props);
+            }
+            else if (auto* cylinder = m_Registry.try_get<CylinderColliderComponent>(entity)){
+                float radialScale = std::max(s.x, s.z);
+                rb.runtimeBodyID = m_PhysicsWorld->CreateCylinder(transform.Translation, transform.Rotation,
+                    cylinder->halfHeight * s.y, cylinder->radius * radialScale, type, props);
+            }
+            else if (auto* meshCollider = m_Registry.try_get<MeshColliderComponent>(entity)){
+                // Gather geometry (scaled into local space) from the entity's model,
+                // or from its generated primitive-shape mesh.
+                std::vector<glm::vec3> points;
+                std::vector<uint32_t> indices;
+                if (auto* mesh = m_Registry.try_get<MeshComponent>(entity)){
+                    if (!mesh->model || mesh->model->GetMeshes().empty()) { continue; } // not loaded yet
+                    for (const auto& sub : mesh->model->GetMeshes()){
+                        uint32_t base = (uint32_t)points.size();
+                        for (const auto& p : sub->GetPositions()) { points.push_back(p * s); }
+                        for (uint32_t idx : sub->GetIndices())     { indices.push_back(base + idx); }
+                    }
+                }
+                else if (auto* primitive = m_Registry.try_get<PrimitiveComponent>(entity)){
+                    Ref<Mesh> mesh = GetPrimitiveMesh(primitive->type);
+                    if (!mesh) { continue; }
+                    points.reserve(mesh->GetPositions().size());
+                    for (const auto& p : mesh->GetPositions()) { points.push_back(p * s); }
+                    indices = mesh->GetIndices();
+                }
+                if (points.empty()) { continue; }
 
-            // Gather all sub-mesh geometry, scaled by the transform's scale.
-            std::vector<glm::vec3> points;
-            std::vector<uint32_t> indices;
-            for (const auto& sub : mesh.model->GetMeshes()){
-                uint32_t base = (uint32_t)points.size();
-                for (const auto& p : sub->GetPositions()) { points.push_back(p * transform.Scale); }
-                for (uint32_t idx : sub->GetIndices())     { indices.push_back(base + idx); }
+                if (meshCollider->convex || type != PhysicsWorld::BodyType::Static){
+                    rb.runtimeBodyID = m_PhysicsWorld->CreateConvexHull(points, transform.Translation,
+                        transform.Rotation, type, props);
+                }
+                else{
+                    rb.runtimeBodyID = m_PhysicsWorld->CreateMesh(points, indices, transform.Translation,
+                        transform.Rotation, props);
+                }
             }
 
-            PhysicsWorld::BodyType type = (PhysicsWorld::BodyType)(int)rb.type;
-            if (meshCollider.convex || type != PhysicsWorld::BodyType::Static){
-                rb.runtimeBodyID = m_PhysicsWorld->CreateConvexHull(points, transform.Translation, transform.Rotation, type);
-            }
-            else{
-                rb.runtimeBodyID = m_PhysicsWorld->CreateMesh(points, indices, transform.Translation, transform.Rotation);
-            }
-        }
-        // Primitive shapes: build a collider from the generated unit mesh. Convex hull
-        // for dynamic/kinematic bodies, exact triangle mesh for static ones.
-        auto primColliderView = m_Registry.view<RigidBodyComponent, MeshColliderComponent, PrimitiveComponent, TransformComponent>();
-        for (auto entity : primColliderView){
-            auto& rb = primColliderView.get<RigidBodyComponent>(entity);
-            if (rb.runtimeBodyID != 0xffffffff) { continue; } // already has a body
-            auto& meshCollider = primColliderView.get<MeshColliderComponent>(entity);
-            auto& primitive = primColliderView.get<PrimitiveComponent>(entity);
-            auto& transform = primColliderView.get<TransformComponent>(entity);
-            Ref<Mesh> mesh = GetPrimitiveMesh(primitive.type);
-            if (!mesh) { continue; }
-
-            std::vector<glm::vec3> points;
-            points.reserve(mesh->GetPositions().size());
-            for (const auto& p : mesh->GetPositions()) { points.push_back(p * transform.Scale); }
-
-            PhysicsWorld::BodyType type = (PhysicsWorld::BodyType)(int)rb.type;
-            if (meshCollider.convex || type != PhysicsWorld::BodyType::Static){
-                rb.runtimeBodyID = m_PhysicsWorld->CreateConvexHull(points, transform.Translation, transform.Rotation, type);
-            }
-            else{
-                rb.runtimeBodyID = m_PhysicsWorld->CreateMesh(points, mesh->GetIndices(), transform.Translation, transform.Rotation);
-            }
+            if (rb.runtimeBodyID != 0xffffffff) { m_BodyToEntity[rb.runtimeBodyID] = entity; }
         }
 
         // Terrain: static triangle-mesh collider from the heightfield.
@@ -186,7 +205,56 @@ namespace Phoenix{
             points.reserve(terrain.mesh->GetPositions().size());
             for (const auto& p : terrain.mesh->GetPositions()) { points.push_back(p * transform.Scale); }
             terrain.runtimeBodyID = m_PhysicsWorld->CreateMesh(points, terrain.mesh->GetIndices(),
-                transform.Translation, transform.Rotation);
+                transform.Translation, transform.Rotation, PhysicsWorld::BodyProps());
+            if (terrain.runtimeBodyID != 0xffffffff) { m_BodyToEntity[terrain.runtimeBodyID] = entity; }
+        }
+
+        // Joints: connect bodies after they all exist (creation order independent).
+        // The connected entity is found by Tag; an empty tag anchors to the world.
+        {
+            auto jointView = m_Registry.view<JointComponent, RigidBodyComponent>();
+            for (auto entity : jointView){
+                auto& joint = jointView.get<JointComponent>(entity);
+                auto& rb = jointView.get<RigidBodyComponent>(entity);
+                if (rb.runtimeBodyID == 0xffffffff) { continue; } // no body (missing collider?)
+
+                uint32_t other = 0xffffffff; // world
+                glm::vec3 otherCenter = joint.pivot;
+                if (!joint.connectedTag.empty()){
+                    bool found = false;
+                    auto tagged = m_Registry.view<TagComponent, RigidBodyComponent>();
+                    for (auto te : tagged){
+                        if (tagged.get<TagComponent>(te).Tag != joint.connectedTag) { continue; }
+                        other = tagged.get<RigidBodyComponent>(te).runtimeBodyID;
+                        if (m_Registry.any_of<TransformComponent>(te))
+                            otherCenter = m_Registry.get<TransformComponent>(te).Translation;
+                        found = true;
+                        break;
+                    }
+                    if (!found || other == 0xffffffff){
+                        PHX_CORE_WARN("Joint on '{0}': connected body '{1}' not found or has no collider",
+                            m_Registry.any_of<TagComponent>(entity) ? m_Registry.get<TagComponent>(entity).Tag : "?",
+                            joint.connectedTag);
+                        continue;
+                    }
+                }
+
+                switch (joint.type){
+                    case JointComponent::Type::Point:
+                        m_PhysicsWorld->AddPointConstraint(rb.runtimeBodyID, other, joint.pivot);
+                        break;
+                    case JointComponent::Type::Distance:{
+                        glm::vec3 own = m_Registry.get<TransformComponent>(entity).Translation;
+                        m_PhysicsWorld->AddDistanceConstraint(rb.runtimeBodyID, other, own, otherCenter,
+                            joint.minDistance, joint.maxDistance);
+                        break;
+                    }
+                    case JointComponent::Type::Hinge:
+                        m_PhysicsWorld->AddHingeConstraint(rb.runtimeBodyID, other, joint.pivot, joint.axis,
+                            joint.limitAngles, joint.minAngle, joint.maxAngle);
+                        break;
+                }
+            }
         }
 
         m_PhysicsWorld->OptimizeBroadPhase();
@@ -210,6 +278,13 @@ namespace Phoenix{
         }
         m_PhysicsWorld.reset();
         m_Scripts.clear();
+        m_BodyToEntity.clear();
+    }
+
+    Entity Scene::FindEntityByBodyID(uint32_t bodyID){
+        auto it = m_BodyToEntity.find(bodyID);
+        if (it == m_BodyToEntity.end() || !m_Registry.valid(it->second)) { return {}; }
+        return { it->second, this };
     }
 
     // Slab-method ray vs axis-aligned box. Returns true and the entry distance if hit.
@@ -328,8 +403,19 @@ namespace Phoenix{
         // Physics: step the simulation and copy body transforms back to entities.
         if (m_PhysicsWorld){
             PHX_PROFILE("Physics Step");
-            m_PhysicsWorld->Step((float)ts);
             auto view = m_Registry.view<RigidBodyComponent, TransformComponent>();
+
+            // Kinematic bodies follow their entity transform (scripts/animation move
+            // it); MoveKinematic gives them the velocities to push dynamic bodies.
+            for (auto entity : view){
+                auto& rb = view.get<RigidBodyComponent>(entity);
+                if (rb.runtimeBodyID == 0xffffffff || rb.type != RigidBodyComponent::Type::Kinematic) { continue; }
+                auto& transform = view.get<TransformComponent>(entity);
+                m_PhysicsWorld->MoveKinematic(rb.runtimeBodyID, transform.Translation, transform.Rotation, (float)ts);
+            }
+
+            m_PhysicsWorld->Step((float)ts);
+
             for (auto entity : view){
                 auto& rb = view.get<RigidBodyComponent>(entity);
                 if (rb.runtimeBodyID == 0xffffffff) { continue; }
@@ -338,6 +424,32 @@ namespace Phoenix{
                 m_PhysicsWorld->GetBodyTransform(rb.runtimeBodyID, position, rotation);
                 transform.Translation = position;
                 transform.Rotation = rotation;
+            }
+
+            // Contact events -> Lua OnCollisionEnter/Exit(otherTag) on both entities'
+            // scripts. Deduped per frame (Jolt can report one pair per sub-shape).
+            if (!m_Scripts.empty()){
+                auto events = m_PhysicsWorld->ConsumeContactEvents();
+                std::set<std::tuple<uint32_t, uint32_t, bool>> seen;
+                for (const auto& ev : events){
+                    uint32_t a = std::min(ev.bodyA, ev.bodyB), b = std::max(ev.bodyA, ev.bodyB);
+                    if (!seen.insert({ a, b, ev.entered }).second) { continue; }
+
+                    Entity entityA = FindEntityByBodyID(ev.bodyA);
+                    Entity entityB = FindEntityByBodyID(ev.bodyB);
+                    if (!entityA || !entityB) { continue; }
+                    auto tagOf = [](Entity e){
+                        return e.HasComponent<TagComponent>() ? e.GetComponent<TagComponent>().Tag : std::string();
+                    };
+                    for (auto& script : m_Scripts){
+                        entt::entity se = (entt::entity)script->GetEntity();
+                        if (se == (entt::entity)entityA)      { script->OnCollision(tagOf(entityB), ev.entered); }
+                        else if (se == (entt::entity)entityB) { script->OnCollision(tagOf(entityA), ev.entered); }
+                    }
+                }
+            }
+            else{
+                m_PhysicsWorld->ConsumeContactEvents(); // keep the queue drained
             }
         }
 
@@ -769,6 +881,22 @@ namespace Phoenix{
 
     template<>
 	void Scene::OnComponentAdded<MeshColliderComponent>(Entity entity, MeshColliderComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<SphereColliderComponent>(Entity entity, SphereColliderComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<CapsuleColliderComponent>(Entity entity, CapsuleColliderComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<CylinderColliderComponent>(Entity entity, CylinderColliderComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<JointComponent>(Entity entity, JointComponent& component){
 	}
 
     template<>

@@ -9,6 +9,7 @@
 #include <Phoenix/renderer/shader.h>
 #include <Phoenix/renderer/VertexArray.h>
 #include <vector>
+#include <unordered_map>
 
 namespace Phoenix{
     class Entity;
@@ -38,12 +39,19 @@ namespace Phoenix{
         // empty entity if none. Used for click-to-select in the viewport.
         Entity PickEntity(const glm::vec3& rayOrigin, const glm::vec3& rayDirection);
 
-        // Physics runtime: start creates Jolt bodies from RigidBody/BoxCollider
-        // entities; while running, OnUpdate steps the simulation and writes the
-        // resulting transforms back to the entities.
+        // Physics runtime: start creates Jolt bodies from RigidBody + collider
+        // entities (and joints between them); while running, OnUpdate steps the
+        // simulation and writes the resulting transforms back to the entities.
         void OnRuntimeStart();
         void OnRuntimeStop();
         bool IsRunning() const { return (bool)m_PhysicsWorld; }
+
+        // The live physics world while playing (null in edit mode). Used by Lua
+        // bindings for impulses/velocities/raycasts.
+        PhysicsWorld* GetPhysicsWorld() { return m_PhysicsWorld.get(); }
+
+        // Entity owning the given runtime physics body (empty if unknown).
+        Entity FindEntityByBodyID(uint32_t bodyID);
     private:
 		template<typename T>
 		void OnComponentAdded(Entity entity, T& component);
@@ -65,6 +73,8 @@ namespace Phoenix{
 
         Scope<PhysicsWorld> m_PhysicsWorld;
         std::vector<Ref<LuaScript>> m_Scripts; // live Lua runtimes while playing
+        // Runtime body id -> owning entity, for contact-event dispatch (rebuilt each run).
+        std::unordered_map<uint32_t, entt::entity> m_BodyToEntity;
     };
 
 }

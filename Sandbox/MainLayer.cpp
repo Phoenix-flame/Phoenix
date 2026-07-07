@@ -387,6 +387,363 @@ void MainLayer::BuildRobotShowcase() {
     }
 }
 
+// A physics playground: bounce alley (restitution), friction ramp, wrecking ball
+// (point-joint chain), seesaw (limited hinge), kinematic spinner, tethered balloon
+// (distance joint + negative gravity), and a Space-fired CCD cannonball that flies
+// through a sensor gate (Lua OnCollisionEnter/Exit) into a crate wall. Press Run.
+void MainLayer::BuildPhysicsShowcase() {
+    m_Scene->AmbientColor() = glm::vec3(0.07f);
+
+    auto matte = [](Material& m, const glm::vec3& color){
+        m.ambient = color * 0.5f;
+        m.diffuse = color;
+        m.specular = glm::vec3(0.2f);
+        m.shininess = 16.0f;
+    };
+
+    {
+        auto cam = m_Scene->CreateEntity("Camera");
+        cam.AddComponent<CameraComponent>();
+        auto& t = cam.GetComponent<TransformComponent>();
+        t.Translation = { 0.0f, 9.0f, 26.0f };
+        t.Rotation = { -0.2f, 0.0f, 0.0f };
+    }
+
+    {
+        auto sun = m_Scene->CreateDirLightEntity("Sun");
+        auto& t = sun.GetComponent<TransformComponent>();
+        t.Translation = { 10.0f, 14.0f, 8.0f };
+        t.Rotation = { glm::radians(-55.0f), glm::radians(30.0f), 0.0f };
+        auto& dl = sun.GetComponent<DirLightComponent>();
+        dl.ambient = glm::vec3(0.05f);
+        dl.diffuse = glm::vec3(0.85f);
+    }
+
+    // Arena floor.
+    {
+        auto floor = m_Scene->CreateEntity("Arena");
+        auto& c = floor.AddComponent<CubeComponent>();
+        matte(c.material, glm::vec3(0.42f, 0.44f, 0.48f));
+        c.material.reflectivity = 0.12f;
+        auto& t = floor.GetComponent<TransformComponent>();
+        t.Translation = { 0.0f, -0.25f, 0.0f };
+        t.Scale = { 44.0f, 0.5f, 44.0f };
+        auto& rb = floor.AddComponent<RigidBodyComponent>();
+        rb.type = RigidBodyComponent::Type::Static;
+        rb.friction = 0.8f;
+        floor.AddComponent<BoxColliderComponent>();
+    }
+
+    // ---- Bounce alley: same drop, three restitutions ----
+    {
+        struct Bounce { const char* name; float x; float restitution; glm::vec3 color; };
+        const Bounce balls[] = {
+            { "Dead Ball (r=0.15)",  -16.0f, 0.15f, { 0.85f, 0.25f, 0.2f } },
+            { "Bouncy Ball (r=0.55)",-14.0f, 0.55f, { 0.95f, 0.6f, 0.15f } },
+            { "Super Ball (r=0.95)", -12.0f, 0.95f, { 0.3f, 0.9f, 0.3f } },
+        };
+        for (const auto& b : balls){
+            auto e = m_Scene->CreateEntity(b.name);
+            auto& p = e.AddComponent<PrimitiveComponent>(PrimitiveComponent::Type::Sphere);
+            matte(p.material, b.color);
+            p.material.emissive = b.color;
+            p.material.emissiveStrength = 0.6f;
+            auto& t = e.GetComponent<TransformComponent>();
+            t.Translation = { b.x, 6.0f, 4.0f };
+            t.Scale = glm::vec3(0.8f);
+            auto& rb = e.AddComponent<RigidBodyComponent>();
+            rb.restitution = b.restitution;
+            rb.friction = 0.4f;
+            e.AddComponent<SphereColliderComponent>();
+        }
+    }
+
+    // ---- Friction ramp: ice vs rubber ----
+    {
+        auto ramp = m_Scene->CreateEntity("Ramp");
+        auto& c = ramp.AddComponent<CubeComponent>();
+        matte(c.material, glm::vec3(0.5f, 0.42f, 0.34f));
+        auto& t = ramp.GetComponent<TransformComponent>();
+        t.Translation = { -5.0f, 1.6f, -6.0f };
+        t.Rotation = { 0.0f, 0.0f, glm::radians(-25.0f) };
+        t.Scale = { 7.0f, 0.3f, 3.0f };
+        auto& rb = ramp.AddComponent<RigidBodyComponent>();
+        rb.type = RigidBodyComponent::Type::Static;
+        rb.friction = 0.6f;
+        ramp.AddComponent<BoxColliderComponent>();
+    }
+    {
+        auto ice = m_Scene->CreateEntity("Ice Cube (friction 0.02)");
+        auto& c = ice.AddComponent<CubeComponent>();
+        matte(c.material, glm::vec3(0.55f, 0.8f, 1.0f));
+        c.material.specular = glm::vec3(0.9f);
+        c.material.shininess = 96.0f;
+        auto& t = ice.GetComponent<TransformComponent>();
+        t.Translation = { -7.4f, 3.15f, -6.7f };
+        t.Rotation = { 0.0f, 0.0f, glm::radians(-25.0f) };
+        t.Scale = glm::vec3(0.8f);
+        auto& rb = ice.AddComponent<RigidBodyComponent>();
+        rb.friction = 0.02f;
+        ice.AddComponent<BoxColliderComponent>();
+    }
+    {
+        auto rubber = m_Scene->CreateEntity("Rubber Cube (friction 1.2)");
+        auto& c = rubber.AddComponent<CubeComponent>();
+        matte(c.material, glm::vec3(0.25f, 0.2f, 0.2f));
+        auto& t = rubber.GetComponent<TransformComponent>();
+        t.Translation = { -7.4f, 3.15f, -5.3f };
+        t.Rotation = { 0.0f, 0.0f, glm::radians(-25.0f) };
+        t.Scale = glm::vec3(0.8f);
+        auto& rb = rubber.AddComponent<RigidBodyComponent>();
+        rb.friction = 1.2f;
+        rubber.AddComponent<BoxColliderComponent>();
+    }
+
+    // ---- Wrecking ball: chain of point joints swings into a crate pyramid ----
+    {
+        // Visual anchor block (no physics; the top link is pinned to the world).
+        auto anchor = m_Scene->CreateEntity("Chain Anchor");
+        auto& c = anchor.AddComponent<CubeComponent>();
+        matte(c.material, glm::vec3(0.2f, 0.2f, 0.24f));
+        auto& t = anchor.GetComponent<TransformComponent>();
+        t.Translation = { 8.0f, 7.2f, -4.0f };
+        t.Scale = glm::vec3(0.5f);
+    }
+    for (int i = 0; i < 3; i++){
+        auto link = m_Scene->CreateEntity("Chain Link " + std::to_string(i + 1));
+        auto& p = link.AddComponent<PrimitiveComponent>(PrimitiveComponent::Type::Sphere);
+        matte(p.material, glm::vec3(0.55f, 0.55f, 0.6f));
+        auto& t = link.GetComponent<TransformComponent>();
+        t.Translation = { 8.0f, 6.4f - 1.2f * i, -4.0f };
+        t.Scale = glm::vec3(0.4f);
+        auto& rb = link.AddComponent<RigidBodyComponent>();
+        rb.density = 7000.0f;
+        link.AddComponent<SphereColliderComponent>();
+        auto& j = link.AddComponent<JointComponent>();
+        j.type = JointComponent::Type::Point;
+        j.connectedTag = (i == 0) ? "" : ("Chain Link " + std::to_string(i));
+        j.pivot = { 8.0f, 7.0f - 1.2f * i, -4.0f };
+    }
+    {
+        auto ball = m_Scene->CreateEntity("Wrecking Ball");
+        auto& p = ball.AddComponent<PrimitiveComponent>(PrimitiveComponent::Type::Sphere);
+        matte(p.material, glm::vec3(0.3f, 0.3f, 0.34f));
+        p.material.specular = glm::vec3(0.8f);
+        p.material.shininess = 64.0f;
+        auto& t = ball.GetComponent<TransformComponent>();
+        t.Translation = { 8.0f, 2.4f, -4.0f };
+        t.Scale = glm::vec3(1.4f);
+        auto& rb = ball.AddComponent<RigidBodyComponent>();
+        rb.density = 3000.0f;
+        rb.initialVelocity = { 0.0f, 0.0f, -9.0f }; // start the swing
+        ball.AddComponent<SphereColliderComponent>();
+        auto& j = ball.AddComponent<JointComponent>();
+        j.type = JointComponent::Type::Point;
+        j.connectedTag = "Chain Link 3";
+        j.pivot = { 8.0f, 3.4f, -4.0f };
+    }
+    {
+        // Crate pyramid in the swing path.
+        const glm::vec3 crateColor(0.75f, 0.55f, 0.3f);
+        int n = 0;
+        for (int row = 0; row < 4; row++){
+            int count = 4 - row;
+            for (int i = 0; i < count; i++){
+                auto crate = m_Scene->CreateEntity("Crate " + std::to_string(++n));
+                auto& c = crate.AddComponent<CubeComponent>();
+                matte(c.material, crateColor * (0.85f + 0.05f * row));
+                auto& t = crate.GetComponent<TransformComponent>();
+                t.Translation = { 8.0f - (count - 1) * 0.5f + i, 0.5f + row, -6.2f };
+                auto& rb = crate.AddComponent<RigidBodyComponent>();
+                rb.density = 400.0f;
+                rb.friction = 0.6f;
+                crate.AddComponent<BoxColliderComponent>();
+            }
+        }
+    }
+
+    // ---- Seesaw: limited hinge, heavy sphere launches the light cube ----
+    {
+        auto fulcrum = m_Scene->CreateEntity("Fulcrum");
+        auto& c = fulcrum.AddComponent<CubeComponent>();
+        matte(c.material, glm::vec3(0.3f, 0.3f, 0.35f));
+        auto& t = fulcrum.GetComponent<TransformComponent>();
+        t.Translation = { 0.0f, 0.3f, 6.0f };
+        t.Scale = { 0.4f, 0.6f, 1.2f };
+        auto& rb = fulcrum.AddComponent<RigidBodyComponent>();
+        rb.type = RigidBodyComponent::Type::Static;
+        fulcrum.AddComponent<BoxColliderComponent>();
+    }
+    {
+        auto plank = m_Scene->CreateEntity("Seesaw Plank");
+        auto& c = plank.AddComponent<CubeComponent>();
+        matte(c.material, glm::vec3(0.6f, 0.45f, 0.25f));
+        auto& t = plank.GetComponent<TransformComponent>();
+        t.Translation = { 0.0f, 0.7f, 6.0f };
+        t.Scale = { 6.0f, 0.15f, 1.2f };
+        auto& rb = plank.AddComponent<RigidBodyComponent>();
+        rb.density = 700.0f;
+        rb.friction = 0.8f;
+        plank.AddComponent<BoxColliderComponent>();
+        auto& j = plank.AddComponent<JointComponent>();
+        j.type = JointComponent::Type::Hinge;
+        j.pivot = { 0.0f, 0.7f, 6.0f };
+        j.axis = { 0.0f, 0.0f, 1.0f };
+        j.limitAngles = true;
+        j.minAngle = glm::radians(-25.0f);
+        j.maxAngle = glm::radians(25.0f);
+    }
+    {
+        auto rider = m_Scene->CreateEntity("Seesaw Rider");
+        auto& c = rider.AddComponent<CubeComponent>();
+        matte(c.material, glm::vec3(0.9f, 0.8f, 0.2f));
+        auto& t = rider.GetComponent<TransformComponent>();
+        t.Translation = { 2.4f, 1.2f, 6.0f };
+        t.Scale = glm::vec3(0.8f);
+        auto& rb = rider.AddComponent<RigidBodyComponent>();
+        rb.density = 400.0f;
+        rb.friction = 0.6f;
+        rider.AddComponent<BoxColliderComponent>();
+    }
+    {
+        auto weight = m_Scene->CreateEntity("Drop Weight");
+        auto& p = weight.AddComponent<PrimitiveComponent>(PrimitiveComponent::Type::Sphere);
+        matte(p.material, glm::vec3(0.4f, 0.4f, 0.45f));
+        p.material.specular = glm::vec3(0.7f);
+        auto& t = weight.GetComponent<TransformComponent>();
+        t.Translation = { -2.4f, 7.0f, 6.0f };
+        auto& rb = weight.AddComponent<RigidBodyComponent>();
+        rb.density = 5000.0f;
+        weight.AddComponent<SphereColliderComponent>();
+    }
+
+    // ---- Spinner: a kinematic paddle driven by Lua sweeps light crates ----
+    {
+        auto paddle = m_Scene->CreateEntity("Spinner Paddle");
+        auto& c = paddle.AddComponent<CubeComponent>();
+        matte(c.material, glm::vec3(0.7f, 0.3f, 0.6f));
+        c.material.emissive = glm::vec3(0.7f, 0.3f, 0.6f);
+        c.material.emissiveStrength = 0.8f;
+        auto& t = paddle.GetComponent<TransformComponent>();
+        t.Translation = { -8.0f, 0.5f, 12.0f };
+        t.Scale = { 5.0f, 0.5f, 0.4f };
+        auto& rb = paddle.AddComponent<RigidBodyComponent>();
+        rb.type = RigidBodyComponent::Type::Kinematic;
+        paddle.AddComponent<BoxColliderComponent>();
+        paddle.AddComponent<LuaScriptComponent>().source =
+            "-- Kinematic body: the entity transform drives the physics body.\n"
+            "function OnUpdate(dt)\n"
+            "    Rotate(0, 1.5 * dt, 0)\n"
+            "end\n";
+    }
+    for (int i = 0; i < 6; i++){
+        float a = glm::radians(60.0f * i);
+        auto box = m_Scene->CreateEntity("Swept Box " + std::to_string(i + 1));
+        auto& c = box.AddComponent<CubeComponent>();
+        matte(c.material, glm::vec3(0.35f, 0.6f, 0.8f));
+        auto& t = box.GetComponent<TransformComponent>();
+        t.Translation = { -8.0f + 2.0f * std::cos(a), 0.25f, 12.0f + 2.0f * std::sin(a) };
+        t.Scale = glm::vec3(0.5f);
+        auto& rb = box.AddComponent<RigidBodyComponent>();
+        rb.density = 300.0f;
+        rb.friction = 0.3f;
+        box.AddComponent<BoxColliderComponent>();
+    }
+
+    // ---- Balloon: negative gravity factor held down by a distance tether ----
+    {
+        auto anchor = m_Scene->CreateEntity("Tether Anchor");
+        auto& c = anchor.AddComponent<CubeComponent>();
+        matte(c.material, glm::vec3(0.25f, 0.25f, 0.3f));
+        auto& t = anchor.GetComponent<TransformComponent>();
+        t.Translation = { 6.0f, 0.15f, 10.0f };
+        t.Scale = glm::vec3(0.3f);
+    }
+    {
+        auto balloon = m_Scene->CreateEntity("Balloon");
+        auto& p = balloon.AddComponent<PrimitiveComponent>(PrimitiveComponent::Type::Sphere);
+        matte(p.material, glm::vec3(1.0f, 0.45f, 0.75f));
+        p.material.emissive = glm::vec3(1.0f, 0.45f, 0.75f);
+        p.material.emissiveStrength = 1.5f;
+        auto& t = balloon.GetComponent<TransformComponent>();
+        t.Translation = { 6.0f, 3.0f, 10.0f };
+        t.Scale = glm::vec3(1.2f);
+        auto& rb = balloon.AddComponent<RigidBodyComponent>();
+        rb.gravityFactor = -0.3f;   // floats up
+        rb.linearDamping = 0.4f;
+        rb.initialVelocity = { 1.5f, 0.0f, 0.0f }; // sway on the tether
+        balloon.AddComponent<SphereColliderComponent>();
+        auto& j = balloon.AddComponent<JointComponent>();
+        j.type = JointComponent::Type::Distance;
+        j.pivot = { 6.0f, 0.15f, 10.0f };
+        j.minDistance = 0.0f;   // rope: can slacken...
+        j.maxDistance = -1.0f;  // ...but not stretch past the starting length
+    }
+
+    // ---- Cannon lane: Space fires a CCD ball through a sensor gate into crates ----
+    {
+        auto ballE = m_Scene->CreateEntity("Cannonball");
+        auto& p = ballE.AddComponent<PrimitiveComponent>(PrimitiveComponent::Type::Sphere);
+        matte(p.material, glm::vec3(0.9f, 0.35f, 0.1f));
+        p.material.emissive = glm::vec3(0.9f, 0.35f, 0.1f);
+        p.material.emissiveStrength = 1.2f;
+        auto& t = ballE.GetComponent<TransformComponent>();
+        t.Translation = { 0.0f, 0.5f, 14.0f };
+        t.Scale = glm::vec3(0.9f);
+        auto& rb = ballE.AddComponent<RigidBodyComponent>();
+        rb.density = 6000.0f;
+        rb.continuousCollision = true; // fast mover: don't tunnel through the wall
+        ballE.AddComponent<SphereColliderComponent>();
+        ballE.AddComponent<LuaScriptComponent>().source =
+            "-- Press SPACE to fire the cannonball at the crate wall.\n"
+            "function OnUpdate(dt)\n"
+            "    if IsKeyPressed(Key.Space) then\n"
+            "        SetVelocity(0, 3, -26)\n"
+            "    end\n"
+            "end\n";
+    }
+    {
+        auto gate = m_Scene->CreateEntity("Sensor Gate");
+        auto& c = gate.AddComponent<CubeComponent>();
+        matte(c.material, glm::vec3(0.1f, 0.6f, 0.8f));
+        c.material.emissive = glm::vec3(0.0f, 0.8f, 1.0f);
+        c.material.emissiveStrength = 1.0f;
+        auto& t = gate.GetComponent<TransformComponent>();
+        t.Translation = { 0.0f, 1.6f, 8.0f };
+        t.Scale = { 3.4f, 3.2f, 0.25f };
+        auto& rb = gate.AddComponent<RigidBodyComponent>();
+        rb.type = RigidBodyComponent::Type::Static;
+        rb.isSensor = true; // trigger volume: detects, never blocks
+        gate.AddComponent<BoxColliderComponent>();
+        gate.AddComponent<LuaScriptComponent>().source =
+            "-- Sensor gate: flashes green while something is inside it.\n"
+            "function OnCollisionEnter(other)\n"
+            "    SetEmissive(0.1, 1.0, 0.4, 6.0)\n"
+            "end\n"
+            "function OnCollisionExit(other)\n"
+            "    SetEmissive(0.0, 0.8, 1.0, 1.0)\n"
+            "end\n";
+    }
+    {
+        // Crate wall target.
+        for (int row = 0; row < 4; row++){
+            for (int i = 0; i < 5; i++){
+                auto crate = m_Scene->CreateEntity("Wall Crate " + std::to_string(row * 5 + i + 1));
+                auto& c = crate.AddComponent<CubeComponent>();
+                glm::vec3 color = ((row + i) % 2 == 0) ? glm::vec3(0.7f, 0.5f, 0.3f) : glm::vec3(0.55f, 0.4f, 0.25f);
+                matte(c.material, color);
+                auto& t = crate.GetComponent<TransformComponent>();
+                t.Translation = { -1.84f + 0.92f * i, 0.45f + 0.92f * row, 2.0f };
+                t.Scale = glm::vec3(0.9f);
+                auto& rb = crate.AddComponent<RigidBodyComponent>();
+                rb.density = 300.0f;
+                rb.friction = 0.4f;
+                crate.AddComponent<BoxColliderComponent>();
+            }
+        }
+    }
+}
+
 void MainLayer::BuildMultiShadowShowcase() {
     // Three coloured directional lights from different angles, each casting its OWN
     // shadow map -> the central objects cast three shadows fanning out, tinted where the
@@ -732,6 +1089,15 @@ void MainLayer::OnImGuiRender(){
                     m_Scene = CreateRef<Scene>();
                     m_Scene->OnResize(m_ViewportSize.x, m_ViewportSize.y);
                     BuildMultiShadowShowcase();
+                    m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
+                    m_UndoStack.clear();
+                    m_RedoStack.clear();
+                    m_LastSnapshot = SceneSerializer(m_Scene).SerializeToString();
+                }
+                if (ImGui::MenuItem("Load Physics Showcase")) {
+                    m_Scene = CreateRef<Scene>();
+                    m_Scene->OnResize(m_ViewportSize.x, m_ViewportSize.y);
+                    BuildPhysicsShowcase();
                     m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
                     m_UndoStack.clear();
                     m_RedoStack.clear();

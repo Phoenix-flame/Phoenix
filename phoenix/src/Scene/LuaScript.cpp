@@ -1,5 +1,7 @@
 #include <Phoenix/Scene/LuaScript.h>
 #include <Phoenix/Scene/Component.h>
+#include <Phoenix/Scene/Scene.h>
+#include <Phoenix/Physics/Physics.h>
 #include <Phoenix/core/log.h>
 #include <Phoenix/core/Input.h>
 #include <Phoenix/core/keyCodes.h>
@@ -170,6 +172,73 @@ namespace Phoenix{
         return 1;
     }
 
+    // ---- Physics ----
+    // These act on the script entity's runtime rigid body; they are no-ops in edit
+    // mode or when the entity has no body.
+
+    static PhysicsWorld* ScriptPhysics(lua_State* L, uint32_t& outBodyID){
+        Entity e = ScriptEntity(L);
+        outBodyID = 0xffffffff;
+        if (!e.GetScene() || !e.HasComponent<RigidBodyComponent>()) { return nullptr; }
+        outBodyID = e.GetComponent<RigidBodyComponent>().runtimeBodyID;
+        if (outBodyID == 0xffffffff) { return nullptr; }
+        return e.GetScene()->GetPhysicsWorld();
+    }
+
+    static glm::vec3 CheckVec3(lua_State* L, int first){
+        return { (float)luaL_checknumber(L, first), (float)luaL_checknumber(L, first + 1),
+                 (float)luaL_checknumber(L, first + 2) };
+    }
+
+    static int l_ApplyImpulse(lua_State* L){
+        uint32_t body;
+        if (auto* pw = ScriptPhysics(L, body)) { pw->ApplyImpulse(body, CheckVec3(L, 1)); }
+        return 0;
+    }
+    static int l_ApplyForce(lua_State* L){
+        uint32_t body;
+        if (auto* pw = ScriptPhysics(L, body)) { pw->ApplyForce(body, CheckVec3(L, 1)); }
+        return 0;
+    }
+    static int l_SetVelocity(lua_State* L){
+        uint32_t body;
+        if (auto* pw = ScriptPhysics(L, body)) { pw->SetLinearVelocity(body, CheckVec3(L, 1)); }
+        return 0;
+    }
+    static int l_GetVelocity(lua_State* L){
+        uint32_t body;
+        glm::vec3 v(0.0f);
+        if (auto* pw = ScriptPhysics(L, body)) { v = pw->GetLinearVelocity(body); }
+        lua_pushnumber(L, v.x); lua_pushnumber(L, v.y); lua_pushnumber(L, v.z);
+        return 3;
+    }
+    static int l_SetAngularVelocity(lua_State* L){
+        uint32_t body;
+        if (auto* pw = ScriptPhysics(L, body)) { pw->SetAngularVelocity(body, CheckVec3(L, 1)); }
+        return 0;
+    }
+    // RayCast(ox,oy,oz, dx,dy,dz, maxDist) -> hitTag (or nil), hitX, hitY, hitZ
+    static int l_RayCast(lua_State* L){
+        Entity e = ScriptEntity(L);
+        Scene* scene = e.GetScene();
+        PhysicsWorld* pw = scene ? scene->GetPhysicsWorld() : nullptr;
+        if (!pw) { lua_pushnil(L); return 1; }
+        glm::vec3 origin = CheckVec3(L, 1);
+        glm::vec3 dir = CheckVec3(L, 4);
+        float maxDist = (float)luaL_checknumber(L, 7);
+        float len = glm::length(dir);
+        uint32_t hitBody; glm::vec3 hitPoint;
+        if (len < 1e-6f || !pw->RayCast(origin, dir / len, maxDist, hitBody, hitPoint)){
+            lua_pushnil(L);
+            return 1;
+        }
+        Entity hit = scene->FindEntityByBodyID(hitBody);
+        std::string tag = (hit && hit.HasComponent<TagComponent>()) ? hit.GetComponent<TagComponent>().Tag : "";
+        lua_pushstring(L, tag.c_str());
+        lua_pushnumber(L, hitPoint.x); lua_pushnumber(L, hitPoint.y); lua_pushnumber(L, hitPoint.z);
+        return 4;
+    }
+
     // ---- Keyboard input ----
 
     static int l_IsKeyDown(lua_State* L){
@@ -237,6 +306,14 @@ namespace Phoenix{
         lua_register(m_L, "IsAnimationFinished",l_IsAnimationFinished);
         lua_register(m_L, "GetAnimationName",   l_GetAnimationName);
         lua_register(m_L, "HasAnimation",       l_HasAnimation);
+
+        // Physics
+        lua_register(m_L, "ApplyImpulse",       l_ApplyImpulse);
+        lua_register(m_L, "ApplyForce",         l_ApplyForce);
+        lua_register(m_L, "SetVelocity",        l_SetVelocity);
+        lua_register(m_L, "GetVelocity",        l_GetVelocity);
+        lua_register(m_L, "SetAngularVelocity", l_SetAngularVelocity);
+        lua_register(m_L, "RayCast",            l_RayCast);
 
         // Input + movement helpers
         lua_register(m_L, "IsKeyDown",    l_IsKeyDown);
@@ -311,6 +388,23 @@ namespace Phoenix{
             lua_pushstring(m_L, name.c_str());
             if (lua_pcall(m_L, 1, 0, 0) != LUA_OK){
                 PHX_CORE_ERROR("Lua OnAnimationEvent error: {0}", lua_tostring(m_L, -1));
+                lua_pop(m_L, 1);
+                m_Valid = false;
+            }
+        }
+        else{
+            lua_pop(m_L, 1);
+        }
+    }
+
+    void LuaScript::OnCollision(const std::string& otherTag, bool entered){
+        if (!m_Valid) { return; }
+        lua_getglobal(m_L, entered ? "OnCollisionEnter" : "OnCollisionExit");
+        if (lua_isfunction(m_L, -1)){
+            lua_pushstring(m_L, otherTag.c_str());
+            if (lua_pcall(m_L, 1, 0, 0) != LUA_OK){
+                PHX_CORE_ERROR("Lua {0} error: {1}", entered ? "OnCollisionEnter" : "OnCollisionExit",
+                    lua_tostring(m_L, -1));
                 lua_pop(m_L, 1);
                 m_Valid = false;
             }

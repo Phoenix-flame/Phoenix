@@ -23,6 +23,9 @@ namespace Phoenix{
         // Calls the script's global OnAnimationEvent(name) if defined (fired by the Scene
         // when an animation event time is crossed).
         void OnAnimationEvent(const std::string& name);
+        // Calls the script's global OnCollisionEnter(otherTag) / OnCollisionExit(otherTag)
+        // if defined (fired by the Scene when this entity's body starts/stops touching).
+        void OnCollision(const std::string& otherTag, bool entered);
 
         Entity GetEntity() const { return m_Entity; }
 

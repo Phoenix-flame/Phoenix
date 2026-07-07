@@ -37,6 +37,8 @@ namespace Phoenix{
 			m_Scene->m_Registry.remove<T>(m_EntityHandle);
 		}
 
+		Scene* GetScene() const { return m_Scene; }
+
 		operator bool() const { return m_EntityHandle != entt::null; }
 		operator entt::entity() const { return m_EntityHandle; }
 		operator uint32_t() const { return (uint32_t)m_EntityHandle; }
