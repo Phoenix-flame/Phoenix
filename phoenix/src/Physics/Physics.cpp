@@ -164,13 +164,17 @@ namespace Phoenix{
         JPH::TempAllocatorImpl tempAllocator{ 10 * 1024 * 1024 };
         JPH::JobSystemThreadPool jobSystem;
         JPH::PhysicsSystem physicsSystem;
+        JPH::EPhysicsUpdateError lastUpdateError = JPH::EPhysicsUpdateError::None;
 
         Impl(){
             int numThreads = (int)std::thread::hardware_concurrency() - 1;
             if (numThreads < 1) { numThreads = 1; }
             jobSystem.Init(JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, numThreads);
 
-            physicsSystem.Init(1024, 0, 1024, 1024,
+            // Max bodies, body mutexes (0 = default), body pairs, contact constraints.
+            // Jolt drops contacts once these fill up (objects sink through the floor),
+            // so leave headroom for piles of bodies resting on mesh terrain.
+            physicsSystem.Init(10240, 0, 65536, 10240,
                 broadPhaseLayerInterface, objectVsBroadPhaseLayerFilter, objectLayerPairFilter);
             physicsSystem.SetGravity(JPH::Vec3(0.0f, -9.81f, 0.0f));
             physicsSystem.SetContactListener(&contactListener);
@@ -238,6 +242,7 @@ namespace Phoenix{
 
         BodyID id = system.GetBodyInterface().CreateAndAddBody(settings,
             type == PhysicsWorld::BodyType::Static ? EActivation::DontActivate : EActivation::Activate);
+        if (id.IsInvalid()) { PHX_CORE_WARN("Physics body limit reached; body not created"); }
         return id.GetIndexAndSequenceNumber();
     }
 
@@ -459,8 +464,20 @@ namespace Phoenix{
 
     void PhysicsWorld::Step(float dt){
         if (dt <= 0.0f) { return; }
-        const int collisionSteps = 1;
-        m_Impl->physicsSystem.Update(dt, collisionSteps, &m_Impl->tempAllocator, &m_Impl->jobSystem);
+        dt = std::min(dt, MaxStep);
+        const int collisionSteps = std::max(1, (int)std::ceil(dt * 60.0f - 1e-3f));
+        JPH::EPhysicsUpdateError error = m_Impl->physicsSystem.Update(dt, collisionSteps,
+            &m_Impl->tempAllocator, &m_Impl->jobSystem);
+
+        // Log when the error state changes rather than every frame it persists.
+        if (error != m_Impl->lastUpdateError && error != JPH::EPhysicsUpdateError::None){
+            auto has = [error](JPH::EPhysicsUpdateError flag){ return (error & flag) != JPH::EPhysicsUpdateError::None; };
+            PHX_CORE_WARN("Physics update dropped contacts:{0}{1}{2}",
+                has(JPH::EPhysicsUpdateError::ManifoldCacheFull) ? " manifold cache full;" : "",
+                has(JPH::EPhysicsUpdateError::BodyPairCacheFull) ? " body pair cache full;" : "",
+                has(JPH::EPhysicsUpdateError::ContactConstraintsFull) ? " contact constraints full;" : "");
+        }
+        m_Impl->lastUpdateError = error;
     }
 
     void PhysicsWorld::GetBodyTransform(uint32_t bodyID, glm::vec3& outPosition, glm::vec3& inOutRotationEuler) const{

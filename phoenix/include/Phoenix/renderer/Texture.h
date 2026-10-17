@@ -31,6 +31,8 @@ namespace Phoenix{
 		virtual uint32_t GetWidth() const override { return m_Width;  }
 		virtual uint32_t GetHeight() const override { return m_Height; }
 		virtual uint32_t GetRendererID() const override { return m_RendererID; }
+		// False if the image file couldn't be decoded (no GL texture was created).
+		bool IsLoaded() const { return m_RendererID != 0; }
 		
 		virtual void SetData(void* data, uint32_t size) override;
 
@@ -45,9 +47,9 @@ namespace Phoenix{
 		static Ref<Texture2D> Create(const std::string& path);
 	private:
 		std::string m_Path;
-		uint32_t m_Width, m_Height;
-		uint32_t m_RendererID;
-		GLenum m_InternalFormat, m_DataFormat;
+		uint32_t m_Width = 0, m_Height = 0;
+		uint32_t m_RendererID = 0;
+		GLenum m_InternalFormat = 0, m_DataFormat = 0;
 	};
 
 }

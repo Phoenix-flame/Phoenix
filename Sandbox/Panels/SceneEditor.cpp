@@ -421,8 +421,8 @@ namespace Phoenix{
         if (ImGui::Button("Load", ImVec2(80, 0))){
             std::string p = m_TextureLoadBuf;
             if (!p.empty() && std::find(m_LoadedTextures.begin(), m_LoadedTextures.end(), p) == m_LoadedTextures.end()){
-                Texture2D::Create(p); // triggers load + cache (and logs on failure)
-                m_LoadedTextures.push_back(p);
+                if (Texture2D::Create(p)) // loads + caches; logs and returns null on failure
+                    m_LoadedTextures.push_back(p);
             }
         }
 

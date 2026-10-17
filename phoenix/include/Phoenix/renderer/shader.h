@@ -54,7 +54,7 @@ namespace Phoenix{
 		// glGetUniformLocation is a driver round-trip; look each name up once.
 		GLint GetUniformLocation(const std::string& name);
 	private:
-		uint32_t _rendererID;
+		uint32_t _rendererID = 0;
 		std::string _name;
 		std::unordered_map<std::string, GLint> _uniformLocationCache;
 	};

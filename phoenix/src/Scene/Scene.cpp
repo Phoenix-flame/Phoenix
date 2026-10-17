@@ -423,6 +423,9 @@ namespace Phoenix{
         if (m_PhysicsWorld){
             PHX_PROFILE("Physics Step");
             auto view = m_Registry.view<RigidBodyComponent, TransformComponent>();
+            // Kinematic targets, buoyancy impulses and the step must all use the same
+            // (clamped) dt, or a long frame would over-apply impulses.
+            const float physicsDt = std::min((float)ts, PhysicsWorld::MaxStep);
 
             // Kinematic bodies follow their entity transform (scripts/animation move
             // it); MoveKinematic gives them the velocities to push dynamic bodies.
@@ -430,7 +433,7 @@ namespace Phoenix{
                 auto& rb = view.get<RigidBodyComponent>(entity);
                 if (rb.runtimeBodyID == 0xffffffff || rb.type != RigidBodyComponent::Type::Kinematic) { continue; }
                 auto& transform = view.get<TransformComponent>(entity);
-                m_PhysicsWorld->MoveKinematic(rb.runtimeBodyID, transform.Translation, transform.Rotation, (float)ts);
+                m_PhysicsWorld->MoveKinematic(rb.runtimeBodyID, transform.Translation, transform.Rotation, physicsDt);
             }
 
             // Water coupling: buoyancy + fluid drag on dynamic bodies over a water
@@ -469,7 +472,7 @@ namespace Phoenix{
                         float factor = std::min(8.0f, water.buoyancy * 1000.0f / std::max(1.0f, rb.density));
                         bool touching = m_PhysicsWorld->ApplyBuoyancy(rb.runtimeBodyID,
                             { t.Translation.x, surfaceY, t.Translation.z }, { 0.0f, 1.0f, 0.0f },
-                            factor, water.linearDrag, water.angularDrag, (float)ts);
+                            factor, water.linearDrag, water.angularDrag, physicsDt);
 
                         if (water.ripples && touching){
                             glm::vec3 vel = m_PhysicsWorld->GetLinearVelocity(rb.runtimeBodyID);
@@ -483,7 +486,7 @@ namespace Phoenix{
                                 float speed = glm::length(glm::vec2(vel.x, vel.z));
                                 if (speed > 0.5f){ // wake behind moving bodies
                                     water.ripples->AddImpulse(u, v, 0.02f,
-                                        std::min(0.05f, 0.25f * speed * (float)ts));
+                                        std::min(0.05f, 0.25f * speed * physicsDt));
                                 }
                             }
                         }
@@ -493,7 +496,7 @@ namespace Phoenix{
                 }
             }
 
-            m_PhysicsWorld->Step((float)ts);
+            m_PhysicsWorld->Step(physicsDt);
 
             // Only dynamic bodies are moved by the simulation: static ones never move and
             // kinematic ones follow their entity transform, so reading those back would

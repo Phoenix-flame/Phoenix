@@ -112,6 +112,12 @@ namespace Phoenix{
         // Call once after all bodies are created and before the first Step.
         void OptimizeBroadPhase();
 
+        // Longest step simulated per frame; a longer frame (a hitch, a debugger break)
+        // runs in slow motion instead of letting bodies tunnel or joints explode.
+        static constexpr float MaxStep = 0.1f;
+
+        // Advances the simulation by dt (clamped to MaxStep), split into collision
+        // steps of at most 1/60 s as Jolt recommends for stability.
         void Step(float dt);
 
         // Reads back a body's world transform. Rotation is XYZ Euler in radians; pass the

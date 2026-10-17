@@ -13,15 +13,16 @@ namespace Phoenix{
 	}
 
 	Shader::Shader(const std::string& filepath){
-		std::string source = ReadFile(filepath);
-		auto shaderSources = PreProcess(source);
-		Compile(shaderSources);
-		// Extract name from filepath
+		// Extract name from filepath (first, so compile errors can name the shader)
 		auto lastSlash = filepath.find_last_of("/\\");
 		lastSlash = lastSlash == std::string::npos ? 0 : lastSlash + 1;
 		auto lastDot = filepath.rfind('.');
 		auto count = lastDot == std::string::npos ? filepath.size() - lastSlash : lastDot - lastSlash;
 		_name = filepath.substr(lastSlash, count);
+
+		std::string source = ReadFile(filepath);
+		auto shaderSources = PreProcess(source);
+		Compile(shaderSources);
 	}
 
 	Shader::Shader(const std::string& name, const std::string& vertexSrc, const std::string& fragmentSrc)
@@ -42,7 +43,7 @@ namespace Phoenix{
 		std::ifstream in(filepath, std::ios::in | std::ios::binary); // ifstream closes itself due to RAII
 		if (in){
 			in.seekg(0, std::ios::end);
-			size_t size = in.tellg();
+			std::streamoff size = in.tellg();
 			if (size != -1){
 				result.resize(size);
 				in.seekg(0, std::ios::beg);
@@ -81,12 +82,18 @@ namespace Phoenix{
 
 	void Shader::Compile(const std::unordered_map<GLenum, std::string>& shaderSources)
 	{
-
+		// On any failure the shader keeps _rendererID = 0 (binding it draws nothing)
+		// instead of a deleted/half-built program.
 		GLuint program = glCreateProgram();
-		std::array<GLenum, 2> glShaderIDs;
-		int glShaderIDIndex = 0;
+		std::vector<GLuint> shaderIDs;
+		bool ok = true;
 		for (auto& kv : shaderSources){
 			GLenum type = kv.first;
+			if (type == 0){
+				PHX_CORE_ERROR("Shader '{0}': unknown #type section", _name);
+				ok = false;
+				break;
+			}
 			const std::string& source = kv.second;
 
 			GLuint shader = glCreateShader(type);
@@ -102,49 +109,49 @@ namespace Phoenix{
 				GLint maxLength = 0;
 				glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &maxLength);
 
-				std::vector<GLchar> infoLog(maxLength);
-				glGetShaderInfoLog(shader, maxLength, &maxLength, &infoLog[0]);
+				std::vector<GLchar> infoLog(maxLength + 1);
+				glGetShaderInfoLog(shader, maxLength, &maxLength, infoLog.data());
 
 				glDeleteShader(shader);
 
-				PHX_CORE_ERROR("{0}", infoLog.data());
+				PHX_CORE_ERROR("Shader '{0}' failed to compile:\n{1}", _name, infoLog.data());
+				ok = false;
 				break;
 			}
 
 			glAttachShader(program, shader);
-			glShaderIDs[glShaderIDIndex++] = shader;
-		}
-		
-		_rendererID = program;
-
-		// Link our program
-		glLinkProgram(program);
-
-		// Note the different functions here: glGetProgram* instead of glGetShader*.
-		GLint isLinked = 0;
-		glGetProgramiv(program, GL_LINK_STATUS, (int*)&isLinked);
-		if (isLinked == GL_FALSE){
-			GLint maxLength = 0;
-			glGetProgramiv(program, GL_INFO_LOG_LENGTH, &maxLength);
-
-			// The maxLength includes the NULL character
-			std::vector<GLchar> infoLog(maxLength);
-			glGetProgramInfoLog(program, maxLength, &maxLength, &infoLog[0]);
-
-			// We don't need the program anymore.
-			glDeleteProgram(program);
-			
-			for (auto id : glShaderIDs)
-				glDeleteShader(id);
-
-			PHX_CORE_ERROR("{0}", infoLog.data());
-			return;
+			shaderIDs.push_back(shader);
 		}
 
-		for (auto id : glShaderIDs){
+		if (ok){
+			glLinkProgram(program);
+
+			// Note the different functions here: glGetProgram* instead of glGetShader*.
+			GLint isLinked = 0;
+			glGetProgramiv(program, GL_LINK_STATUS, &isLinked);
+			if (isLinked == GL_FALSE){
+				GLint maxLength = 0;
+				glGetProgramiv(program, GL_INFO_LOG_LENGTH, &maxLength);
+
+				std::vector<GLchar> infoLog(maxLength + 1);
+				glGetProgramInfoLog(program, maxLength, &maxLength, infoLog.data());
+
+				PHX_CORE_ERROR("Shader '{0}' failed to link:\n{1}", _name, infoLog.data());
+				ok = false;
+			}
+		}
+
+		for (auto id : shaderIDs){
 			glDetachShader(program, id);
 			glDeleteShader(id);
 		}
+
+		if (!ok){
+			glDeleteProgram(program);
+			_rendererID = 0;
+			return;
+		}
+		_rendererID = program;
 	}
 
 	void Shader::Bind() const{
