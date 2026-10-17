@@ -275,6 +275,10 @@ namespace Phoenix{
     }
 
     void Model::AddAnimationsFromFile(const std::string& path){
+        // Undo/redo and Stop re-apply the scene, which asks for the same files again;
+        // re-importing would be slow and append duplicate clips.
+        if (m_MergedAnimationFiles.count(path)) { return; }
+
         Assimp::Importer importer;
         importer.SetPropertyBool(AI_CONFIG_IMPORT_FBX_PRESERVE_PIVOTS, false);
         const aiScene* scene = importer.ReadFile(path,
@@ -307,6 +311,7 @@ namespace Phoenix{
             a->m_Name = (scene->mNumAnimations == 1) ? base : base + "_" + std::to_string(i);
             m_Animations.push_back(a);
         }
+        m_MergedAnimationFiles.insert(path);
         PHX_CORE_INFO("Merged {0} animation(s) named '{1}' from '{2}' (model now has {3} clips)",
             m_Animations.size() - before, base, path, m_Animations.size());
     }

@@ -495,14 +495,14 @@ namespace Phoenix{
 
             m_PhysicsWorld->Step((float)ts);
 
+            // Only dynamic bodies are moved by the simulation: static ones never move and
+            // kinematic ones follow their entity transform, so reading those back would
+            // just overwrite the authored/scripted rotation with an equivalent one.
             for (auto entity : view){
                 auto& rb = view.get<RigidBodyComponent>(entity);
-                if (rb.runtimeBodyID == 0xffffffff) { continue; }
+                if (rb.runtimeBodyID == 0xffffffff || rb.type != RigidBodyComponent::Type::Dynamic) { continue; }
                 auto& transform = view.get<TransformComponent>(entity);
-                glm::vec3 position, rotation;
-                m_PhysicsWorld->GetBodyTransform(rb.runtimeBodyID, position, rotation);
-                transform.Translation = position;
-                transform.Rotation = rotation;
+                m_PhysicsWorld->GetBodyTransform(rb.runtimeBodyID, transform.Translation, transform.Rotation);
             }
 
             // Contact events -> Lua OnCollisionEnter/Exit(otherTag) on both entities'

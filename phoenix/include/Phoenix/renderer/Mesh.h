@@ -7,6 +7,7 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <set>
 #include <future>
 
 namespace Phoenix{
@@ -95,6 +96,7 @@ namespace Phoenix{
         std::vector<Ref<Mesh>> m_Meshes;
         std::map<std::string, BoneInfo> m_BoneInfoMap;
         std::vector<Ref<Animation>> m_Animations;
+        std::set<std::string> m_MergedAnimationFiles; // paths already merged by AddAnimationsFromFile
         std::future<ModelData> m_Future;
         bool m_Uploaded = false;
     };

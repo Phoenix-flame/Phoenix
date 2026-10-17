@@ -23,11 +23,14 @@
 #include <Jolt/Physics/Constraints/DistanceConstraint.h>
 #include <Jolt/Physics/Constraints/HingeConstraint.h>
 
+#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/euler_angles.hpp>
 
 #include <thread>
 #include <mutex>
 #include <algorithm>
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 
@@ -181,12 +184,42 @@ namespace Phoenix{
 
     PhysicsWorld::~PhysicsWorld() = default;
 
+    // Rotations use the same XYZ Euler convention as TransformComponent::GetTransform
+    // (Rx * Ry * Rz). glm::quat(euler) / glm::eulerAngles use ZYX instead, which made
+    // colliders disagree with the rendered mesh for any multi-axis rotation.
+    static glm::quat EulerXYZToQuat(const glm::vec3& e){
+        return glm::angleAxis(e.x, glm::vec3(1, 0, 0))
+             * glm::angleAxis(e.y, glm::vec3(0, 1, 0))
+             * glm::angleAxis(e.z, glm::vec3(0, 0, 1));
+    }
+
+    // Shift each angle by a multiple of 2*pi so it lies closest to the reference.
+    static glm::vec3 UnwrapNear(glm::vec3 angles, const glm::vec3& reference){
+        const float twoPi = glm::two_pi<float>();
+        for (int i = 0; i < 3; i++)
+            angles[i] += twoPi * std::round((reference[i] - angles[i]) / twoPi);
+        return angles;
+    }
+
+    // XYZ Euler angles for q, picking whichever of the two equivalent solutions
+    // ((x, y, z) and (x + pi, pi - y, z + pi)) is closest to the reference, so the
+    // angles stay continuous frame to frame instead of flipping once y passes 90 deg.
+    static glm::vec3 QuatToEulerXYZ(const glm::quat& q, const glm::vec3& reference){
+        glm::vec3 a;
+        glm::extractEulerAngleXYZ(glm::mat4_cast(q), a.x, a.y, a.z);
+        const float pi = glm::pi<float>();
+        glm::vec3 first  = UnwrapNear(a, reference);
+        glm::vec3 second = UnwrapNear(glm::vec3(a.x + pi, pi - a.y, a.z + pi), reference);
+        glm::vec3 d1 = first - reference, d2 = second - reference;
+        return glm::dot(d1, d1) <= glm::dot(d2, d2) ? first : second;
+    }
+
     // Create a body from an already-built shape with the given transform/type/props.
     static uint32_t CreateBodyFromShape(JPH::PhysicsSystem& system, const JPH::ShapeRefC& shape,
                                         const glm::vec3& position, const glm::vec3& rotationEuler,
                                         PhysicsWorld::BodyType type, const PhysicsWorld::BodyProps& props){
         using namespace JPH;
-        glm::quat q = glm::quat(rotationEuler);
+        glm::quat q = EulerXYZToQuat(rotationEuler);
         EMotionType motion = (type == PhysicsWorld::BodyType::Static)    ? EMotionType::Static
                            : (type == PhysicsWorld::BodyType::Kinematic) ? EMotionType::Kinematic
                                                                          : EMotionType::Dynamic;
@@ -389,7 +422,7 @@ namespace Phoenix{
 
     void PhysicsWorld::MoveKinematic(uint32_t bodyID, const glm::vec3& position, const glm::vec3& rotationEuler, float dt){
         if (bodyID == InvalidBody || dt <= 0.0f) { return; }
-        glm::quat q = glm::quat(rotationEuler);
+        glm::quat q = EulerXYZToQuat(rotationEuler);
         m_Impl->physicsSystem.GetBodyInterface().MoveKinematic(JPH::BodyID(bodyID),
             JPH::RVec3(position.x, position.y, position.z), JPH::Quat(q.x, q.y, q.z, q.w), dt);
     }
@@ -430,7 +463,7 @@ namespace Phoenix{
         m_Impl->physicsSystem.Update(dt, collisionSteps, &m_Impl->tempAllocator, &m_Impl->jobSystem);
     }
 
-    void PhysicsWorld::GetBodyTransform(uint32_t bodyID, glm::vec3& outPosition, glm::vec3& outRotationEuler) const{
+    void PhysicsWorld::GetBodyTransform(uint32_t bodyID, glm::vec3& outPosition, glm::vec3& inOutRotationEuler) const{
         if (bodyID == InvalidBody) { return; }
         JPH::BodyID id(bodyID);
         JPH::BodyInterface& bodyInterface = m_Impl->physicsSystem.GetBodyInterface();
@@ -439,6 +472,6 @@ namespace Phoenix{
 
         outPosition = glm::vec3((float)pos.GetX(), (float)pos.GetY(), (float)pos.GetZ());
         glm::quat q(rot.GetW(), rot.GetX(), rot.GetY(), rot.GetZ());
-        outRotationEuler = glm::eulerAngles(q);
+        inOutRotationEuler = QuatToEulerXYZ(q, inOutRotationEuler);
     }
 }

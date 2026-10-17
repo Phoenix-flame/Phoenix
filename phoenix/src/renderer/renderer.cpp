@@ -1,6 +1,7 @@
 #include <Phoenix/renderer/renderer.h>
 #include <Phoenix/renderer/renderer_command.h>
 #include <Phoenix/core/base.h>
+#include <array>
 #include <cmath>
 #include <string>
 
@@ -142,6 +143,37 @@ namespace Phoenix{
             shader->SetMat4("u_LightSpaceMatrices[" + std::to_string(i) + "]", s_LightSpaceMatrix[i]);
     }
 
+    // Uniform names for the light arrays, built once rather than every frame.
+    static const int NUM_POINT_LIGHTS = 4; // NR_POINT_LIGHTS in lighting.glsl
+
+    struct DirLightUniformNames { std::string ambient, diffuse, specular, direction; };
+    struct PointLightUniformNames { std::string constant, linear, quadratic, ambient, diffuse, specular, position; };
+
+    static const DirLightUniformNames& DirLightNames(int i){
+        static const auto names = []{
+            std::array<DirLightUniformNames, Renderer::MAX_DIR_LIGHTS> n;
+            for (int j = 0; j < Renderer::MAX_DIR_LIGHTS; j++){
+                std::string base = "dirLights[" + std::to_string(j) + "].";
+                n[j] = { base + "ambient", base + "diffuse", base + "specular", base + "direction" };
+            }
+            return n;
+        }();
+        return names[i];
+    }
+
+    static const PointLightUniformNames& PointLightNames(int i){
+        static const auto names = []{
+            std::array<PointLightUniformNames, NUM_POINT_LIGHTS> n;
+            for (int j = 0; j < NUM_POINT_LIGHTS; j++){
+                std::string base = "pointLights[" + std::to_string(j) + "].";
+                n[j] = { base + "constant", base + "linear", base + "quadratic", base + "ambient",
+                         base + "diffuse", base + "specular", base + "position" };
+            }
+            return n;
+        }();
+        return names[i];
+    }
+
     void Renderer::SetLights(
             const glm::vec3& ambient,
             const DirLightComponent dirLights[],
@@ -158,42 +190,42 @@ namespace Phoenix{
         if (numDirLights > MAX_DIR_LIGHTS) { numDirLights = MAX_DIR_LIGHTS; }
         shader->SetInt("u_NumDirLights", numDirLights);
         for (int i = 0; i < MAX_DIR_LIGHTS; i++){
-            std::string base = "dirLights[" + std::to_string(i) + "].";
+            const DirLightUniformNames& u = DirLightNames(i);
             if (i < numDirLights){
-                shader->SetFloat3(base + "ambient", dirLights[i].ambient);
-                shader->SetFloat3(base + "diffuse", dirLights[i].diffuse);
-                shader->SetFloat3(base + "specular", dirLights[i].specular);
-                shader->SetFloat3(base + "direction", dirLightDirs[i]);
+                shader->SetFloat3(u.ambient, dirLights[i].ambient);
+                shader->SetFloat3(u.diffuse, dirLights[i].diffuse);
+                shader->SetFloat3(u.specular, dirLights[i].specular);
+                shader->SetFloat3(u.direction, dirLightDirs[i]);
             }
             else{
-                shader->SetFloat3(base + "ambient", glm::vec3(0.0f));
-                shader->SetFloat3(base + "diffuse", glm::vec3(0.0f));
-                shader->SetFloat3(base + "specular", glm::vec3(0.0f));
-                shader->SetFloat3(base + "direction", glm::vec3(0.0f, -1.0f, 0.0f));
+                shader->SetFloat3(u.ambient, glm::vec3(0.0f));
+                shader->SetFloat3(u.diffuse, glm::vec3(0.0f));
+                shader->SetFloat3(u.specular, glm::vec3(0.0f));
+                shader->SetFloat3(u.direction, glm::vec3(0.0f, -1.0f, 0.0f));
             }
         }
 
-        for (int i = 0 ; i < 4 ; i ++)
+        for (int i = 0 ; i < NUM_POINT_LIGHTS ; i ++)
         {
-            std::string base = "pointLights[" + std::to_string(i) + "].";
+            const PointLightUniformNames& u = PointLightNames(i);
             if (i < numOfPointLight)
             {
-                shader->SetFloat(base + "constant", pointLight[i].constant);
-                shader->SetFloat(base + "linear", pointLight[i].linear);
-                shader->SetFloat(base + "quadratic", pointLight[i].quadratic);
-                shader->SetFloat3(base + "ambient", pointLight[i].ambient);
-                shader->SetFloat3(base + "diffuse", pointLight[i].diffuse);
-                shader->SetFloat3(base + "specular", pointLight[i].specular);
-                shader->SetFloat3(base + "position", pointLightPos[i]);
+                shader->SetFloat(u.constant, pointLight[i].constant);
+                shader->SetFloat(u.linear, pointLight[i].linear);
+                shader->SetFloat(u.quadratic, pointLight[i].quadratic);
+                shader->SetFloat3(u.ambient, pointLight[i].ambient);
+                shader->SetFloat3(u.diffuse, pointLight[i].diffuse);
+                shader->SetFloat3(u.specular, pointLight[i].specular);
+                shader->SetFloat3(u.position, pointLightPos[i]);
             }
             else{
-                shader->SetFloat(base + "constant", 1.0f);
-                shader->SetFloat(base + "linear", 0.03f);
-                shader->SetFloat(base + "quadratic", 0.099f);
-                shader->SetFloat3(base + "ambient", glm::vec3(0.0, 0.0, 0.0));
-                shader->SetFloat3(base + "diffuse", glm::vec3(0.0, 0.0, 0.0));
-                shader->SetFloat3(base + "specular", glm::vec3(0.0, 0.0, 0.0));
-                shader->SetFloat3(base + "position", glm::vec3(0.0, 0.0, 0.0));
+                shader->SetFloat(u.constant, 1.0f);
+                shader->SetFloat(u.linear, 0.03f);
+                shader->SetFloat(u.quadratic, 0.099f);
+                shader->SetFloat3(u.ambient, glm::vec3(0.0, 0.0, 0.0));
+                shader->SetFloat3(u.diffuse, glm::vec3(0.0, 0.0, 0.0));
+                shader->SetFloat3(u.specular, glm::vec3(0.0, 0.0, 0.0));
+                shader->SetFloat3(u.position, glm::vec3(0.0, 0.0, 0.0));
             }
         }
     }
@@ -332,6 +364,7 @@ namespace Phoenix{
         s_OutlineShader->SetMat4("projection", s_SceneData->ProjectionMatrix);
         s_OutlineShader->SetMat4("model", model);
         s_OutlineShader->SetFloat3("u_Color", color);
+        s_OutlineShader->SetInt("u_Animated", 0); // DrawOutline may have left skinning on
 
         s_CameraGizmo->m_Vertex_array->Bind();
         glLineWidth(2.0f);
@@ -354,6 +387,7 @@ namespace Phoenix{
         s_OutlineShader->SetMat4("projection", s_SceneData->ProjectionMatrix);
         s_OutlineShader->SetMat4("model", model);
         s_OutlineShader->SetFloat3("u_Color", color);
+        s_OutlineShader->SetInt("u_Animated", 0); // DrawOutline may have left skinning on
 
         s_DirLightGizmo->m_Vertex_array->Bind();
         glLineWidth(2.0f);

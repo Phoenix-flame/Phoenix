@@ -114,8 +114,9 @@ namespace Phoenix{
 
         void Step(float dt);
 
-        // Reads back a body's world transform. rotationEuler is in radians (XYZ).
-        void GetBodyTransform(uint32_t bodyID, glm::vec3& outPosition, glm::vec3& outRotationEuler) const;
+        // Reads back a body's world transform. Rotation is XYZ Euler in radians; pass the
+        // entity's current rotation in so the returned angles stay continuous with it.
+        void GetBodyTransform(uint32_t bodyID, glm::vec3& outPosition, glm::vec3& inOutRotationEuler) const;
 
         // Global Jolt setup/teardown. Init is idempotent and called lazily.
         static void Init();

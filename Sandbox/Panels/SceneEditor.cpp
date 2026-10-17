@@ -492,7 +492,8 @@ namespace Phoenix{
 
 		if (m_SelectedEntity == entity && (!entityDeleted))
 		{
-			if (ImGui::IsKeyPressed(ImGuiKey_Delete))
+			// Ignore Delete while typing (e.g. in the Tag field), or it deletes the entity.
+			if (ImGui::IsKeyPressed(ImGuiKey_Delete) && !ImGui::GetIO().WantTextInput)
 			{
 				entityDeleted = true;
 			}

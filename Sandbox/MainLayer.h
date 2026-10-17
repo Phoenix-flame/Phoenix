@@ -45,6 +45,10 @@ private:
     void Redo();
     void RestoreScene(const std::string& snapshot);
 
+    // Run/Stop: Stop restores the edit-time scene captured when Run was pressed.
+    void StartRuntime();
+    void StopRuntime();
+
     // Populate m_Scene with the bloom/glow/shadow showcase.
     void BuildShowcaseScene();
     // Populate m_Scene with the terrain-lake + water showcase.
@@ -84,6 +88,10 @@ private:
     std::vector<std::string> m_UndoStack;
     std::vector<std::string> m_RedoStack;
     std::string m_LastSnapshot;
+    bool m_WasEditing = false; // a widget/gizmo/sculpt edit was in progress last frame
+
+    // Edit-time scene captured on Run, restored on Stop.
+    std::string m_RuntimeSnapshot;
 
     // Bloom post-processing.
     Bloom m_Bloom;

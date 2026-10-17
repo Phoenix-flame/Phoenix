@@ -51,9 +51,12 @@ namespace Phoenix{
 		std::string ReadFile(const std::string& filepath);
 		std::unordered_map<GLenum, std::string> PreProcess(const std::string& source);
 		void Compile(const std::unordered_map<GLenum, std::string>& shaderSources);
+		// glGetUniformLocation is a driver round-trip; look each name up once.
+		GLint GetUniformLocation(const std::string& name);
 	private:
 		uint32_t _rendererID;
 		std::string _name;
+		std::unordered_map<std::string, GLint> _uniformLocationCache;
 	};
 
 

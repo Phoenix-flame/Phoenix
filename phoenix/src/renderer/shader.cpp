@@ -181,47 +181,56 @@ namespace Phoenix{
 	}
 
 	void Shader::SetMat4Array(const std::string& name, const glm::mat4* values, uint32_t count){
-		GLint location = glGetUniformLocation(_rendererID, name.c_str());
+		GLint location = GetUniformLocation(name);
 		glUniformMatrix4fv(location, (GLsizei)count, GL_FALSE, glm::value_ptr(values[0]));
 	}
 
-	void Shader::UploadUniformInt(const std::string& name, int value){
+	GLint Shader::GetUniformLocation(const std::string& name){
+		auto it = _uniformLocationCache.find(name);
+		if (it != _uniformLocationCache.end())
+			return it->second;
 		GLint location = glGetUniformLocation(_rendererID, name.c_str());
+		_uniformLocationCache.emplace(name, location);
+		return location;
+	}
+
+	void Shader::UploadUniformInt(const std::string& name, int value){
+		GLint location = GetUniformLocation(name);
 		glUniform1i(location, value);
 	}
 
 	void Shader::UploadUniformIntArray(const std::string& name, int* values, uint32_t count){
-		GLint location = glGetUniformLocation(_rendererID, name.c_str());
+		GLint location = GetUniformLocation(name);
 		glUniform1iv(location, count, values);
 	}
 
 	void Shader::UploadUniformFloat(const std::string& name, float value){
-		GLint location = glGetUniformLocation(_rendererID, name.c_str());
+		GLint location = GetUniformLocation(name);
 		glUniform1f(location, value);
 	}
 
 	void Shader::UploadUniformFloat2(const std::string& name, const glm::vec2& value){
-		GLint location = glGetUniformLocation(_rendererID, name.c_str());
+		GLint location = GetUniformLocation(name);
 		glUniform2f(location, value.x, value.y);
 	}
 
 	void Shader::UploadUniformFloat3(const std::string& name, const glm::vec3& value){
-		GLint location = glGetUniformLocation(_rendererID, name.c_str());
+		GLint location = GetUniformLocation(name);
 		glUniform3f(location, value.x, value.y, value.z);
 	}
 
 	void Shader::UploadUniformFloat4(const std::string& name, const glm::vec4& value){
-		GLint location = glGetUniformLocation(_rendererID, name.c_str());
+		GLint location = GetUniformLocation(name);
 		glUniform4f(location, value.x, value.y, value.z, value.w);
 	}
 
 	void Shader::UploadUniformMat3(const std::string& name, const glm::mat3& matrix){
-		GLint location = glGetUniformLocation(_rendererID, name.c_str());
+		GLint location = GetUniformLocation(name);
 		glUniformMatrix3fv(location, 1, GL_FALSE, glm::value_ptr(matrix));
 	}
 
 	void Shader::UploadUniformMat4(const std::string& name, const glm::mat4& matrix){
-		GLint location = glGetUniformLocation(_rendererID, name.c_str());
+		GLint location = GetUniformLocation(name);
 		glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(matrix));
 	}
 

@@ -940,10 +940,29 @@ void MainLayer::SculptTerrain(TerrainComponent& terrain, const glm::vec3& terrai
     if (changed) { terrain.dirty = true; }
 }
 
+// True if this frame had a discrete input that could have edited the scene without
+// leaving a widget active (a click on a menu item/checkbox, a shortcut key).
+static bool HadDiscreteInput() {
+    const ImGuiIO& io = ImGui::GetIO();
+    for (bool released : io.MouseReleased)
+        if (released) { return true; }
+    for (int key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_NamedKey_END; key++)
+        if (ImGui::IsKeyPressed((ImGuiKey)key, false)) { return true; }
+    return false;
+}
+
 void MainLayer::CommitHistory() {
     // Don't record during simulation (transforms change every frame) or while an
     // edit is in progress (a gizmo drag / held slider) — wait until it settles.
-    if (m_Scene->IsRunning() || ImGuizmo::IsUsing() || ImGui::IsAnyItemActive() || m_Sculpting)
+    bool editing = ImGuizmo::IsUsing() || ImGui::IsAnyItemActive() || m_Sculpting;
+    bool editEnded = m_WasEditing && !editing;
+    m_WasEditing = editing;
+    if (m_Scene->IsRunning() || editing)
+        return;
+
+    // Serializing the whole scene (terrain heights, Lua sources, ...) is expensive,
+    // so only snapshot on frames where an edit could have landed.
+    if (!editEnded && !HadDiscreteInput())
         return;
 
     std::string current = SceneSerializer(m_Scene).SerializeToString();
@@ -964,6 +983,20 @@ void MainLayer::RestoreScene(const std::string& snapshot) {
     // Re-serialize the live scene as the baseline so CommitHistory doesn't record
     // a spurious entry (entity ids can differ from the snapshot after create/delete).
     m_LastSnapshot = SceneSerializer(m_Scene).SerializeToString();
+}
+
+void MainLayer::StartRuntime() {
+    m_RuntimeSnapshot = SceneSerializer(m_Scene).SerializeToString();
+    m_Scene->OnRuntimeStart();
+}
+
+void MainLayer::StopRuntime() {
+    m_Scene->OnRuntimeStop();
+    // Undo everything the simulation and scripts changed (transforms, colours,
+    // spawned/destroyed entities) so Stop returns to the edit-time scene.
+    if (!m_RuntimeSnapshot.empty())
+        RestoreScene(m_RuntimeSnapshot);
+    m_RuntimeSnapshot.clear();
 }
 
 void MainLayer::Undo() {
@@ -1040,8 +1073,9 @@ void MainLayer::OnEvent(Phoenix::Event& e) {
     dispacher.Dispatch<WindowResizeEvent>(BIND_EVENT_FN(MainLayer::OnResize));
     dispacher.Dispatch<KeyPressedEvent>(BIND_EVENT_FN(MainLayer::OnKeyPressed));
     dispacher.Dispatch<KeyPressedEvent>([this](KeyPressedEvent& e){
-        if (e.GetKeyCode() == Phoenix::Key::Escape){
-            Phoenix::Application::Get().Close();
+        // Esc deselects (it used to quit the editor with no chance to save).
+        if (e.GetKeyCode() == Phoenix::Key::Escape && !ImGui::GetIO().WantTextInput){
+            m_SceneEditor->SetSelectedEntity({});
             return true;
         }
         // if (e.GetKeyCode() == Phoenix::Key::S){
@@ -1208,8 +1242,8 @@ void MainLayer::OnImGuiRender(){
                 float buttonWidth = 60.0f;
                 ImGui::SameLine(ImGui::GetWindowWidth() - buttonWidth - 10.0f);
                 if (ImGui::Button(label, ImVec2(buttonWidth, 0.0f))){
-                    if (m_Scene->IsRunning()) { m_Scene->OnRuntimeStop(); }
-                    else                      { m_Scene->OnRuntimeStart(); }
+                    if (m_Scene->IsRunning()) { StopRuntime(); }
+                    else                      { StartRuntime(); }
                 }
             }
             ImGui::EndMainMenuBar();
@@ -1446,6 +1480,9 @@ void MainLayer::OnImGuiRender(){
 bool MainLayer::OnKeyPressed(KeyPressedEvent& e){
     // Shortcuts
     if (e.GetRepeatCount() > 0)
+        return false;
+    // Leave keys to the focused text field (its own Ctrl+Z, typing Q/W/E/R).
+    if (ImGui::GetIO().WantTextInput)
         return false;
 
     bool control = Input::IsKeyPressed(Key::LeftControl) || Input::IsKeyPressed(Key::RightControl);
