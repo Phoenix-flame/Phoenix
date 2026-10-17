@@ -30,9 +30,12 @@ namespace Phoenix{
         m_Quad->AddVertexBuffer(vb);
     }
 
-    void Bloom::Resize(uint32_t width, uint32_t height){
+    void Bloom::Resize(uint32_t width, uint32_t height, uint32_t samples){
         if (width == 0 || height == 0) { return; }
-        if (width == m_Width && height == m_Height && m_HDRFBO) { return; }
+        GLint maxSamples = 1;
+        glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
+        samples = std::max(1u, std::min(samples, (uint32_t)maxSamples));
+        if (width == m_Width && height == m_Height && samples == m_Samples && m_HDRFBO) { return; }
 
         if (m_HDRFBO){
             glDeleteFramebuffers(1, &m_HDRFBO);
@@ -41,9 +44,16 @@ namespace Phoenix{
             glDeleteFramebuffers(2, m_PingFBO);
             glDeleteTextures(2, m_PingColor);
         }
+        if (m_MSAAFBO){
+            glDeleteFramebuffers(1, &m_MSAAFBO);
+            glDeleteRenderbuffers(1, &m_MSAAColor);
+            glDeleteRenderbuffers(1, &m_MSAADepthStencil);
+            m_MSAAFBO = m_MSAAColor = m_MSAADepthStencil = 0;
+        }
 
         m_Width = width;
         m_Height = height;
+        m_Samples = samples;
 
         // HDR scene target: RGBA16F colour + depth/stencil renderbuffer.
         glGenFramebuffers(1, &m_HDRFBO);
@@ -64,6 +74,22 @@ namespace Phoenix{
         glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, m_DepthStencil);
 
         PHX_CORE_ASSERT(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE, "HDR framebuffer incomplete!");
+
+        // MSAA scene target: the scene renders here; Composite() resolves it into
+        // m_HDRColor (the resolved texture the bloom passes read).
+        if (m_Samples > 1){
+            glGenFramebuffers(1, &m_MSAAFBO);
+            glBindFramebuffer(GL_FRAMEBUFFER, m_MSAAFBO);
+            glGenRenderbuffers(1, &m_MSAAColor);
+            glBindRenderbuffer(GL_RENDERBUFFER, m_MSAAColor);
+            glRenderbufferStorageMultisample(GL_RENDERBUFFER, m_Samples, GL_RGBA16F, width, height);
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, m_MSAAColor);
+            glGenRenderbuffers(1, &m_MSAADepthStencil);
+            glBindRenderbuffer(GL_RENDERBUFFER, m_MSAADepthStencil);
+            glRenderbufferStorageMultisample(GL_RENDERBUFFER, m_Samples, GL_DEPTH24_STENCIL8, width, height);
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, m_MSAADepthStencil);
+            PHX_CORE_ASSERT(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE, "MSAA HDR framebuffer incomplete!");
+        }
 
         // Ping-pong buffers for the separable blur, at half resolution: the blur is low
         // frequency, so a quarter of the pixels looks the same and costs a quarter.
@@ -87,7 +113,7 @@ namespace Phoenix{
     }
 
     void Bloom::BindHDRTarget(){
-        glBindFramebuffer(GL_FRAMEBUFFER, m_HDRFBO);
+        glBindFramebuffer(GL_FRAMEBUFFER, m_MSAAFBO ? m_MSAAFBO : m_HDRFBO);
         glViewport(0, 0, m_Width, m_Height);
     }
 
@@ -98,6 +124,13 @@ namespace Phoenix{
 
     void Bloom::Composite(uint32_t targetFBO, float intensity, float threshold, float exposure, bool encodeSRGB){
         if (!m_HDRFBO) { return; }
+
+        if (m_MSAAFBO){
+            // Resolve the multisampled scene into the HDR texture.
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, m_MSAAFBO);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_HDRFBO);
+            glBlitFramebuffer(0, 0, m_Width, m_Height, 0, 0, m_Width, m_Height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        }
 
         glDisable(GL_DEPTH_TEST);
 

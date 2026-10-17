@@ -13,14 +13,22 @@ namespace Phoenix{
 		virtual void Unbind() override;
 
 		virtual void Resize(uint32_t width, uint32_t height) override;
+		virtual void SetSamples(uint32_t samples) override;
 
 		virtual uint32_t GetColorAttachmentRendererID() const override { return m_ColorAttachment; }
 		virtual uint32_t GetRendererID() const override { return m_RendererID; }
 
 		virtual const FramebufferSpecification& GetSpecification() const override { return m_Specification; }
 	private:
+		void Release();
+	private:
+		// Single-sample target: what gets displayed (and rendered into without MSAA).
 		uint32_t m_RendererID = 0;
 		uint32_t m_ColorAttachment = 0, m_DepthAttachment = 0;
+		// With MSAA: the multisampled target the scene renders into, resolved into
+		// m_ColorAttachment on Unbind().
+		uint32_t m_MultisampleFBO = 0;
+		uint32_t m_MultisampleColor = 0, m_MultisampleDepth = 0;
 		FramebufferSpecification m_Specification;
 	};
 }

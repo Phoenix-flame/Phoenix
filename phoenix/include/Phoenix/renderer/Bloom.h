@@ -12,7 +12,9 @@ namespace Phoenix{
     class Bloom{
     public:
         void Init();
-        void Resize(uint32_t width, uint32_t height);
+        // samples > 1 renders the scene with MSAA (clamped to the GPU's limit); it is
+        // resolved to the single-sample HDR texture at the start of Composite().
+        void Resize(uint32_t width, uint32_t height, uint32_t samples = 1);
 
         // Bind the HDR framebuffer as the render target (with depth + stencil).
         void BindHDRTarget();
@@ -28,7 +30,10 @@ namespace Phoenix{
         uint32_t m_Width = 0, m_Height = 0;
         uint32_t m_BloomWidth = 0, m_BloomHeight = 0; // half resolution
 
+        uint32_t m_Samples = 1;
         uint32_t m_HDRFBO = 0, m_HDRColor = 0, m_DepthStencil = 0;
+        // MSAA scene target (only when m_Samples > 1), resolved into m_HDRColor.
+        uint32_t m_MSAAFBO = 0, m_MSAAColor = 0, m_MSAADepthStencil = 0;
         uint32_t m_PingFBO[2] = { 0, 0 };
         uint32_t m_PingColor[2] = { 0, 0 };
 

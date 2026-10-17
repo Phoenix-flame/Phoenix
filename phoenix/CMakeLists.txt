@@ -92,13 +92,25 @@ target_link_libraries(${APP_TARGET} Threads::Threads ${CMAKE_DL_LIBS})
 
 # Runtime assets the engine itself loads by relative path (its shaders and the ImGui
 # fonts). Every app calls this so they land in <exe dir>/assets, and the app chdirs to
-# its executable's directory at startup. Copied after every build, so edited shaders
-# always sync. App-specific assets are copied on top afterwards.
+# its executable's directory at startup. Extra directories passed after the target
+# (the app's own assets) are copied on top, each into <exe dir>/<its name>.
+#
+# This is a separate always-run target rather than a POST_BUILD step: POST_BUILD only
+# fires when the app relinks, so an edited shader alone would never reach the build.
 set(PHOENIX_ASSETS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets" CACHE INTERNAL "")
 function(phoenix_copy_assets target)
-    add_custom_command(TARGET ${target} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-            ${PHOENIX_ASSETS_DIR} $<TARGET_FILE_DIR:${target}>/assets
-        VERBATIM
-    )
+    if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.26)
+        set(copy copy_directory_if_different) # skip unchanged files (models are large)
+    else()
+        set(copy copy_directory)
+    endif()
+    set(commands COMMAND ${CMAKE_COMMAND} -E ${copy}
+        ${PHOENIX_ASSETS_DIR} $<TARGET_FILE_DIR:${target}>/assets)
+    foreach(dir ${ARGN})
+        get_filename_component(name ${dir} NAME)
+        list(APPEND commands COMMAND ${CMAKE_COMMAND} -E ${copy}
+            ${dir} $<TARGET_FILE_DIR:${target}>/${name})
+    endforeach()
+    add_custom_target(${target}_assets ALL ${commands} VERBATIM)
+    add_dependencies(${target}_assets ${target})
 endfunction()

@@ -2,6 +2,7 @@
 #define GL_GLEXT_PROTOTYPES
 #include <GLFW/glfw3.h>
 #include <Phoenix/core/assert.h>
+#include <algorithm>
 namespace Phoenix{
     static const uint32_t s_MaxFramebufferSize = 8192;
 
@@ -11,17 +12,26 @@ namespace Phoenix{
 	}
 
 	OpenGLFramebuffer::~OpenGLFramebuffer(){
-		glDeleteFramebuffers(1, &m_RendererID);
-		glDeleteTextures(1, &m_ColorAttachment);
-		glDeleteTextures(1, &m_DepthAttachment);
+		Release();
 	}
 
-	void OpenGLFramebuffer::Invalidate(){
+	void OpenGLFramebuffer::Release(){
 		if (m_RendererID){
 			glDeleteFramebuffers(1, &m_RendererID);
 			glDeleteTextures(1, &m_ColorAttachment);
 			glDeleteTextures(1, &m_DepthAttachment);
+			m_RendererID = m_ColorAttachment = m_DepthAttachment = 0;
 		}
+		if (m_MultisampleFBO){
+			glDeleteFramebuffers(1, &m_MultisampleFBO);
+			glDeleteRenderbuffers(1, &m_MultisampleColor);
+			glDeleteRenderbuffers(1, &m_MultisampleDepth);
+			m_MultisampleFBO = m_MultisampleColor = m_MultisampleDepth = 0;
+		}
+	}
+
+	void OpenGLFramebuffer::Invalidate(){
+		Release();
 
 		glCreateFramebuffers(1, &m_RendererID);
 		glBindFramebuffer(GL_FRAMEBUFFER, m_RendererID);
@@ -41,15 +51,38 @@ namespace Phoenix{
 
 		PHX_CORE_ASSERT(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE, "Framebuffer is incomplete!");
 
+		if (m_Specification.Samples > 1){
+			glCreateFramebuffers(1, &m_MultisampleFBO);
+			glBindFramebuffer(GL_FRAMEBUFFER, m_MultisampleFBO);
+			glGenRenderbuffers(1, &m_MultisampleColor);
+			glBindRenderbuffer(GL_RENDERBUFFER, m_MultisampleColor);
+			glRenderbufferStorageMultisample(GL_RENDERBUFFER, m_Specification.Samples, GL_RGBA8,
+				m_Specification.Width, m_Specification.Height);
+			glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, m_MultisampleColor);
+			glGenRenderbuffers(1, &m_MultisampleDepth);
+			glBindRenderbuffer(GL_RENDERBUFFER, m_MultisampleDepth);
+			glRenderbufferStorageMultisample(GL_RENDERBUFFER, m_Specification.Samples, GL_DEPTH24_STENCIL8,
+				m_Specification.Width, m_Specification.Height);
+			glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, m_MultisampleDepth);
+			PHX_CORE_ASSERT(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE, "Multisample framebuffer is incomplete!");
+		}
+
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 
 	void OpenGLFramebuffer::Bind(){
-		glBindFramebuffer(GL_FRAMEBUFFER, m_RendererID);
+		glBindFramebuffer(GL_FRAMEBUFFER, m_MultisampleFBO ? m_MultisampleFBO : m_RendererID);
 		glViewport(0, 0, m_Specification.Width, m_Specification.Height);
 	}
 
 	void OpenGLFramebuffer::Unbind(){
+		if (m_MultisampleFBO){
+			// Resolve: average each pixel's samples into the displayed texture.
+			glBindFramebuffer(GL_READ_FRAMEBUFFER, m_MultisampleFBO);
+			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_RendererID);
+			glBlitFramebuffer(0, 0, m_Specification.Width, m_Specification.Height,
+				0, 0, m_Specification.Width, m_Specification.Height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+		}
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 
@@ -61,6 +94,19 @@ namespace Phoenix{
 		m_Specification.Width = width;
 		m_Specification.Height = height;
 		
+		Invalidate();
+	}
+
+	uint32_t Framebuffer::GetMaxSamples(){
+		GLint maxSamples = 1;
+		glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
+		return (uint32_t)std::max(1, maxSamples);
+	}
+
+	void OpenGLFramebuffer::SetSamples(uint32_t samples){
+		samples = std::max(1u, std::min(samples, GetMaxSamples()));
+		if (samples == m_Specification.Samples) { return; }
+		m_Specification.Samples = samples;
 		Invalidate();
 	}
 }

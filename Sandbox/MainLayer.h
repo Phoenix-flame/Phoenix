@@ -114,6 +114,7 @@ private:
 
     // Bloom post-processing.
     Bloom m_Bloom;
+    int m_MSAASamples = 4; // 1 = anti-aliasing off
     bool m_BloomEnabled = true;
     float m_BloomIntensity = 1.0f;
     float m_BloomThreshold = 1.0f;

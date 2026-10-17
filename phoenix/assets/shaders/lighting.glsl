@@ -218,14 +218,28 @@ void main()
         float shadow = 0.0;
         if (u_ShadowsEnabled && i < u_NumShadows){
             vec3 lightDir = normalize(-dirLights[i].direction);
-            vec4 fls = u_LightSpaceMatrices[i] * vec4(FragPos, 1.0);
+            mat4 lightSpace = u_LightSpaceMatrices[i];
+            // World size of one shadow texel, from the orthographic light projection
+            // (its x row scales world units into [-1, 1] across one atlas tile).
+            float tileRes = float(textureSize(u_ShadowMap, 0).x) / float(SHADOW_COLS);
+            float texelWorld = 2.0 / (length(vec3(lightSpace[0][0], lightSpace[1][0], lightSpace[2][0])) * tileRes);
+            // Normal-offset shadows: look the shadow up slightly off the surface along
+            // its geometric normal, more at grazing angles. A depth-only bias can't
+            // cover the depth change across the PCF kernel on sloped surfaces, which
+            // shows up as striped "shadow acne".
+            vec3 geomNormal = normalize(Normal);
+            float cosLight = clamp(dot(geomNormal, lightDir), 0.0, 1.0);
+            float sinLight = sqrt(1.0 - cosLight * cosLight);
+            vec3 samplePos = FragPos + geomNormal * texelWorld * (1.0 + 2.0 * sinLight);
+            vec4 fls = lightSpace * vec4(samplePos, 1.0);
             vec3 proj = fls.xyz / fls.w;
             proj = proj * 0.5 + 0.5;
             // Only shadow fragments inside this light's frustum (else the kernel would
             // bleed into a neighbouring tile of the atlas).
             if (proj.z <= 1.0 && proj.x >= 0.0 && proj.x <= 1.0 && proj.y >= 0.0 && proj.y <= 1.0){
-                float bias = max(0.0025 * (1.0 - dot(norm, lightDir)), 0.0008);
-                float refDepth = proj.z - bias;
+                // Small constant bias (half a texel of depth) for depth quantization.
+                float depthPerWorld = 0.5 * length(vec3(lightSpace[0][2], lightSpace[1][2], lightSpace[2][2]));
+                float refDepth = proj.z - depthPerWorld * texelWorld * 0.5;
                 // Map this light's [0,1] coords into its atlas tile.
                 vec2 tileScale = vec2(1.0 / float(SHADOW_COLS), 1.0 / float(SHADOW_ROWS));
                 vec2 tileOffset = vec2(float(i % SHADOW_COLS), float(i / SHADOW_COLS)) * tileScale;

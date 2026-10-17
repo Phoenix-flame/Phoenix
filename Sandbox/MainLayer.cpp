@@ -1549,9 +1549,13 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
     // Linear lighting needs the HDR path even without bloom: its composite pass is
     // where the linear result is tonemapped and encoded to sRGB for display.
     const bool linear = Phoenix::Renderer::IsLinearLighting();
-    if (m_BloomEnabled || linear){
+    const bool hdr = m_BloomEnabled || linear;
+    // MSAA lives on whichever target the scene renders into; the composite writes
+    // m_Framebuffer's single-sample texture directly, so it needs no samples then.
+    m_Framebuffer->SetSamples(hdr ? 1 : (uint32_t)m_MSAASamples);
+    if (hdr){
         // Render the scene to the HDR target, then bloom + composite into m_Framebuffer.
-        m_Bloom.Resize((uint32_t)m_ViewportSize.x, (uint32_t)m_ViewportSize.y);
+        m_Bloom.Resize((uint32_t)m_ViewportSize.x, (uint32_t)m_ViewportSize.y, (uint32_t)m_MSAASamples);
         m_Bloom.BindHDRTarget();
         Phoenix::RenderCommand::SetClearColor(glm::vec4(Phoenix::Renderer::ToLinear(m_BackgroundColor), 1.0));
         Phoenix::RenderCommand::Clear();
@@ -1773,6 +1777,22 @@ void MainLayer::OnImGuiRender(){
             ImGui::SetTooltip("Light in linear space: sRGB textures/colours are decoded and the\n"
                               "output is encoded for display. Physically correct falloff and\n"
                               "blending, but scenes tuned without it will look brighter.");
+        {
+            // Anti-aliasing: MSAA smooths the jagged edges and corners of geometry.
+            const int maxSamples = (int)Framebuffer::GetMaxSamples();
+            const int options[] = { 1, 2, 4, 8 };
+            const char* labels[] = { "Off", "2x MSAA", "4x MSAA", "8x MSAA" };
+            int current = 0;
+            for (int i = 0; i < 4; i++) { if (options[i] == m_MSAASamples) { current = i; } }
+            if (ImGui::BeginCombo("Anti-aliasing", labels[current])){
+                for (int i = 0; i < 4; i++){
+                    if (options[i] > maxSamples) { continue; }
+                    if (ImGui::Selectable(labels[i], i == current)) { m_MSAASamples = options[i]; }
+                }
+                ImGui::EndCombo();
+            }
+            if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Smooths the edges and corners of objects."); }
+        }
         ImGui::Checkbox("Bloom", &m_BloomEnabled);
         if (m_BloomEnabled || linearLighting)
             ImGui::DragFloat("Exposure", &m_Exposure, 0.05f, 0.1f, 8.0f);
