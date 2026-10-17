@@ -1,6 +1,7 @@
 #pragma once
 #include <Phoenix/core/base.h>
 #include <Phoenix/Scene/Entity.h>
+#include <Phoenix/Scene/Scene.h>
 #include <string>
 #include <vector>
 #include <unordered_set>
@@ -28,7 +29,9 @@ namespace Phoenix{
     public:
         // `index` is the script's position in the entity's LuaScriptComponent; `name`
         // is used as the chunk name, so errors read "Name:12: message".
-        LuaScript(const std::string& source, Entity entity, int index = 0, const std::string& name = "Script");
+        // `args` (spawned entities) becomes the global SPAWN table before the chunk runs.
+        LuaScript(const std::string& source, Entity entity, int index = 0, const std::string& name = "Script",
+                  const ScriptArgs* args = nullptr);
         ~LuaScript();
 
         LuaScript(const LuaScript&) = delete;
@@ -40,7 +43,10 @@ namespace Phoenix{
         void OnAnimationEvent(const std::string& name);
         // Calls the script's global OnCollisionEnter(otherTag) / OnCollisionExit(otherTag)
         // if defined (fired by the Scene when this entity's body starts/stops touching).
-        void OnCollision(const std::string& otherTag, bool entered);
+        void OnCollision(const std::string& otherTag, bool entered, Entity other = {});
+        // Calls the script's global OnMessage(name, args..., senderId) if defined
+        // (another script used Send(id, name, ...)).
+        void OnMessage(const std::string& name, const std::vector<ScriptValue>& args, Entity sender);
 
         Entity GetEntity() const { return m_Entity; }
         int GetIndex() const { return m_Index; }

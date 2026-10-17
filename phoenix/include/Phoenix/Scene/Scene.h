@@ -36,6 +36,15 @@ namespace Phoenix{
 
     // A value scripts share through the scene (SetShared / GetShared in Lua).
     using ScriptValue = std::variant<double, bool, std::string>;
+    // Named values handed to a spawned entity's scripts (the SPAWN table in Lua).
+    using ScriptArgs = std::unordered_map<std::string, ScriptValue>;
+
+    // A line of on-screen text set by scripts while playing (ShowText in Lua).
+    struct HudText{
+        std::string text;
+        glm::vec3 color{ 1.0f };
+        int order = 0; // first-shown first
+    };
 
     class Scene{
     public:
@@ -95,6 +104,30 @@ namespace Phoenix{
 
         // Whether the entity still exists in this scene.
         bool IsValid(Entity entity) const;
+        // First entity with this tag (empty if none).
+        Entity FindEntityByTag(const std::string& tag);
+
+        // While playing: a copy of the entity tagged `templateTag` (its drawable,
+        // physics and script components) at `position`, with a physics body if it
+        // has a rigid body. Its scripts start at once and see `args` as the global
+        // SPAWN table (nil in the template itself, so templates can stay inert).
+        // An "yaw" arg sets the copy's Y rotation. Returns an empty entity on failure.
+        Entity Spawn(const std::string& templateTag, const glm::vec3& position, const ScriptArgs& args = {});
+        // Destroys the entity at the end of this frame's script/physics update (safe
+        // to call from scripts and collision callbacks). Its scripts stop at once.
+        void QueueDestroy(Entity entity);
+        bool IsPendingDestroy(entt::entity entity) const { return m_PendingDestroy.count(entity) > 0; }
+        // Calls OnMessage(name, args..., senderId) on every script of `target`.
+        void SendScriptMessage(Entity target, const std::string& name, const std::vector<ScriptValue>& args, Entity sender);
+
+        // On-screen text scripts show while playing (cleared when play starts/stops).
+        void ShowHudText(const std::string& key, const std::string& text, const glm::vec3& color);
+        void HideHudText(const std::string& key) { m_Hud.erase(key); }
+        const std::unordered_map<std::string, HudText>& GetHudText() const { return m_Hud; }
+        // A large centred message, shown for `seconds` (scene time).
+        void ShowBanner(const std::string& text, float seconds) { m_Banner = text; m_BannerUntil = m_Time + seconds; }
+        const std::string& GetBanner() const { return m_Banner; }
+        float GetBannerTimeLeft() const { return m_BannerUntil - m_Time; }
 
         // Script console: print() output and script errors. Cleared when play starts.
         void LogScript(Entity entity, int script, const std::string& scriptName, bool error,
@@ -114,6 +147,13 @@ namespace Phoenix{
 		template<typename T>
 		void OnComponentAdded(Entity entity, T& component);
 
+        // Builds the runtime physics body for one rigid-body entity (play mode).
+        void CreateRuntimeBody(entt::entity entity);
+        // Starts the entity's enabled scripts; `args` becomes their SPAWN table.
+        void StartScripts(Entity entity, const ScriptArgs* args);
+        // Destroys everything QueueDestroy collected.
+        void FlushPendingDestroy();
+
     private:
         entt::registry m_Registry;
         float m_ViewportWidth = 0, m_ViewportHeight = 0;
@@ -132,6 +172,12 @@ namespace Phoenix{
         std::vector<Ref<LuaScript>> m_Scripts; // live Lua runtimes while playing
         std::deque<ScriptLogEntry> m_ScriptLog;
         std::unordered_map<std::string, ScriptValue> m_Shared;
+        std::unordered_set<entt::entity> m_PendingDestroy;
+        int m_MessageDepth = 0; // guards against scripts messaging each other forever
+        std::unordered_map<std::string, HudText> m_Hud;
+        int m_HudOrder = 0;
+        std::string m_Banner;
+        float m_BannerUntil = 0.0f;
         // Runtime body id -> owning entity, for contact-event dispatch (rebuilt each run).
         std::unordered_map<uint32_t, entt::entity> m_BodyToEntity;
         // Bodies currently touching a water surface (splash edge detection).

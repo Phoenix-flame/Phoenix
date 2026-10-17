@@ -74,6 +74,10 @@ private:
     void BuildPhysicsShowcase();
     // Populate m_Scene with a maze a capsule solves with A* (all logic in Lua scripts).
     void BuildMazeShowcase();
+    // Populate m_Scene with the robot platformer: platforms, shooting, collectibles.
+    void BuildRobotArenaShowcase();
+    // Script HUD (ShowText / ShowBanner) over the viewport image while playing.
+    void DrawScriptHud(const ImVec2& imageMin);
 
     // Terrain sculpting: raycast to the terrain plane and raise/lower/smooth heights.
     void SculptTerrain(TerrainComponent& terrain, const glm::vec3& terrainPos,

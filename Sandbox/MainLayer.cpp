@@ -7,6 +7,7 @@
 #include <Phoenix/core/Profiler.h>
 
 #include <Phoenix/core/application.h>
+#include <Phoenix/imGui/ImGuiLayer.h>
 #include <Phoenix/Scene/Scene.h>
 #include <Phoenix/Scene/SceneSerializer.h>
 
@@ -1221,6 +1222,529 @@ void MainLayer::BuildMazeShowcase() {
     }
 }
 
+// ---- Robot Arena showcase scripts ----
+
+static const char* s_ArenaMovementLua = R"LUA(
+-- Robot movement: W/S (or Up/Down) walk, A/D (or Left/Right) turn, Shift runs,
+-- Space jumps; press Space again in the air for a double jump. The robot stands on
+-- whatever is solid below it (ray casts, no physics body) and rides moving platforms.
+local WALK, RUN, BACK = 2.2, 5.5, 1.6      -- units per second
+local TURN = 2.8                           -- radians per second
+local GRAVITY, JUMP, DOUBLE = 20.0, 7.8, 6.8
+local RADIUS = 0.45                        -- for wall checks
+local STEP = 0.45                          -- highest ledge it walks up without jumping
+local FALL_LIMIT = -12                     -- below this: back to the start
+
+local START = { GetTranslation() }
+local _, START_YAW = GetRotation()
+
+local vy, grounded, jumps = 0.0, false, 2
+local rideId, rideX, rideY, rideZ = nil, 0, 0, 0
+local anim = ""
+
+-- Named clip if the model has it, else the embedded clip 0 (a walk).
+local function clip(name) if HasAnimation(name) then return name end return 0 end
+local function play(name, loop, speed)
+    if anim ~= name then
+        anim = name
+        CrossFade(clip(name), 0.15)
+        SetAnimationLoop(loop and 0 or 1)
+        ResumeAnimation()
+    end
+    SetAnimationSpeed(speed or 1.0)
+end
+
+local function solid(tag) return tag ~= nil and tag ~= "Bullet" end
+
+-- Highest ground under the footprint (centre + 4 points), from just above step
+-- height down. Returns its height and id.
+local PROBE = { { 0, 0 }, { 0.3, 0 }, { -0.3, 0 }, { 0, 0.3 }, { 0, -0.3 } }
+local function ground(x, y, z)
+    local bestY, bestId
+    for _, o in ipairs(PROBE) do
+        local tag, hx, hy, hz, id = RayCast(x + o[1], y + STEP + 0.3, z + o[2], 0, -1, 0, 60)
+        if solid(tag) and (bestY == nil or hy > bestY) then bestY, bestId = hy, id end
+    end
+    return bestY, bestId
+end
+
+-- A wall within `dist` along (dx, dz), at knee or chest height?
+local function blocked(x, y, z, dx, dz, dist)
+    for _, h in ipairs({ STEP + 0.05, 1.4 }) do
+        if solid(RayCast(x, y + h, z, dx, 0, dz, RADIUS + dist)) then return true end
+    end
+    return false
+end
+
+function OnUpdate(dt)
+    dt = math.min(dt, 1 / 20)  -- a long frame mustn't drop us through a floor
+    local x, y, z = GetTranslation()
+    local _, yaw = GetRotation()
+
+    -- Carried by the platform we stood on last frame.
+    if rideId then
+        local px, py, pz = GetPositionOf(rideId)
+        if px then
+            x, y, z = x + px - rideX, y + py - rideY, z + pz - rideZ
+            rideX, rideY, rideZ = px, py, pz
+        else
+            rideId = nil
+        end
+    end
+
+    if IsKeyDown(Key.A) or IsKeyDown(Key.Left) then yaw = yaw + TURN * dt end
+    if IsKeyDown(Key.D) or IsKeyDown(Key.Right) then yaw = yaw - TURN * dt end
+
+    local running = IsKeyDown(Key.LeftShift) or IsKeyDown(Key.RightShift)
+    local speed = 0
+    if IsKeyDown(Key.W) or IsKeyDown(Key.Up) then speed = running and RUN or WALK
+    elseif IsKeyDown(Key.S) or IsKeyDown(Key.Down) then speed = -BACK end
+
+    local fx, fz = math.sin(yaw), math.cos(yaw)  -- the robot mesh faces +Z
+    if speed ~= 0 then
+        local dir = speed > 0 and 1 or -1
+        if not blocked(x, y, z, fx * dir, fz * dir, math.abs(speed) * dt) then
+            x, z = x + fx * speed * dt, z + fz * speed * dt
+        end
+    end
+
+    if IsKeyPressed(Key.Space) and jumps > 0 then
+        vy = grounded and JUMP or DOUBLE
+        jumps = jumps - 1
+        grounded, rideId = false, nil
+        if anim == "jump" then SetAnimationTime(0) end
+        play("jump", false)
+    end
+
+    -- Bump our head on whatever is above while rising.
+    if vy > 0 and solid(RayCast(x, y + 1.6, z, 0, 1, 0, 0.4 + vy * dt)) then vy = 0 end
+
+    vy = vy - GRAVITY * dt
+    local ny = y + vy * dt
+    local gy, gid = ground(x, y, z)
+    local landing = gy ~= nil and vy <= 0 and gy <= y + STEP
+                    and (ny <= gy + 0.02 or (grounded and gy >= y - STEP))
+    if landing then
+        ny, vy = gy, 0
+        if not grounded then grounded, jumps = true, 2 end
+        if gid ~= rideId and gid then
+            rideId = gid
+            rideX, rideY, rideZ = GetPositionOf(gid)
+        end
+    else
+        if grounded then jumps = 1 end  -- walked off a ledge: one jump left
+        grounded, rideId = false, nil
+    end
+
+    if ny < FALL_LIMIT then
+        x, ny, z = START[1], START[2], START[3]
+        vy, yaw, rideId = 0, START_YAW, nil
+        ShowBanner("Oops! Back to the start", 1.5)
+    end
+    SetTranslation(x, ny, z)
+    SetRotation(0, yaw, 0)
+
+    if grounded then
+        if speed > WALK then play("run", true)
+        elseif speed > 0 then play("walk", true)
+        elseif speed < 0 then play("walk", true, -0.8)  -- walk backwards
+        else play("idle", true) end
+    elseif anim ~= "jump" then
+        play("jump", false)  -- falling off a ledge
+    end
+end
+)LUA";
+
+static const char* s_ArenaBlasterLua = R"LUA(
+-- Blaster: hold F (or Ctrl) to fire energy bolts from the robot's chest. Each bolt
+-- is a copy of the "Bullet" template made with Spawn().
+local COOLDOWN = 0.18
+local cooldown, flash, shots = 0, 0, 0
+
+function OnUpdate(dt)
+    cooldown = math.max(0, cooldown - dt)
+    if (IsKeyDown(Key.F) or IsKeyDown(Key.LeftControl)) and cooldown == 0 then
+        cooldown = COOLDOWN
+        local x, y, z = GetTranslation()
+        local _, yaw = GetRotation()
+        local fx, fz = math.sin(yaw), math.cos(yaw)
+        Spawn("Bullet", x + fx * 0.8, y + 1.25, z + fz * 0.8,
+              { dx = fx, dy = 0, dz = fz, owner = GetId(), yaw = yaw })
+        shots = shots + 1
+        SetShared("shots", shots)
+        flash = 0.08
+    end
+    if flash > 0 then  -- muzzle flash: the robot glows briefly
+        flash = flash - dt
+        SetEmissive(0.3, 0.8, 1.0, flash > 0 and 2.5 or 0.0)
+    end
+end
+)LUA";
+
+static const char* s_ArenaHudLua = R"LUA(
+-- Score, timer and the win condition. Cells and targets report to the robot with
+-- Send(robot, "cell") / Send(robot, "target"); they count themselves at start.
+local cells, targets, time, done, summit = 0, 0, 0, false, false
+
+ShowText("help", "WASD move   Shift run   Space jump (x2)   F shoot", 0.75, 0.75, 0.75)
+ShowBanner("Collect every cell, hit every target!", 5)
+
+function OnMessage(name)
+    if name == "cell" then cells = cells + 1
+    elseif name == "target" then targets = targets + 1 end
+end
+
+function OnUpdate(dt)
+    local cellsTotal, targetsTotal = GetShared("cellsTotal", 0), GetShared("targetsTotal", 0)
+    if not done then time = time + dt end
+    ShowText("cells", string.format("Energy cells   %d / %d", cells, cellsTotal), 0.4, 0.9, 1.0)
+    ShowText("targets", string.format("Targets   %d / %d", targets, targetsTotal), 1.0, 0.6, 0.3)
+    ShowText("time", string.format("Time   %.1f s      Shots   %d", time, GetShared("shots", 0)), 0.9, 0.9, 0.9)
+
+    local _, y = GetTranslation()
+    if not summit and y > 3.9 then
+        summit = true
+        ShowBanner("Summit reached!", 2)
+    end
+    if not done and cellsTotal > 0 and cells >= cellsTotal and targets >= targetsTotal then
+        done = true
+        ShowBanner(string.format("Arena cleared in %.1f s!", time), 8)
+    end
+end
+)LUA";
+
+static const char* s_ArenaBulletLua = R"LUA(
+-- Energy bolt. The Blaster copies this template with Spawn(); the template itself
+-- has no SPAWN table, so it stays parked under the floor and does nothing.
+if not SPAWN then return end
+local SPEED, LIFE = 24.0, 1.6
+local age = 0
+SetVelocity(SPAWN.dx * SPEED, SPAWN.dy * SPEED, SPAWN.dz * SPEED)
+
+function OnUpdate(dt)
+    age = age + dt
+    if age > LIFE then Destroy() end
+end
+
+function OnCollisionEnter(otherTag, otherId)
+    if otherTag == "Bullet" then return end
+    if otherId then Send(otherId, "hit", SPAWN.dx, SPAWN.dy, SPAWN.dz, SPAWN.owner) end
+    local x, y, z = GetTranslation()
+    Spawn("Spark", x, y, z, { r = 1.0, g = 0.6, b = 0.2 })
+    Destroy()
+end
+)LUA";
+
+static const char* s_ArenaSparkLua = R"LUA(
+-- A short burst for impacts and pickups (spawned with a colour in SPAWN).
+if not SPAWN then return end
+local LIFE = 0.35
+local age = 0
+local r, g, b = SPAWN.r or 1.0, SPAWN.g or 0.7, SPAWN.b or 0.2
+
+function OnUpdate(dt)
+    age = age + dt
+    local k = age / LIFE
+    if k >= 1 then
+        Destroy()
+        return
+    end
+    local s = 0.2 + 0.9 * k
+    SetScale(s, s, s)
+    SetColor(r * (1 - k), g * (1 - k), b * (1 - k))
+    SetEmissive(r, g, b, 6.0 * (1 - k))
+end
+)LUA";
+
+static const char* s_ArenaCellLua = R"LUA(
+-- Energy cell: bobs and glows; the robot collects it by touching it.
+SetShared("cellsTotal", GetShared("cellsTotal", 0) + 1)
+local robot = Find("Robot")
+local x0, y0, z0 = GetTranslation()
+local t = math.random() * 6
+
+function OnUpdate(dt)
+    t = t + dt
+    SetTranslation(x0, y0 + 0.15 * math.sin(t * 2.5), z0)
+    SetEmissive(0.2, 0.9, 1.0, 1.6 + 0.8 * math.sin(t * 5))
+    local rx, ry, rz = GetPositionOf(robot)
+    if rx then
+        local dx, dy, dz = rx - x0, ry + 1.0 - y0, rz - z0
+        if dx * dx + dz * dz < 0.85 * 0.85 and math.abs(dy) < 1.3 then
+            Send(robot, "cell")
+            Spawn("Spark", x0, y0, z0, { r = 0.3, g = 0.9, b = 1.0 })
+            Destroy()
+        end
+    end
+end
+)LUA";
+
+static const char* s_ArenaTargetLua = R"LUA(
+-- Target: pulses until a bolt hits it, then tips over and reports to the shooter.
+SetShared("targetsTotal", GetShared("targetsTotal", 0) + 1)
+local rx, ry, rz = GetRotation()
+local x0, y0, z0 = GetTranslation()
+local down, k, t = false, 0, math.random() * 6
+
+function OnMessage(name, dx, dy, dz, shooter)
+    if name ~= "hit" or down then return end
+    down = true
+    if shooter then Send(shooter, "target") end
+    Spawn("Spark", x0, y0, z0, { r = 1.0, g = 0.35, b = 0.1 })
+end
+
+function OnUpdate(dt)
+    t = t + dt
+    if not down then
+        SetEmissive(1.0, 0.25, 0.1, 0.8 + 0.6 * math.sin(t * 4))
+        return
+    end
+    if k < 1 then
+        k = math.min(1, k + dt * 2.5)
+        local e = 1 - (1 - k) * (1 - k)  -- ease out
+        SetRotation(rx * (1 - e), ry, rz * (1 - e))  -- upright -> lying flat
+        SetTranslation(x0, y0 + (0.1 - y0) * e, z0)
+        SetColor(0.3, 0.8, 0.35)
+        SetEmissive(0.2, 1.0, 0.3, 2.0 * (1 - e))
+    end
+end
+)LUA";
+
+static const char* s_ArenaCrateLua = R"LUA(
+-- Crate: an extra shove when a bolt hits it.
+function OnMessage(name, dx, dy, dz)
+    if name == "hit" then ApplyImpulse(dx * 220, 120, dz * 220) end
+end
+)LUA";
+
+// Glides between its start and start + OFFSET (constants prepended by the builder).
+static const char* s_ArenaPlatformLua = R"LUA(
+local x0, y0, z0 = GetTranslation()
+local t = 0
+
+function OnUpdate(dt)
+    t = t + dt
+    local k = 0.5 - 0.5 * math.cos(t / PERIOD * 2 * math.pi)  -- eased back and forth
+    SetTranslation(x0 + OFFSET[1] * k, y0 + OFFSET[2] * k, z0 + OFFSET[3] * k)
+end
+)LUA";
+
+void MainLayer::BuildRobotArenaShowcase() {
+    // A small third-person platformer: an animated robot that jumps (and double
+    // jumps) up a route of platforms, one moving and one lift, shoots targets and
+    // crates, and collects energy cells. All gameplay is Lua: the robot carries
+    // three scripts (Movement, Blaster, HUD) and everything else has its own.
+    m_Scene->AmbientColor() = glm::vec3(0.07f);
+
+    auto material = [](Material& m, const glm::vec3& color, float shininess = 16.0f){
+        m.ambient = color * 0.35f;
+        m.diffuse = color;
+        m.specular = glm::vec3(0.25f);
+        m.shininess = shininess;
+    };
+    // A box (cube) with a collider; top = y of its top face.
+    auto slab = [&](const std::string& name, glm::vec3 center, glm::vec3 size, const glm::vec3& color,
+                    RigidBodyComponent::Type type = RigidBodyComponent::Type::Static){
+        auto e = m_Scene->CreateEntity(name);
+        material(e.AddComponent<CubeComponent>().material, color);
+        auto& t = e.GetComponent<TransformComponent>();
+        t.Translation = center;
+        t.Scale = size;
+        e.AddComponent<RigidBodyComponent>().type = type;
+        e.AddComponent<BoxColliderComponent>();
+        return e;
+    };
+    auto platform = [&](const std::string& name, float x, float z, float top, float w, float d, const glm::vec3& color){
+        return slab(name, { x, top - 0.25f, z }, { w, 0.5f, d }, color);
+    };
+
+    // ---- camera + lights ----
+    {
+        auto cam = m_Scene->CreateEntity("Camera");
+        auto& c = cam.AddComponent<CameraComponent>();
+        c.primary = true; // untick Primary to fly the editor camera
+        auto& t = cam.GetComponent<TransformComponent>();
+        t.Translation = { 0.0f, 4.0f, 16.0f };
+        t.Rotation = { glm::radians(-15.0f), 0.0f, 0.0f };
+        auto& follow = cam.AddComponent<CameraFollowComponent>();
+        follow.target = "Robot";
+        follow.distance = 6.5f;
+        follow.height = 3.4f;
+        follow.lookHeight = 1.6f;
+        follow.followYaw = true;
+        follow.modelForwardZ = true; // the Mixamo robot faces +Z
+    }
+    {
+        auto sun = m_Scene->CreateDirLightEntity("Sun");
+        auto& t = sun.GetComponent<TransformComponent>();
+        t.Rotation = { glm::radians(-58.0f), glm::radians(30.0f), 0.0f };
+        auto& dl = sun.GetComponent<DirLightComponent>();
+        dl.ambient = glm::vec3(0.06f);
+        dl.diffuse = glm::vec3(0.9f, 0.86f, 0.8f);
+        dl.specular = glm::vec3(0.4f);
+        dl.castsShadow = true;
+    }
+
+    // ---- arena: floor (top at y = 0) and low rails ----
+    slab("Floor", { 0.0f, -0.25f, 0.0f }, { 30.0f, 0.5f, 30.0f }, { 0.32f, 0.34f, 0.38f });
+    const glm::vec3 railColor(0.22f, 0.24f, 0.3f);
+    slab("Rail", { 0.0f, 0.3f, -15.2f }, { 30.8f, 0.6f, 0.4f }, railColor);
+    slab("Rail", { 0.0f, 0.3f, 15.2f }, { 30.8f, 0.6f, 0.4f }, railColor);
+    slab("Rail", { -15.2f, 0.3f, 0.0f }, { 0.4f, 0.6f, 30.0f }, railColor);
+    slab("Rail", { 15.2f, 0.3f, 0.0f }, { 0.4f, 0.6f, 30.0f }, railColor);
+
+    // ---- the climb: steps, a moving platform, a lift and the summit ----
+    const glm::vec3 stepColor(0.85f, 0.55f, 0.25f), moverColor(0.25f, 0.75f, 0.7f), summitColor(0.55f, 0.45f, 0.85f);
+    platform("Step A", 0.0f, 5.5f, 0.9f, 3.0f, 3.0f, stepColor);
+    platform("Step B", 3.2f, 2.0f, 1.8f, 3.0f, 3.0f, stepColor);
+    platform("Step D", -3.8f, -6.0f, 3.2f, 3.0f, 3.0f, stepColor);
+    platform("Summit", 0.0f, -10.5f, 4.0f, 5.0f, 5.0f, summitColor);
+    {
+        auto mover = slab("Moving Platform", { 3.2f, 2.4f - 0.25f, -2.0f }, { 3.0f, 0.5f, 3.0f }, moverColor,
+                          RigidBodyComponent::Type::Kinematic);
+        mover.AddComponent<LuaScriptComponent>("Glide",
+            std::string("-- Moving platform: glides between its start and start + OFFSET.\n"
+                        "local OFFSET = { -7.0, 0.0, 0.0 }  -- where it goes, relative to the start\n"
+                        "local PERIOD = 7.0                 -- seconds for a round trip\n") + s_ArenaPlatformLua);
+        auto lift = slab("Lift", { -7.5f, 0.15f - 0.25f, -6.0f }, { 2.5f, 0.5f, 2.5f }, moverColor,
+                         RigidBodyComponent::Type::Kinematic);
+        lift.AddComponent<LuaScriptComponent>("Lift",
+            std::string("-- Lift: rises to Step D's height and back down.\n"
+                        "local OFFSET = { 0.0, 3.05, 0.0 }\n"
+                        "local PERIOD = 6.0\n") + s_ArenaPlatformLua);
+    }
+    {
+        // Beacon on the summit.
+        auto pole = m_Scene->CreateEntity("Beacon Pole");
+        material(pole.AddComponent<PrimitiveComponent>(PrimitiveComponent::Type::Cylinder).material, { 0.8f, 0.8f, 0.85f });
+        auto& pt = pole.GetComponent<TransformComponent>();
+        pt.Translation = { 1.8f, 5.0f, -12.3f };
+        pt.Scale = { 0.12f, 2.0f, 0.12f };
+        auto light = m_Scene->CreatePointLightEntity("Beacon");
+        light.GetComponent<TransformComponent>().Translation = { 1.8f, 6.2f, -12.3f };
+        auto& pl = light.GetComponent<PointLightComponent>();
+        pl.diffuse = glm::vec3(0.7f, 0.5f, 1.0f);
+        pl.ambient = glm::vec3(0.0f);
+        auto& orb = light.AddComponent<PrimitiveComponent>(PrimitiveComponent::Type::Sphere);
+        material(orb.material, { 0.7f, 0.5f, 1.0f });
+        orb.material.emissive = glm::vec3(0.7f, 0.5f, 1.0f);
+        orb.material.emissiveStrength = 3.0f;
+        light.GetComponent<TransformComponent>().Scale = glm::vec3(0.45f);
+    }
+
+    // ---- energy cells ----
+    const glm::vec3 cells[] = {
+        { -6.0f, 1.0f, 7.0f }, { 7.0f, 1.0f, 0.5f }, { -10.0f, 1.0f, -1.0f }, { 10.0f, 1.0f, -9.0f },
+        { -11.0f, 1.0f, -11.0f }, { 11.0f, 1.0f, 11.0f },
+        { 0.0f, 1.9f, 5.5f },    // Step A
+        { 3.2f, 2.8f, 2.0f },    // Step B
+        { 3.2f, 4.2f, -0.6f },   // in the air between B and the moving platform: double jump
+        { -3.8f, 4.2f, -6.0f },  // Step D
+        { -7.5f, 4.2f, -6.0f },  // above the lift
+        { -1.3f, 5.0f, -10.5f }, { 1.3f, 5.0f, -9.5f }, // summit
+    };
+    for (const glm::vec3& p : cells){
+        auto cell = m_Scene->CreateEntity("Energy Cell");
+        auto& prim = cell.AddComponent<PrimitiveComponent>(PrimitiveComponent::Type::Capsule);
+        material(prim.material, { 0.3f, 0.85f, 1.0f }, 64.0f);
+        prim.material.emissive = glm::vec3(0.2f, 0.9f, 1.0f);
+        prim.material.emissiveStrength = 1.6f;
+        auto& t = cell.GetComponent<TransformComponent>();
+        t.Translation = p;
+        t.Scale = glm::vec3(0.7f);
+        cell.AddComponent<LuaScriptComponent>("Cell", s_ArenaCellLua);
+    }
+
+    // ---- targets on posts: discs facing into the arena ----
+    struct TargetDef { glm::vec3 pos; bool facesX; };
+    const TargetDef targets[] = {
+        { { -6.0f, 1.9f, -14.3f }, false }, { { 6.0f, 1.9f, -14.3f }, false },
+        { { -14.3f, 1.9f, 0.0f }, true },   { { -14.3f, 1.9f, -8.0f }, true },
+        { { 14.3f, 1.9f, 4.0f }, true },    { { 14.3f, 1.9f, -6.0f }, true },
+    };
+    for (const TargetDef& d : targets){
+        auto post = m_Scene->CreateEntity("Target Post");
+        material(post.AddComponent<PrimitiveComponent>(PrimitiveComponent::Type::Cylinder).material, { 0.5f, 0.5f, 0.55f });
+        auto& postT = post.GetComponent<TransformComponent>();
+        postT.Translation = { d.pos.x, 0.65f, d.pos.z };
+        postT.Scale = { 0.15f, 1.3f, 0.15f };
+
+        auto target = m_Scene->CreateEntity("Target");
+        auto& prim = target.AddComponent<PrimitiveComponent>(PrimitiveComponent::Type::Cylinder);
+        material(prim.material, { 0.9f, 0.25f, 0.15f }, 32.0f);
+        auto& t = target.GetComponent<TransformComponent>();
+        t.Translation = d.pos;
+        t.Scale = { 1.2f, 0.15f, 1.2f };
+        // A cylinder's axis is Y: tip it over so the disc faces along Z (or X).
+        t.Rotation = d.facesX ? glm::vec3(0.0f, 0.0f, glm::half_pi<float>()) : glm::vec3(glm::half_pi<float>(), 0.0f, 0.0f);
+        target.AddComponent<RigidBodyComponent>().type = RigidBodyComponent::Type::Kinematic; // follows its script
+        target.AddComponent<CylinderColliderComponent>();
+        target.AddComponent<LuaScriptComponent>("Target", s_ArenaTargetLua);
+    }
+
+    // ---- a crate pyramid to knock over ----
+    {
+        const float size = 0.8f;
+        int n = 0;
+        for (int row = 0; row < 3; row++){
+            for (int i = 0; i < 3 - row; i++){
+                auto crate = slab("Crate " + std::to_string(++n),
+                    { 8.0f + (i - (2 - row) * 0.5f) * (size + 0.02f), size * 0.5f + row * size, 6.0f },
+                    glm::vec3(size), { 0.65f, 0.45f, 0.25f }, RigidBodyComponent::Type::Dynamic);
+                crate.GetComponent<RigidBodyComponent>().density = 200.0f;
+                crate.AddComponent<LuaScriptComponent>("Crate", s_ArenaCrateLua);
+            }
+        }
+    }
+
+    // ---- templates copied at runtime with Spawn() (parked under the floor) ----
+    {
+        auto bullet = m_Scene->CreateEntity("Bullet");
+        auto& prim = bullet.AddComponent<PrimitiveComponent>(PrimitiveComponent::Type::Sphere);
+        material(prim.material, { 1.0f, 0.8f, 0.4f });
+        prim.material.emissive = glm::vec3(1.0f, 0.7f, 0.25f);
+        prim.material.emissiveStrength = 4.0f;
+        auto& t = bullet.GetComponent<TransformComponent>();
+        t.Translation = { 0.0f, -20.0f, 0.0f };
+        t.Scale = glm::vec3(0.22f);
+        auto& rb = bullet.AddComponent<RigidBodyComponent>();
+        rb.gravityFactor = 0.0f;
+        rb.density = 6000.0f;          // heavy enough to shove crates
+        rb.continuousCollision = true; // fast: don't tunnel through thin targets
+        bullet.AddComponent<SphereColliderComponent>();
+        bullet.AddComponent<LuaScriptComponent>("Bolt", s_ArenaBulletLua);
+
+        auto spark = m_Scene->CreateEntity("Spark");
+        auto& sp = spark.AddComponent<PrimitiveComponent>(PrimitiveComponent::Type::Sphere);
+        material(sp.material, { 1.0f, 0.7f, 0.3f });
+        spark.GetComponent<TransformComponent>().Translation = { 0.0f, -20.0f, 2.0f };
+        spark.AddComponent<LuaScriptComponent>("Burst", s_ArenaSparkLua);
+    }
+
+    // ---- the robot ----
+    {
+        auto robot = m_Scene->CreateEntity("Robot");
+        auto& mesh = robot.AddComponent<MeshComponent>();
+        mesh.model = CreateRef<Model>("assets/models/robot.fbx");
+        mesh.material.ambient = glm::vec3(0.2f);
+        mesh.material.diffuse = glm::vec3(0.75f, 0.75f, 0.8f);
+        mesh.material.specular = glm::vec3(0.4f);
+        mesh.material.shininess = 32.0f;
+        auto& anim = robot.AddComponent<AnimationComponent>();
+        anim.crossfade = 0.15f;
+        anim.extraClips = { "assets/models/walk.fbx", "assets/models/idle.fbx",
+                            "assets/models/run.fbx", "assets/models/jump.fbx" };
+        auto& t = robot.GetComponent<TransformComponent>();
+        t.Translation = { 0.0f, 0.0f, 10.0f };
+        t.Rotation = { 0.0f, glm::pi<float>(), 0.0f }; // face into the arena (-Z)
+        t.Scale = glm::vec3(0.011f);                    // the Mixamo rig is ~180 units tall -> ~2
+
+        auto& scripts = robot.AddComponent<LuaScriptComponent>("Movement", s_ArenaMovementLua);
+        scripts.Add("Blaster", s_ArenaBlasterLua);
+        scripts.Add("HUD", s_ArenaHudLua);
+    }
+}
+
 void MainLayer::BuildMultiShadowShowcase() {
     // Three coloured directional lights from different angles, each casting its OWN
     // shadow map -> the central objects cast three shadows fanning out, tinted where the
@@ -1421,6 +1945,57 @@ bool MainLayer::MouseRay(const ImVec2& imageMin, glm::vec3& outOrigin, glm::vec3
     outOrigin = glm::vec3(nearPoint);
     outDir = glm::normalize(glm::vec3(farPoint) - glm::vec3(nearPoint));
     return true;
+}
+
+// Text scripts put on screen while playing (ShowText / ShowBanner), over the viewport.
+// Drawn with fonts baked at their display size, with a dark outline for contrast.
+void MainLayer::DrawScriptHud(const ImVec2& imageMin) {
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImVec2 imageMax(imageMin.x + m_ViewportSize.x, imageMin.y + m_ViewportSize.y);
+    dl->PushClipRect(imageMin, imageMax, true);
+
+    auto outlined = [&](ImFont* font, ImVec2 p, ImU32 color, ImU32 outline, const char* text){
+        const float size = font->FontSize;
+        p = ImVec2(std::floor(p.x), std::floor(p.y)); // whole pixels: no resampling blur
+        for (const ImVec2& o : { ImVec2(-1, 0), ImVec2(1, 0), ImVec2(0, -1), ImVec2(0, 1), ImVec2(2, 2) })
+            dl->AddText(font, size, ImVec2(p.x + o.x, p.y + o.y), outline, text);
+        dl->AddText(font, size, p, color, text);
+    };
+
+    // Lines in the order scripts first showed them, on a translucent panel.
+    ImFont* hudFont = ImGuiLayer::GetHudFont() ? ImGuiLayer::GetHudFont() : ImGui::GetFont();
+    std::vector<const HudText*> lines;
+    for (const auto& [key, line] : m_Scene->GetHudText()) { lines.push_back(&line); }
+    std::sort(lines.begin(), lines.end(), [](const HudText* a, const HudText* b){ return a->order < b->order; });
+    if (!lines.empty()){
+        const float pad = 10.0f, lineH = hudFont->FontSize + 6.0f;
+        float width = 0.0f;
+        for (const HudText* l : lines) { width = std::max(width, hudFont->CalcTextSizeA(hudFont->FontSize, FLT_MAX, 0.0f, l->text.c_str()).x); }
+        ImVec2 p(imageMin.x + 12.0f, imageMin.y + 12.0f);
+        dl->AddRectFilled(p, ImVec2(p.x + width + pad * 2.0f, p.y + lines.size() * lineH + pad * 2.0f - 6.0f),
+                          IM_COL32(10, 12, 16, 150), 8.0f);
+        for (std::size_t i = 0; i < lines.size(); i++){
+            const glm::vec3& c = lines[i]->color;
+            outlined(hudFont, ImVec2(p.x + pad, p.y + pad + i * lineH),
+                     ImGui::ColorConvertFloat4ToU32(ImVec4(c.r, c.g, c.b, 1.0f)), IM_COL32(0, 0, 0, 170),
+                     lines[i]->text.c_str());
+        }
+    }
+
+    // Banner: large, centred, fading out over its last half second.
+    const float left = m_Scene->GetBannerTimeLeft();
+    if (!m_Scene->GetBanner().empty() && left > 0.0f){
+        ImFont* font = ImGuiLayer::GetBannerFont() ? ImGuiLayer::GetBannerFont() : ImGui::GetFont();
+        const char* text = m_Scene->GetBanner().c_str();
+        const float alpha = std::min(1.0f, left * 2.0f);
+        ImVec2 ts = font->CalcTextSizeA(font->FontSize, FLT_MAX, 0.0f, text);
+        ImVec2 p(imageMin.x + (m_ViewportSize.x - ts.x) * 0.5f, imageMin.y + m_ViewportSize.y * 0.28f - ts.y * 0.5f);
+        // A soft band behind the text so it reads over bright scenery.
+        dl->AddRectFilled(ImVec2(p.x - 28.0f, p.y - 10.0f), ImVec2(p.x + ts.x + 28.0f, p.y + ts.y + 10.0f),
+                          IM_COL32(10, 12, 16, (int)(130 * alpha)), 12.0f);
+        outlined(font, p, IM_COL32(255, 236, 190, (int)(255 * alpha)), IM_COL32(0, 0, 0, (int)(200 * alpha)), text);
+    }
+    dl->PopClipRect();
 }
 
 void MainLayer::BuildDefaultLayout(ImGuiID dockspaceID) {
@@ -1687,6 +2262,7 @@ void MainLayer::OnImGuiRender(){
                 if (ImGui::MenuItem("Load Multi-Shadow Showcase")) { LoadShowcase(&MainLayer::BuildMultiShadowShowcase); }
                 if (ImGui::MenuItem("Load Physics Showcase")) { LoadShowcase(&MainLayer::BuildPhysicsShowcase); }
                 if (ImGui::MenuItem("Load Maze A* Showcase")) { LoadShowcase(&MainLayer::BuildMazeShowcase); }
+                if (ImGui::MenuItem("Load Robot Arena Showcase")) { LoadShowcase(&MainLayer::BuildRobotArenaShowcase); }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Import Scene")) {
                     std::string path = "scene.phx";
@@ -1895,6 +2471,7 @@ void MainLayer::OnImGuiRender(){
     ImVec2 imageMin = ImGui::GetCursorScreenPos();
     uint64_t textureID = m_Framebuffer->GetColorAttachmentRendererID();
     ImGui::Image(reinterpret_cast<void*>(textureID), ImVec2{ m_ViewportSize.x, m_ViewportSize.y }, ImVec2{ 0, 1 }, ImVec2{ 1, 0 });
+    if (m_Scene->IsRunning()) { DrawScriptHud(imageMin); }
 
     // Transform gizmo for the selected entity. Skip it for the primary camera, since
     // we're looking THROUGH that camera and its gizmo would sit in the middle of the view.

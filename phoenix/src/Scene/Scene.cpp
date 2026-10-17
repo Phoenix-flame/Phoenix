@@ -141,74 +141,79 @@ namespace Phoenix{
         return props;
     }
 
+    // One body for a rigid-body entity. Shape priority: explicit primitive colliders
+    // (box/sphere/capsule/cylinder) first, then a mesh collider built from the
+    // entity's model or primitive-shape geometry.
+    void Scene::CreateRuntimeBody(entt::entity entity){
+        if (!m_PhysicsWorld || !m_Registry.all_of<RigidBodyComponent, TransformComponent>(entity)) { return; }
+        auto& rb = m_Registry.get<RigidBodyComponent>(entity);
+        auto& transform = m_Registry.get<TransformComponent>(entity);
+        PhysicsWorld::BodyType type = (PhysicsWorld::BodyType)(int)rb.type;
+        PhysicsWorld::BodyProps props = MakeBodyProps(rb);
+        const glm::vec3& s = transform.Scale;
+
+        if (auto* box = m_Registry.try_get<BoxColliderComponent>(entity)){
+            rb.runtimeBodyID = m_PhysicsWorld->CreateBox(transform.Translation, transform.Rotation,
+                box->halfExtents * s, type, props);
+        }
+        else if (auto* sphere = m_Registry.try_get<SphereColliderComponent>(entity)){
+            float scale = std::max(s.x, std::max(s.y, s.z));
+            rb.runtimeBodyID = m_PhysicsWorld->CreateSphere(transform.Translation, transform.Rotation,
+                sphere->radius * scale, type, props);
+        }
+        else if (auto* capsule = m_Registry.try_get<CapsuleColliderComponent>(entity)){
+            float radialScale = std::max(s.x, s.z);
+            rb.runtimeBodyID = m_PhysicsWorld->CreateCapsule(transform.Translation, transform.Rotation,
+                capsule->halfHeight * s.y, capsule->radius * radialScale, type, props);
+        }
+        else if (auto* cylinder = m_Registry.try_get<CylinderColliderComponent>(entity)){
+            float radialScale = std::max(s.x, s.z);
+            rb.runtimeBodyID = m_PhysicsWorld->CreateCylinder(transform.Translation, transform.Rotation,
+                cylinder->halfHeight * s.y, cylinder->radius * radialScale, type, props);
+        }
+        else if (auto* meshCollider = m_Registry.try_get<MeshColliderComponent>(entity)){
+            // Gather geometry (scaled into local space) from the entity's model,
+            // or from its generated primitive-shape mesh.
+            std::vector<glm::vec3> points;
+            std::vector<uint32_t> indices;
+            if (auto* mesh = m_Registry.try_get<MeshComponent>(entity)){
+                if (!mesh->model || mesh->model->GetMeshes().empty()) { return; } // not loaded yet
+                for (const auto& sub : mesh->model->GetMeshes()){
+                    uint32_t base = (uint32_t)points.size();
+                    for (const auto& p : sub->GetPositions()) { points.push_back(p * s); }
+                    for (uint32_t idx : sub->GetIndices())     { indices.push_back(base + idx); }
+                }
+            }
+            else if (auto* primitive = m_Registry.try_get<PrimitiveComponent>(entity)){
+                Ref<Mesh> mesh = GetPrimitiveMesh(primitive->type);
+                if (!mesh) { return; }
+                points.reserve(mesh->GetPositions().size());
+                for (const auto& p : mesh->GetPositions()) { points.push_back(p * s); }
+                indices = mesh->GetIndices();
+            }
+            if (points.empty()) { return; }
+
+            if (meshCollider->convex || type != PhysicsWorld::BodyType::Static){
+                rb.runtimeBodyID = m_PhysicsWorld->CreateConvexHull(points, transform.Translation,
+                    transform.Rotation, type, props);
+            }
+            else{
+                rb.runtimeBodyID = m_PhysicsWorld->CreateMesh(points, indices, transform.Translation,
+                    transform.Rotation, props);
+            }
+        }
+
+        if (rb.runtimeBodyID != 0xffffffff) { m_BodyToEntity[rb.runtimeBodyID] = entity; }
+    }
+
     void Scene::OnRuntimeStart(){
         m_PhysicsWorld = CreateScope<PhysicsWorld>();
         m_BodyToEntity.clear();
 
-        // One body per rigid-body entity. Shape priority: explicit primitive colliders
-        // (box/sphere/capsule/cylinder) first, then a mesh collider built from the
-        // entity's model or primitive-shape geometry.
-        auto rbView = m_Registry.view<RigidBodyComponent, TransformComponent>();
-        for (auto entity : rbView){
-            auto& rb = rbView.get<RigidBodyComponent>(entity);
-            auto& transform = rbView.get<TransformComponent>(entity);
-            PhysicsWorld::BodyType type = (PhysicsWorld::BodyType)(int)rb.type;
-            PhysicsWorld::BodyProps props = MakeBodyProps(rb);
-            const glm::vec3& s = transform.Scale;
-
-            if (auto* box = m_Registry.try_get<BoxColliderComponent>(entity)){
-                rb.runtimeBodyID = m_PhysicsWorld->CreateBox(transform.Translation, transform.Rotation,
-                    box->halfExtents * s, type, props);
-            }
-            else if (auto* sphere = m_Registry.try_get<SphereColliderComponent>(entity)){
-                float scale = std::max(s.x, std::max(s.y, s.z));
-                rb.runtimeBodyID = m_PhysicsWorld->CreateSphere(transform.Translation, transform.Rotation,
-                    sphere->radius * scale, type, props);
-            }
-            else if (auto* capsule = m_Registry.try_get<CapsuleColliderComponent>(entity)){
-                float radialScale = std::max(s.x, s.z);
-                rb.runtimeBodyID = m_PhysicsWorld->CreateCapsule(transform.Translation, transform.Rotation,
-                    capsule->halfHeight * s.y, capsule->radius * radialScale, type, props);
-            }
-            else if (auto* cylinder = m_Registry.try_get<CylinderColliderComponent>(entity)){
-                float radialScale = std::max(s.x, s.z);
-                rb.runtimeBodyID = m_PhysicsWorld->CreateCylinder(transform.Translation, transform.Rotation,
-                    cylinder->halfHeight * s.y, cylinder->radius * radialScale, type, props);
-            }
-            else if (auto* meshCollider = m_Registry.try_get<MeshColliderComponent>(entity)){
-                // Gather geometry (scaled into local space) from the entity's model,
-                // or from its generated primitive-shape mesh.
-                std::vector<glm::vec3> points;
-                std::vector<uint32_t> indices;
-                if (auto* mesh = m_Registry.try_get<MeshComponent>(entity)){
-                    if (!mesh->model || mesh->model->GetMeshes().empty()) { continue; } // not loaded yet
-                    for (const auto& sub : mesh->model->GetMeshes()){
-                        uint32_t base = (uint32_t)points.size();
-                        for (const auto& p : sub->GetPositions()) { points.push_back(p * s); }
-                        for (uint32_t idx : sub->GetIndices())     { indices.push_back(base + idx); }
-                    }
-                }
-                else if (auto* primitive = m_Registry.try_get<PrimitiveComponent>(entity)){
-                    Ref<Mesh> mesh = GetPrimitiveMesh(primitive->type);
-                    if (!mesh) { continue; }
-                    points.reserve(mesh->GetPositions().size());
-                    for (const auto& p : mesh->GetPositions()) { points.push_back(p * s); }
-                    indices = mesh->GetIndices();
-                }
-                if (points.empty()) { continue; }
-
-                if (meshCollider->convex || type != PhysicsWorld::BodyType::Static){
-                    rb.runtimeBodyID = m_PhysicsWorld->CreateConvexHull(points, transform.Translation,
-                        transform.Rotation, type, props);
-                }
-                else{
-                    rb.runtimeBodyID = m_PhysicsWorld->CreateMesh(points, indices, transform.Translation,
-                        transform.Rotation, props);
-                }
-            }
-
-            if (rb.runtimeBodyID != 0xffffffff) { m_BodyToEntity[rb.runtimeBodyID] = entity; }
-        }
+        // One body per rigid-body entity.
+        std::vector<entt::entity> bodies;
+        for (auto entity : m_Registry.view<RigidBodyComponent, TransformComponent>()) { bodies.push_back(entity); }
+        for (auto entity : bodies) { CreateRuntimeBody(entity); }
 
         // Terrain: static triangle-mesh collider from the heightfield.
         auto terrainView = m_Registry.view<TerrainComponent, TransformComponent>();
@@ -282,6 +287,9 @@ namespace Phoenix{
         // Snapshot the ids first: a script's top-level code could create entities.
         m_ScriptLog.clear();
         m_Shared.clear();
+        m_PendingDestroy.clear();
+        m_Hud.clear();
+        m_Banner.clear();
         auto scriptView = m_Registry.view<LuaScriptComponent>();
         std::vector<entt::entity> scripted(scriptView.begin(), scriptView.end());
         for (auto entity : scripted)
@@ -300,13 +308,85 @@ namespace Phoenix{
         m_Scripts.erase(std::remove_if(m_Scripts.begin(), m_Scripts.end(),
             [&](const Ref<LuaScript>& script){ return (entt::entity)script->GetEntity() == (entt::entity)entity; }),
             m_Scripts.end());
+        StartScripts(entity, nullptr);
+    }
+
+    void Scene::StartScripts(Entity entity, const ScriptArgs* args){
         if (!m_Registry.valid((entt::entity)entity) || !entity.HasComponent<LuaScriptComponent>()) { return; }
-        // Copy: a script's top-level code runs in the constructor and must not see
-        // the vector reallocate under it.
+        // Copy: a script's top-level code runs in the constructor and may add
+        // components or spawn entities, which can move the component in memory.
         std::vector<LuaScriptEntry> entries = entity.GetComponent<LuaScriptComponent>().scripts;
         for (int i = 0; i < (int)entries.size(); i++)
             if (entries[i].enabled)
-                m_Scripts.push_back(CreateRef<LuaScript>(entries[i].source, entity, i, entries[i].name));
+                m_Scripts.push_back(CreateRef<LuaScript>(entries[i].source, entity, i, entries[i].name, args));
+    }
+
+    Entity Scene::FindEntityByTag(const std::string& tag){
+        for (auto entity : m_Registry.view<TagComponent>())
+            if (m_Registry.get<TagComponent>(entity).Tag == tag && !IsPendingDestroy(entity))
+                return Entity{ entity, this };
+        return {};
+    }
+
+    // Component types a spawned copy takes from its template.
+    template<typename... Components>
+    static void CopyComponents(entt::registry& registry, entt::entity from, entt::entity to){
+        ([&]{
+            if (auto* c = registry.try_get<Components>(from)) { registry.emplace_or_replace<Components>(to, *c); }
+        }(), ...);
+    }
+
+    Entity Scene::Spawn(const std::string& templateTag, const glm::vec3& position, const ScriptArgs& args){
+        if (!IsRunning()) { return {}; }
+        Entity source = FindEntityByTag(templateTag);
+        if (!source) { return {}; }
+
+        Entity e = CreateEntity(templateTag);
+        CopyComponents<TransformComponent, MeshComponent, CubeComponent, PrimitiveComponent, WireframeComponent,
+                       RigidBodyComponent, BoxColliderComponent, SphereColliderComponent, CapsuleColliderComponent,
+                       CylinderColliderComponent, MeshColliderComponent, AnimationComponent, LuaScriptComponent>(
+            m_Registry, source, e);
+        auto& t = e.GetComponent<TransformComponent>();
+        t.Translation = position;
+        auto yaw = args.find("yaw");
+        if (yaw != args.end())
+            if (const double* d = std::get_if<double>(&yaw->second)) { t.Rotation.y = (float)*d; }
+        if (auto* rb = m_Registry.try_get<RigidBodyComponent>(e)){
+            rb->runtimeBodyID = 0xffffffff; // the template's body isn't ours
+            CreateRuntimeBody(e);
+        }
+        StartScripts(e, &args);
+        return e;
+    }
+
+    void Scene::QueueDestroy(Entity entity){
+        if (m_Registry.valid((entt::entity)entity)) { m_PendingDestroy.insert((entt::entity)entity); }
+    }
+
+    void Scene::FlushPendingDestroy(){
+        if (m_PendingDestroy.empty()) { return; }
+        std::vector<entt::entity> doomed(m_PendingDestroy.begin(), m_PendingDestroy.end());
+        m_PendingDestroy.clear();
+        for (auto entity : doomed)
+            if (m_Registry.valid(entity)) { DestroyEntity(Entity{ entity, this }); }
+    }
+
+    void Scene::SendScriptMessage(Entity target, const std::string& name, const std::vector<ScriptValue>& args, Entity sender){
+        if (!m_Registry.valid((entt::entity)target) || IsPendingDestroy((entt::entity)target)) { return; }
+        if (m_MessageDepth >= 16) { return; } // a message loop between scripts
+        m_MessageDepth++;
+        // Snapshot: a handler may spawn (adding runtimes) while we deliver.
+        std::vector<Ref<LuaScript>> receivers;
+        for (auto& script : m_Scripts)
+            if ((entt::entity)script->GetEntity() == (entt::entity)target) { receivers.push_back(script); }
+        for (auto& script : receivers) { script->OnMessage(name, args, sender); }
+        m_MessageDepth--;
+    }
+
+    void Scene::ShowHudText(const std::string& key, const std::string& text, const glm::vec3& color){
+        auto it = m_Hud.find(key);
+        if (it == m_Hud.end()) { m_Hud[key] = { text, color, m_HudOrder++ }; }
+        else { it->second.text = text; it->second.color = color; }
     }
 
     bool Scene::IsValid(Entity entity) const{
@@ -347,6 +427,9 @@ namespace Phoenix{
         }
         m_PhysicsWorld.reset();
         m_Scripts.clear();
+        m_PendingDestroy.clear();
+        m_Hud.clear();
+        m_Banner.clear();
         m_BodyToEntity.clear();
         m_SubmergedBodies.clear();
     }
@@ -526,7 +609,11 @@ namespace Phoenix{
         // Lua scripts run while playing (they may move/recolour their entities).
         if (!m_Scripts.empty()){
             PHX_PROFILE("Lua Scripts");
-            for (auto& script : m_Scripts){ script->OnUpdate((float)ts); }
+            // By index with a held reference: scripts may spawn (appending runtimes).
+            for (std::size_t i = 0; i < m_Scripts.size(); i++){
+                Ref<LuaScript> script = m_Scripts[i];
+                if (!IsPendingDestroy((entt::entity)script->GetEntity())) { script->OnUpdate((float)ts); }
+            }
         }
 
         // Physics: step the simulation and copy body transforms back to entities.
@@ -633,10 +720,12 @@ namespace Phoenix{
                     auto tagOf = [](Entity e){
                         return e.HasComponent<TagComponent>() ? e.GetComponent<TagComponent>().Tag : std::string();
                     };
-                    for (auto& script : m_Scripts){
+                    for (std::size_t i = 0; i < m_Scripts.size(); i++){
+                        Ref<LuaScript> script = m_Scripts[i];
                         entt::entity se = (entt::entity)script->GetEntity();
-                        if (se == (entt::entity)entityA)      { script->OnCollision(tagOf(entityB), ev.entered); }
-                        else if (se == (entt::entity)entityB) { script->OnCollision(tagOf(entityA), ev.entered); }
+                        if (IsPendingDestroy(se)) { continue; }
+                        if (se == (entt::entity)entityA)      { script->OnCollision(tagOf(entityB), ev.entered, entityB); }
+                        else if (se == (entt::entity)entityB) { script->OnCollision(tagOf(entityA), ev.entered, entityA); }
                     }
                 }
             }
@@ -717,13 +806,18 @@ namespace Phoenix{
                             ? (ev.time > w.prevSeconds || ev.time <= w.curSeconds)
                             : (ev.time > w.prevSeconds && ev.time <= w.curSeconds);
                         if (!crossed) { continue; }
-                        for (auto& script : m_Scripts)
+                        for (std::size_t i = 0; i < m_Scripts.size(); i++){
+                            Ref<LuaScript> script = m_Scripts[i];
                             if ((entt::entity)script->GetEntity() == entity) { script->OnAnimationEvent(ev.name); }
+                        }
                     }
                 }
             }
         }
 
+
+        // Entities scripts destroyed this frame go now, before anything is drawn.
+        FlushPendingDestroy();
 
         auto cameras = m_Registry.view<TransformComponent,CameraComponent>();
         glm::mat4 sceneCameraProjection = editorCamera.GetProjection();

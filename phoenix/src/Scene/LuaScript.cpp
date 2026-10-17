@@ -239,7 +239,8 @@ namespace Phoenix{
         std::string tag = (hit && hit.HasComponent<TagComponent>()) ? hit.GetComponent<TagComponent>().Tag : "";
         lua_pushstring(L, tag.c_str());
         lua_pushnumber(L, hitPoint.x); lua_pushnumber(L, hitPoint.y); lua_pushnumber(L, hitPoint.z);
-        return 4;
+        if (hit) { lua_pushinteger(L, (lua_Integer)(uint32_t)hit); } else { lua_pushnil(L); }
+        return 5;
     }
 
     // ---- Keyboard input ----
@@ -317,6 +318,125 @@ namespace Phoenix{
         return 1;
     }
 
+    // ---- Entities: ids, lookup, spawning, messages ----
+    // Scripts refer to other entities by integer id (GetId, Find, Spawn, RayCast,
+    // collision callbacks). An id is only meaningful in the scene that issued it.
+
+    static void PushEntityId(lua_State* L, Entity e){
+        if (e) { lua_pushinteger(L, (lua_Integer)(uint32_t)e); }
+        else { lua_pushnil(L); }
+    }
+    // The entity for an id argument, or an empty entity if it no longer exists.
+    static Entity CheckEntityId(lua_State* L, int arg){
+        Entity self = ScriptEntity(L);
+        Scene* scene = self.GetScene();
+        Entity e{ (entt::entity)(uint32_t)luaL_checkinteger(L, arg), scene };
+        if (!scene || !scene->IsValid(e) || scene->IsPendingDestroy((entt::entity)e)) { return {}; }
+        return e;
+    }
+    static bool ToScriptValue(lua_State* L, int idx, ScriptValue& out){
+        switch (lua_type(L, idx)){
+            case LUA_TNUMBER:  out = (double)lua_tonumber(L, idx); return true;
+            case LUA_TBOOLEAN: out = (bool)lua_toboolean(L, idx); return true;
+            case LUA_TSTRING:  out = std::string(lua_tostring(L, idx)); return true;
+            default: return false;
+        }
+    }
+    static void PushScriptValue(lua_State* L, const ScriptValue& v){
+        if (const double* d = std::get_if<double>(&v)) { lua_pushnumber(L, *d); }
+        else if (const bool* b = std::get_if<bool>(&v)) { lua_pushboolean(L, *b); }
+        else { lua_pushstring(L, std::get<std::string>(v).c_str()); }
+    }
+
+    static int l_GetId(lua_State* L){
+        PushEntityId(L, ScriptEntity(L));
+        return 1;
+    }
+    static int l_Find(lua_State* L){
+        Scene* scene = ScriptEntity(L).GetScene();
+        PushEntityId(L, scene ? scene->FindEntityByTag(luaL_checkstring(L, 1)) : Entity{});
+        return 1;
+    }
+    static int l_GetPositionOf(lua_State* L){
+        Entity e = CheckEntityId(L, 1);
+        if (!e || !e.HasComponent<TransformComponent>()) { lua_pushnil(L); return 1; }
+        const glm::vec3& t = e.GetComponent<TransformComponent>().Translation;
+        lua_pushnumber(L, t.x); lua_pushnumber(L, t.y); lua_pushnumber(L, t.z);
+        return 3;
+    }
+    static int l_GetTagOf(lua_State* L){
+        Entity e = CheckEntityId(L, 1);
+        if (!e || !e.HasComponent<TagComponent>()) { lua_pushnil(L); return 1; }
+        lua_pushstring(L, e.GetComponent<TagComponent>().Tag.c_str());
+        return 1;
+    }
+    // Spawn(templateTag, x, y, z [, args]) -> id (or nil)
+    static int l_Spawn(lua_State* L){
+        Scene* scene = ScriptEntity(L).GetScene();
+        const char* tag = luaL_checkstring(L, 1);
+        glm::vec3 pos = CheckVec3(L, 2);
+        ScriptArgs args;
+        if (lua_istable(L, 5)){
+            lua_pushnil(L);
+            while (lua_next(L, 5)){
+                ScriptValue v;
+                if (lua_type(L, -2) == LUA_TSTRING && ToScriptValue(L, -1, v)) { args[lua_tostring(L, -2)] = v; }
+                lua_pop(L, 1);
+            }
+        }
+        PushEntityId(L, scene ? scene->Spawn(tag, pos, args) : Entity{});
+        return 1;
+    }
+    // Destroy([id]): removes this entity (or the given one) at the end of the frame.
+    static int l_Destroy(lua_State* L){
+        Entity self = ScriptEntity(L);
+        Scene* scene = self.GetScene();
+        Entity target = lua_isnoneornil(L, 1) ? self : CheckEntityId(L, 1);
+        if (scene && target) { scene->QueueDestroy(target); }
+        return 0;
+    }
+    // Send(id, name, ...): calls OnMessage(name, ..., senderId) in the target's scripts.
+    static int l_Send(lua_State* L){
+        Entity self = ScriptEntity(L);
+        Scene* scene = self.GetScene();
+        Entity target = CheckEntityId(L, 1);
+        std::string name = luaL_checkstring(L, 2);
+        std::vector<ScriptValue> args;
+        for (int i = 3; i <= lua_gettop(L) && args.size() < 8; i++){
+            ScriptValue v;
+            if (ToScriptValue(L, i, v)) { args.push_back(v); }
+            else { args.push_back(false); } // nil and tables arrive as false
+        }
+        if (scene && target) { scene->SendScriptMessage(target, name, args, self); }
+        return 0;
+    }
+
+    // ---- On-screen text ----
+
+    static int l_ShowText(lua_State* L){
+        Scene* scene = ScriptEntity(L).GetScene();
+        const char* key = luaL_checkstring(L, 1);
+        size_t len = 0;
+        const char* text = luaL_tolstring(L, 2, &len); // any value, like print
+        std::string str(text, len);
+        lua_pop(L, 1);
+        glm::vec3 color(1.0f);
+        if (lua_gettop(L) >= 5) { color = CheckVec3(L, 3); }
+        if (scene) { scene->ShowHudText(key, str, color); }
+        return 0;
+    }
+    static int l_HideText(lua_State* L){
+        if (Scene* scene = ScriptEntity(L).GetScene()) { scene->HideHudText(luaL_checkstring(L, 1)); }
+        return 0;
+    }
+    static int l_ShowBanner(lua_State* L){
+        Scene* scene = ScriptEntity(L).GetScene();
+        const char* text = luaL_checkstring(L, 1);
+        float seconds = lua_gettop(L) >= 2 ? (float)luaL_checknumber(L, 2) : 2.0f;
+        if (scene) { scene->ShowBanner(text, seconds); }
+        return 0;
+    }
+
     // print(...) -> the scene's script console (tab-separated, like Lua's own print).
     static int l_print(lua_State* L){
         std::string text;
@@ -346,8 +466,9 @@ namespace Phoenix{
     };
     static const LuaBinding s_Bindings[] = {
         { "OnUpdate",         nullptr, "Callbacks", "function OnUpdate(dt)", "Called every frame while playing; dt is the frame time in seconds." },
-        { "OnCollisionEnter", nullptr, "Callbacks", "function OnCollisionEnter(otherTag)", "Called when this entity's body starts touching another (needs a Rigid Body)." },
-        { "OnCollisionExit",  nullptr, "Callbacks", "function OnCollisionExit(otherTag)", "Called when this entity's body stops touching another." },
+        { "OnCollisionEnter", nullptr, "Callbacks", "function OnCollisionEnter(otherTag, otherId)", "Called when this entity's body starts touching another (needs a Rigid Body)." },
+        { "OnCollisionExit",  nullptr, "Callbacks", "function OnCollisionExit(otherTag, otherId)", "Called when this entity's body stops touching another." },
+        { "OnMessage",        nullptr, "Callbacks", "function OnMessage(name, ...)", "Called when another script uses Send(id, name, ...); the last argument is the sender's id." },
         { "OnAnimationEvent", nullptr, "Callbacks", "function OnAnimationEvent(name)", "Called when the playing clip crosses an animation event (Timeline panel)." },
 
         { "GetTranslation", l_GetTranslation, "Transform", "GetTranslation() -> x, y, z", "World position of this entity." },
@@ -382,13 +503,25 @@ namespace Phoenix{
         { "SetVelocity",        l_SetVelocity,        "Physics", "SetVelocity(x, y, z)", "Sets the linear velocity." },
         { "GetVelocity",        l_GetVelocity,        "Physics", "GetVelocity() -> x, y, z", "Current linear velocity." },
         { "SetAngularVelocity", l_SetAngularVelocity, "Physics", "SetAngularVelocity(x, y, z)", "Sets the spin (radians/second)." },
-        { "RayCast",            l_RayCast,            "Physics", "RayCast(ox, oy, oz, dx, dy, dz, maxDist) -> tag, hx, hy, hz", "Casts a ray; returns the hit entity's tag and point, or nil." },
+        { "RayCast",            l_RayCast,            "Physics", "RayCast(ox, oy, oz, dx, dy, dz, maxDist) -> tag, hx, hy, hz, id", "Casts a ray; returns the hit entity's tag, point and id, or nil." },
 
         { "IsKeyDown",    l_IsKeyDown,    "Input", "IsKeyDown(key) -> bool", "True while the key is held, e.g. IsKeyDown(Key.W)." },
         { "IsKeyPressed", l_IsKeyPressed, "Input", "IsKeyPressed(key) -> bool", "True only on the frame the key goes down." },
 
         { "SetShared", l_SetShared, "Shared", "SetShared(key, value)", "Publishes a number, boolean or string to every script (nil removes it). Cleared on Run." },
         { "GetShared", l_GetShared, "Shared", "GetShared(key [, default]) -> value", "Reads a value another script published, or default (nil) if unset." },
+
+        { "GetId",         l_GetId,         "Entities", "GetId() -> id", "This entity's id, for Send / Find results / comparisons." },
+        { "Find",          l_Find,          "Entities", "Find(tag) -> id", "The first entity with this tag, or nil." },
+        { "GetPositionOf", l_GetPositionOf, "Entities", "GetPositionOf(id) -> x, y, z", "Position of another entity, or nil if it's gone." },
+        { "GetTagOf",      l_GetTagOf,      "Entities", "GetTagOf(id) -> tag", "Tag (name) of another entity, or nil if it's gone." },
+        { "Spawn",         l_Spawn,         "Entities", "Spawn(templateTag, x, y, z [, args]) -> id", "Copies the entity with that tag (shape, physics, scripts) to a position while playing. The copy's scripts see args as the global SPAWN table (nil in the template); args.yaw sets its Y rotation." },
+        { "Destroy",       l_Destroy,       "Entities", "Destroy([id])", "Removes this entity (or the given one) at the end of the frame." },
+        { "Send",          l_Send,          "Entities", "Send(id, name, ...)", "Calls OnMessage(name, ..., senderId) in the other entity's scripts (numbers, booleans, strings)." },
+
+        { "ShowText",   l_ShowText,   "Screen", "ShowText(key, text [, r, g, b])", "Shows (or updates) a line of text in the viewport while playing." },
+        { "HideText",   l_HideText,   "Screen", "HideText(key)", "Removes a line shown with ShowText." },
+        { "ShowBanner", l_ShowBanner, "Screen", "ShowBanner(text [, seconds])", "A large centred message (default 2 seconds)." },
 
         { "print", l_print, "Debug", "print(...)", "Writes its arguments to the Script Editor console." },
     };
@@ -484,7 +617,8 @@ namespace Phoenix{
             scene->LogScript(m_Entity, m_Index, m_Name, true, std::string(what) + ": " + m_Error, m_ErrorLine);
     }
 
-    LuaScript::LuaScript(const std::string& source, Entity entity, int index, const std::string& name)
+    LuaScript::LuaScript(const std::string& source, Entity entity, int index, const std::string& name,
+                         const ScriptArgs* args)
         : m_Entity(entity), m_Index(index), m_Name(name){
         m_L = luaL_newstate();
         *static_cast<LuaScript**>(lua_getextraspace(m_L)) = this;
@@ -520,6 +654,16 @@ namespace Phoenix{
             lua_setfield(m_L, -2, k.name);
         }
         lua_setglobal(m_L, "Key");
+
+        // Spawned copies get their spawn arguments; templates (and placed entities) don't.
+        if (args){
+            lua_newtable(m_L);
+            for (const auto& [key, value] : *args){
+                PushScriptValue(m_L, value);
+                lua_setfield(m_L, -2, key.c_str());
+            }
+            lua_setglobal(m_L, "SPAWN");
+        }
 
         std::string chunkName = "=" + m_Name;
         if (luaL_loadbuffer(m_L, source.data(), source.size(), chunkName.c_str()) != LUA_OK){
@@ -577,12 +721,27 @@ namespace Phoenix{
         }
     }
 
-    void LuaScript::OnCollision(const std::string& otherTag, bool entered){
+    void LuaScript::OnCollision(const std::string& otherTag, bool entered, Entity other){
         if (!m_Valid) { return; }
         lua_getglobal(m_L, entered ? "OnCollisionEnter" : "OnCollisionExit");
         if (lua_isfunction(m_L, -1)){
             lua_pushstring(m_L, otherTag.c_str());
-            ProtectedCall(1, entered ? "OnCollisionEnter" : "OnCollisionExit");
+            PushEntityId(m_L, other);
+            ProtectedCall(2, entered ? "OnCollisionEnter" : "OnCollisionExit");
+        }
+        else{
+            lua_pop(m_L, 1);
+        }
+    }
+
+    void LuaScript::OnMessage(const std::string& name, const std::vector<ScriptValue>& args, Entity sender){
+        if (!m_Valid) { return; }
+        lua_getglobal(m_L, "OnMessage");
+        if (lua_isfunction(m_L, -1)){
+            lua_pushstring(m_L, name.c_str());
+            for (const ScriptValue& v : args) { PushScriptValue(m_L, v); }
+            PushEntityId(m_L, sender);
+            ProtectedCall((int)args.size() + 2, "OnMessage");
         }
         else{
             lua_pop(m_L, 1);

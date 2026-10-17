@@ -29,6 +29,9 @@ namespace Phoenix{
 		s_MonospaceFont = io.Fonts->AddFontFromFileTTF("assets/fonts/JetBrainsMono-Regular.ttf", 15.0f);
 		if (!s_MonospaceFont)
 			s_MonospaceFont = io.Fonts->AddFontDefault();
+
+		s_HudFont = io.Fonts->AddFontFromFileTTF("assets/fonts/Roboto-Bold.ttf", 20.0f);
+		s_BannerFont = io.Fonts->AddFontFromFileTTF("assets/fonts/Roboto-Bold.ttf", 44.0f);
 	
         ImGuiStyle& style = ImGui::GetStyle();
         style.WindowRounding = 0.0f;
