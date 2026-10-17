@@ -1,32 +1,22 @@
-project(Sandbox)
-
-# Add sub directories
-include_directories(
-    ${PROJECT_SOURCE_DIR}
-    ${PROJECT_SOURCE_DIR}/Panels
-)
-# Create the executable
-add_executable(${PROJECT_NAME} 
+# The editor.
+add_executable(Sandbox
     main.cpp
     MainLayer.cpp
     Panels/SceneEditor.cpp
 )
-
-# Link the static library from subproject1 using it's alias sub::lib1
-# Link the header only library from subproject2 using it's alias sub::lib2
-# This will cause the include directories for that target to be added to this project
-target_link_libraries(${PROJECT_NAME}
-    PRIVATE
-    phoenix
+target_include_directories(Sandbox PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/Panels
 )
+target_link_libraries(Sandbox PRIVATE phoenix)
 
-# Copy assets next to the executable AFTER EVERY BUILD so new/changed shaders and
-# models always sync (configure-time file(COPY) misses files added later).
+# Engine assets, then the editor's own (showcase models/textures, extra shaders) on top.
 # main() chdir's to the executable's directory at startup.
-add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+phoenix_copy_assets(Sandbox)
+add_custom_command(TARGET Sandbox POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/assets $<TARGET_FILE_DIR:${PROJECT_NAME}>/assets
+        ${CMAKE_CURRENT_SOURCE_DIR}/assets $<TARGET_FILE_DIR:Sandbox>/assets
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/backpack $<TARGET_FILE_DIR:${PROJECT_NAME}>/backpack
+        ${CMAKE_CURRENT_SOURCE_DIR}/backpack $<TARGET_FILE_DIR:Sandbox>/backpack
     VERBATIM
 )

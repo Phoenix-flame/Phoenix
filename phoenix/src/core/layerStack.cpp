@@ -1,4 +1,5 @@
 #include "Phoenix/core/layerStack.h"
+#include <algorithm>
 
 namespace Phoenix{
     LayerStack::~LayerStack(){

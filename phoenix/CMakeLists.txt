@@ -1,11 +1,10 @@
 
-project (phoenix)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -pthread ")
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${phoenix_SOURCE_DIR}/cmake")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 set(APP_TARGET phoenix)
 
-file(GLOB core_src
+# CONFIGURE_DEPENDS re-globs on every build, so new source files are picked up
+# without re-running cmake by hand.
+file(GLOB core_src CONFIGURE_DEPENDS
     "src/core/*.cpp"
     "src/imGui/*.cpp"
     "src/opengl/*.cpp"
@@ -21,38 +20,26 @@ add_library(
         ${APP_TARGET} STATIC
         ${core_src}
 )
-# add_library(phoenix ALIAS ${APP_TARGET})
-include_directories(
-    ${PROJECT_SOURCE_DIR}/include
-    ${PROJECT_SOURCE_DIR}/include/Phoenix/imGui
-)
 target_include_directories(
     ${APP_TARGET}
     PUBLIC
-    ${PROJECT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/third_party
-)
-
-
-get_property(dirs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
-foreach(dir ${dirs})
-  message(STATUS "dir='${dir}'")
-endforeach()
-target_compile_features(${APP_TARGET}
     PRIVATE
-    cxx_std_17
+    # The vendored ImGui sources include each other as "imgui.h".
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/Phoenix/imGui
 )
+target_compile_features(${APP_TARGET} PUBLIC cxx_std_17)
 # Debug builds: PHX_CORE_ASSERT checks and the OpenGL debug-message callback.
 target_compile_definitions(${APP_TARGET} PUBLIC "$<$<CONFIG:Debug>:PHX_DEBUG;PHX_ENABLE_ASSERTS>")
 
 
+find_package(Threads REQUIRED)
 find_package(glfw3 3.3 REQUIRED)
 find_package(OpenGL REQUIRED)
-include_directories(${APP_TARGET} ${OPENGL_INCLUDE_DIR})
 find_package(GLM REQUIRED)
-# glew
 find_package(GLEW REQUIRED)
-include_directories(${APP_TARGET} ${GLEW_INCLUDE_DIRS})
+target_include_directories(${APP_TARGET} PUBLIC ${OPENGL_INCLUDE_DIR} ${GLEW_INCLUDE_DIRS} ${GLM_INCLUDE_DIRS})
 
 # EnTT is vendored as a single header in third_party/ (added to the include path above).
 
@@ -64,13 +51,13 @@ find_package(assimp REQUIRED)
 if(TARGET assimp::assimp)
     target_link_libraries(${APP_TARGET} assimp::assimp)
 else()
-    include_directories(${ASSIMP_INCLUDE_DIRS})
+    target_include_directories(${APP_TARGET} PUBLIC ${ASSIMP_INCLUDE_DIRS})
     target_link_libraries(${APP_TARGET} ${ASSIMP_LIBRARIES})
 endif()
 
 # Lua: entity scripting.
 find_package(Lua REQUIRED)
-include_directories(${LUA_INCLUDE_DIR})
+target_include_directories(${APP_TARGET} PUBLIC ${LUA_INCLUDE_DIR})
 target_link_libraries(${APP_TARGET} ${LUA_LIBRARIES})
 
 # yaml-cpp: scene serialization.
@@ -78,7 +65,7 @@ find_package(yaml-cpp REQUIRED)
 if(TARGET yaml-cpp::yaml-cpp)
     target_link_libraries(${APP_TARGET} yaml-cpp::yaml-cpp)
 else()
-    include_directories(${YAML_CPP_INCLUDE_DIR})
+    target_include_directories(${APP_TARGET} PUBLIC ${YAML_CPP_INCLUDE_DIR})
     target_link_libraries(${APP_TARGET} ${YAML_CPP_LIBRARIES})
 endif()
 
@@ -99,8 +86,19 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(JoltPhysics)
 target_link_libraries(${APP_TARGET} Jolt)
 
-#target_link_libraries(${APP_TARGET} ${SDL2_LIBRARIES})
-target_link_libraries(${APP_TARGET} fmt)
-target_link_libraries(${APP_TARGET} glfw)
-target_link_libraries(${APP_TARGET} OpenGL::GL ${GLEW_LIBRARIES})
-target_link_libraries(${APP_TARGET} ${SPDLOG_LIBRARIES} ${CMAKE_DL_LIBS})
+target_link_libraries(${APP_TARGET} fmt::fmt spdlog::spdlog)
+target_link_libraries(${APP_TARGET} glfw OpenGL::GL ${GLEW_LIBRARIES})
+target_link_libraries(${APP_TARGET} Threads::Threads ${CMAKE_DL_LIBS})
+
+# Runtime assets the engine itself loads by relative path (its shaders and the ImGui
+# fonts). Every app calls this so they land in <exe dir>/assets, and the app chdirs to
+# its executable's directory at startup. Copied after every build, so edited shaders
+# always sync. App-specific assets are copied on top afterwards.
+set(PHOENIX_ASSETS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets" CACHE INTERNAL "")
+function(phoenix_copy_assets target)
+    add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${PHOENIX_ASSETS_DIR} $<TARGET_FILE_DIR:${target}>/assets
+        VERBATIM
+    )
+endfunction()

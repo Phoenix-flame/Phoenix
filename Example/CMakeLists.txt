@@ -1,17 +1,7 @@
-project(Example)
-
-# Add sub directories
-include_directories(${PROJECT_SOURCE_DIR})
-# Create the executable
-add_executable(${PROJECT_NAME} 
+# Minimal app: the smallest program that drives the engine directly (no Scene/editor).
+add_executable(Example
     main.cpp
     ExampleLayer.cpp
 )
-
-# Link the static library from subproject1 using it's alias sub::lib1
-# Link the header only library from subproject2 using it's alias sub::lib2
-# This will cause the include directories for that target to be added to this project
-target_link_libraries(${PROJECT_NAME}
-    PRIVATE
-    phoenix
-)
+target_link_libraries(Example PRIVATE phoenix)
+phoenix_copy_assets(Example)

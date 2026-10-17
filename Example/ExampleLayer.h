@@ -1,44 +1,28 @@
+#pragma once
 #include <Phoenix/core/layer.h>
-#include <Phoenix/renderer/shader.h>
-#include <Phoenix/event/keyEvent.h>
-#include <Phoenix/core/application.h>
-#include <Phoenix/imGui/imgui.h>
-#include <Phoenix/renderer/CameraController.h>
-#include <Phoenix/renderer/Buffers.h>
-#include <Phoenix/renderer/VertexArray.h>
-#include <Phoenix/renderer/renderer_command.h>
-#include <Phoenix/renderer/Framebuffer.h>
-#include "Box.h"
+#include <Phoenix/Scene/Component.h>
+#include <glm/glm.hpp>
 
 using namespace Phoenix;
 
+// The smallest useful engine program: a lit, spinning cube drawn straight through the
+// Renderer API into the window, with a small ImGui panel. Start here to see the render
+// loop without the Scene/ECS or editor; Sandbox shows the full engine.
 class ExampleLayer: public Layer{
 public:
     ExampleLayer(const std::string& name = "Layer");
-    ~ExampleLayer() = default;
-
-    virtual void OnAttach() override;
-    virtual void OnDetach() override;
 
     virtual void OnUpdate(Timestep ts) override;
     virtual void OnEvent(Event& e) override;
     virtual void OnImGuiRender() override;
 
 private:
-    bool vsync = false;
-private:
-    Ref<Framebuffer> m_Framebuffer;
-    bool m_ViewportFocused = false, m_ViewportHovered = false;
-    glm::vec2 m_ViewportSize = { 0.0f, 0.0f };
-    
-    Ref<Shader> shader;
-    Ref<Box> box;
-    glm::vec3 _backgroundColor = { 0.28, 0.65, 0.87 };
-    OrthographicCameraController main_camera;
-    PerspectiveCameraController second_camera;
-    int selected_camera = 0;
-    bool overlayEnabled = true;
-    float fov = 45.0;
-private:
-    void ImGuiOverlay();
+    Material m_Material;
+    DirLightComponent m_Light;
+    glm::vec3 m_LightDirection = { -0.4f, -1.0f, -0.6f };
+    glm::vec3 m_Ambient = glm::vec3(0.15f);
+    glm::vec3 m_BackgroundColor = { 0.10f, 0.12f, 0.16f };
+    float m_Angle = 0.0f;           // degrees
+    float m_SpinSpeed = 45.0f;      // degrees per second
+    bool  m_VSync = true;
 };

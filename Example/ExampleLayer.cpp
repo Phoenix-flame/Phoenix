@@ -1,137 +1,66 @@
 #include "ExampleLayer.h"
 
-#include <Phoenix/core/base.h>
-#include <Phoenix/event/event.h>
-ExampleLayer::ExampleLayer(const std::string& name): Layer(name), 
-        main_camera(1280.0f / 720.0f), 
-        second_camera(1280.0f / 720.0f, glm::radians(45.0), 0.1, 100.0)
-    {  
-    this->shader = Shader::Create("/home/alireza/Programming/C++/MyGameEngineProject/Example/assets/shaders/basic.glsl");
-    box = CreateRef<Box>("Box");
+#include <Phoenix/core/application.h>
+#include <Phoenix/event/keyEvent.h>
+#include <Phoenix/imGui/imgui.h>
+#include <Phoenix/renderer/renderer.h>
+#include <Phoenix/renderer/renderer_command.h>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
+ExampleLayer::ExampleLayer(const std::string& name): Layer(name){
+    m_Material.diffuse = m_Material.ambient = glm::vec3(0.95f, 0.45f, 0.20f);
+    m_Light.castsShadow = false;
 }
 
-void ExampleLayer::OnAttach() {
-    PHX_INFO("{0} attached.", this->layer_name);
-    FramebufferSpecification fbSpec;
-    fbSpec.Width = 640;
-    fbSpec.Height = 480;
-    m_Framebuffer = Framebuffer::Create(fbSpec);
-}
-void ExampleLayer::OnDetach() {
-    PHX_INFO("{0} detached.", this->layer_name);
-}
+void ExampleLayer::OnUpdate(Timestep ts){
+    m_Angle += m_SpinSpeed * (float)ts;
 
-void ExampleLayer::OnUpdate(Phoenix::Timestep ts) {
-    // Resize
-    FramebufferSpecification spec = m_Framebuffer->GetSpecification();
-    if ( m_ViewportSize.x > 0.0f && m_ViewportSize.y > 0.0f && // zero sized framebuffer is invalid
-        (spec.Width != m_ViewportSize.x || spec.Height != m_ViewportSize.y))
-    {
-        m_Framebuffer->Resize((uint32_t)m_ViewportSize.x, (uint32_t)m_ViewportSize.y);
-        main_camera.OnResize(m_ViewportSize.x, m_ViewportSize.y);
-        second_camera.OnResize(m_ViewportSize.x, m_ViewportSize.y);
-    }
+    Window& window = Application::Get().GetWindow();
+    float aspect = window.GetHeight() > 0 ? (float)window.GetWidth() / (float)window.GetHeight() : 1.0f;
 
-    // Update
-    if (m_ViewportFocused){
-        if (selected_camera == 0) main_camera.OnUpdate(ts);
-    }
+    glm::vec3 cameraPos(2.5f, 2.0f, 3.5f);
+    glm::mat4 projection = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 100.0f);
+    glm::mat4 view = glm::lookAt(cameraPos, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
+    RenderCommand::SetClearColor(glm::vec4(m_BackgroundColor, 1.0f));
+    RenderCommand::Clear();
 
-    m_Framebuffer->Bind();
-    Phoenix::RenderCommand::SetClearColor(glm::vec4(_backgroundColor, 1.0));
-    Phoenix::RenderCommand::Clear();
-    glm::mat4 projection = (selected_camera == 1)?second_camera.GetCamera().GetViewProjectionMatrix():main_camera.GetCamera().GetViewProjectionMatrix();
-    box->Draw(projection);
+    // One directional light, no point lights. SetLights uploads them once per frame;
+    // every Submit after it is lit by them.
+    glm::vec3 lightDir = glm::normalize(m_LightDirection);
+    Renderer::BeginScene(projection, view, cameraPos);
+    Renderer::SetLights(m_Ambient, &m_Light, &lightDir, 1, nullptr, nullptr, 0);
 
+    glm::mat4 transform = glm::rotate(glm::mat4(1.0f), glm::radians(m_Angle), glm::vec3(0.3f, 1.0f, 0.1f));
+    Renderer::SubmitCube(m_Material, transform);
 
-    m_Framebuffer->Unbind();
+    Renderer::EndScene();
 }
 
-void ExampleLayer::OnEvent(Phoenix::Event& e) {
-    if (selected_camera == 0) main_camera.OnEvent(e);
-    else if (selected_camera == 1)second_camera.OnEvent(e);
-    EventDispatcher dispacher(e);
-    dispacher.Dispatch<KeyPressedEvent>([](KeyPressedEvent& e){
-        if (e.GetKeyCode() == Phoenix::Key::Escape){
-            Phoenix::Application::Get().Close();
+void ExampleLayer::OnEvent(Event& e){
+    EventDispatcher dispatcher(e);
+    dispatcher.Dispatch<KeyPressedEvent>([](KeyPressedEvent& e){
+        if (e.GetKeyCode() == Key::Escape){
+            Application::Get().Close();
             return true;
         }
         return false;
     });
 }
 
-
 void ExampleLayer::OnImGuiRender(){
-    ImGui::ShowMetricsWindow();
-    ImGui::ShowDemoWindow();
-    ImGui::Begin("Settings", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
-	ImGui::Text("Hello");
-    ImGui::ColorEdit3("Background Color", glm::value_ptr(_backgroundColor));
-    if (ImGui::Checkbox("VSync", &vsync)){
-        Application::Get().GetWindow().SetVSync(vsync);
-    }
-    
-    ImGui::Separator();
-    
-    ImGui::Text("Camera: ");
-    ImGui::RadioButton("Orthographic", &selected_camera, 0); ImGui::SameLine();
-    ImGui::RadioButton("Perspective", &selected_camera, 1);
-
-    if (ImGui::SliderFloat("FOV", &fov , 45.0, 100.0)){
-        this->second_camera.SetFOV(fov);
-    }
-
-	ImGui::End();
-
-    ImGuiOverlay();
-
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 0, 0 });
-    ImGui::Begin("Viewport");
-
-    m_ViewportFocused = ImGui::IsWindowFocused();
-    m_ViewportHovered = ImGui::IsWindowHovered();
-    Application::Get().GetImGuiLayer()->BlockEvents(!m_ViewportFocused || !m_ViewportHovered);
-
-    ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
-    m_ViewportSize = { viewportPanelSize.x, viewportPanelSize.y };
-
-    uint64_t textureID = m_Framebuffer->GetColorAttachmentRendererID();
-    ImGui::Image(reinterpret_cast<void*>(textureID), ImVec2{ m_ViewportSize.x, m_ViewportSize.y }, ImVec2{ 0, 1 }, ImVec2{ 1, 0 });
-    ImGui::End();
-    ImGui::PopStyleVar();
-}
-
-
-void ExampleLayer::ImGuiOverlay(){
-    const float DISTANCE = 10.0f;
-    static int corner = 1;
-    ImGuiIO& io = ImGui::GetIO();
-    ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
-    if (corner != -1){
-        window_flags |= ImGuiWindowFlags_NoMove;
-        ImVec2 window_pos = ImVec2((corner & 1) ? io.DisplaySize.x - DISTANCE : DISTANCE, (corner & 2) ? io.DisplaySize.y - DISTANCE : DISTANCE);
-        ImVec2 window_pos_pivot = ImVec2((corner & 1) ? 1.0f : 0.0f, (corner & 2) ? 1.0f : 0.0f);
-        ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always, window_pos_pivot);
-    }
-    ImGui::SetNextWindowBgAlpha(0.35f); // Transparent background
-    if (ImGui::Begin("Example: Simple overlay", &overlayEnabled, window_flags)){
-        ImGui::Text("Simple overlay\n" "in the corner of the screen.\n" "(right-click to change position)");
-        ImGui::Separator();
-        if (ImGui::IsMousePosValid())
-            ImGui::Text("Mouse Position: (%.1f,%.1f)", io.MousePos.x, io.MousePos.y);
-        else
-            ImGui::Text("Mouse Position: <invalid>");
-        if (ImGui::BeginPopupContextWindow())
-        {
-            if (ImGui::MenuItem("Custom",       NULL, corner == -1)) corner = -1;
-            if (ImGui::MenuItem("Top-left",     NULL, corner == 0)) corner = 0;
-            if (ImGui::MenuItem("Top-right",    NULL, corner == 1)) corner = 1;
-            if (ImGui::MenuItem("Bottom-left",  NULL, corner == 2)) corner = 2;
-            if (ImGui::MenuItem("Bottom-right", NULL, corner == 3)) corner = 3;
-            if (overlayEnabled && ImGui::MenuItem("Close")) overlayEnabled = false;
-            ImGui::EndPopup();
-        }
-    }
+    ImGui::SetNextWindowSize(ImVec2(340.0f, 0.0f), ImGuiCond_FirstUseEver);
+    ImGui::Begin("Example");
+    ImGui::Text("%.1f FPS", ImGui::GetIO().Framerate);
+    ImGui::ColorEdit3("Cube", glm::value_ptr(m_Material.diffuse));
+    m_Material.ambient = m_Material.diffuse;
+    ImGui::DragFloat("Spin (deg/s)", &m_SpinSpeed, 1.0f, -360.0f, 360.0f);
+    ImGui::DragFloat3("Light direction", glm::value_ptr(m_LightDirection), 0.01f, -1.0f, 1.0f);
+    ImGui::ColorEdit3("Ambient", glm::value_ptr(m_Ambient));
+    ImGui::ColorEdit3("Background", glm::value_ptr(m_BackgroundColor));
+    if (ImGui::Checkbox("VSync", &m_VSync))
+        Application::Get().GetWindow().SetVSync(m_VSync);
+    ImGui::TextDisabled("Esc quits");
     ImGui::End();
 }
