@@ -94,6 +94,14 @@ namespace Phoenix{
         // bone ids/offsets so the merged clips skin the same vertices. Main-thread; call
         // after IsReady(). No-op if the file has no animations or matches nothing.
         void AddAnimationsFromFile(const std::string& path);
+
+        // Strips root (hips) travel from every clip so locomotion plays in place;
+        // safe to call again (already-stripped clips have no travel left).
+        void RemoveRootMotion();
+
+        // Bone by name; a plain name also matches a namespaced one ("RightHand" finds
+        // "mixamorig:RightHand"). False if missing or not loaded yet.
+        bool FindBone(const std::string& name, BoneInfo& out) const;
     private:
         std::string m_Path;
         std::vector<Ref<Mesh>> m_Meshes;

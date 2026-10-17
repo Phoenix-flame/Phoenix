@@ -53,6 +53,9 @@ namespace Phoenix{
              std::vector<KeyScale> scales);
 
         JointPose Sample(float animationTime) const;
+        // Subtracts the straight-line travel between the first and last position key
+        // (keeps bobbing/sway). Returns the removed travel (zero if none).
+        glm::vec3 RemoveDrift();
         const std::string& GetBoneName() const { return m_Name; }
         int GetBoneID() const { return m_ID; }
 
@@ -94,6 +97,9 @@ namespace Phoenix{
         int FindNode(const std::string& name) const; // -1 if absent
 
         Bone* FindBone(const std::string& name);
+        // "In place": removes the root (hips) bone's travel across the clip, so a
+        // walk cycle doesn't carry the character forward and snap back on loop.
+        glm::vec3 RemoveRootDrift();
 
         float GetTicksPerSecond() const { return m_TicksPerSecond; }
         float GetDuration() const { return m_Duration; }

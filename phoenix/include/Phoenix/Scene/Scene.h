@@ -153,6 +153,8 @@ namespace Phoenix{
         void StartScripts(Entity entity, const ScriptArgs* args);
         // Destroys everything QueueDestroy collected.
         void FlushPendingDestroy();
+        // Moves BoneAttachment entities onto their target bones (after animation).
+        void UpdateBoneAttachments();
 
     private:
         entt::registry m_Registry;

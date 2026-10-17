@@ -97,6 +97,7 @@ namespace Phoenix{
             out << YAML::Key << "LookHeight" << YAML::Value << f.lookHeight;
             out << YAML::Key << "FollowYaw" << YAML::Value << f.followYaw;
             out << YAML::Key << "ModelForwardZ" << YAML::Value << f.modelForwardZ;
+            out << YAML::Key << "YawSmoothing" << YAML::Value << f.yawSmoothing;
             out << YAML::EndMap;
         }
 
@@ -205,6 +206,16 @@ namespace Phoenix{
             out << YAML::EndMap;
         }
 
+        if (entity.HasComponent<BoneAttachmentComponent>()){
+            auto& a = entity.GetComponent<BoneAttachmentComponent>();
+            out << YAML::Key << "BoneAttachmentComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "Target" << YAML::Value << a.target;
+            out << YAML::Key << "Bone" << YAML::Value << a.bone;
+            out << YAML::Key << "Offset" << YAML::Value << a.offset;
+            out << YAML::Key << "Rotation" << YAML::Value << a.rotation;
+            out << YAML::EndMap;
+        }
+
         if (entity.HasComponent<WireframeComponent>()){
             out << YAML::Key << "WireframeComponent" << YAML::Value << YAML::BeginMap << YAML::EndMap;
         }
@@ -250,6 +261,7 @@ namespace Phoenix{
             out << YAML::Key << "Speed" << YAML::Value << a.speed;
             out << YAML::Key << "LoopMode" << YAML::Value << a.loopMode;
             out << YAML::Key << "Crossfade" << YAML::Value << a.crossfade;
+            out << YAML::Key << "InPlace" << YAML::Value << a.inPlace;
             out << YAML::Key << "ExtraClips" << YAML::Value << YAML::Flow << YAML::BeginSeq;
             for (const auto& p : a.extraClips) { out << p; }
             out << YAML::EndSeq;
@@ -378,6 +390,7 @@ namespace Phoenix{
             f.lookHeight = n["LookHeight"].as<float>(def.lookHeight);
             f.followYaw = n["FollowYaw"].as<bool>(def.followYaw);
             if (n["ModelForwardZ"]) f.modelForwardZ = n["ModelForwardZ"].as<bool>(def.modelForwardZ);
+            f.yawSmoothing = n["YawSmoothing"].as<float>(def.yawSmoothing);
         }
         else if (entity.HasComponent<CameraFollowComponent>()) entity.RemoveComponent<CameraFollowComponent>();
 
@@ -492,6 +505,16 @@ namespace Phoenix{
         }
         else if (entity.HasComponent<MeshColliderComponent>()) entity.RemoveComponent<MeshColliderComponent>();
 
+        if (auto n = node["BoneAttachmentComponent"]){
+            auto& a = entity.HasComponent<BoneAttachmentComponent>() ? entity.GetComponent<BoneAttachmentComponent>() : entity.AddComponent<BoneAttachmentComponent>();
+            const BoneAttachmentComponent def{};
+            a.target = n["Target"].as<std::string>(def.target);
+            a.bone = n["Bone"].as<std::string>(def.bone);
+            a.offset = ReadVec3(n["Offset"], def.offset);
+            a.rotation = ReadVec3(n["Rotation"], def.rotation);
+        }
+        else if (entity.HasComponent<BoneAttachmentComponent>()) entity.RemoveComponent<BoneAttachmentComponent>();
+
         if (node["WireframeComponent"]){
             if (!entity.HasComponent<WireframeComponent>()) entity.AddComponent<WireframeComponent>();
         }
@@ -541,6 +564,7 @@ namespace Phoenix{
             a.speed = n["Speed"].as<float>(def.speed);
             if (n["LoopMode"])  a.loopMode = n["LoopMode"].as<int>(def.loopMode);
             if (n["Crossfade"]) a.crossfade = n["Crossfade"].as<float>(def.crossfade);
+            a.inPlace = n["InPlace"].as<bool>(def.inPlace);
             a.extraClips.clear();
             if (n["ExtraClips"]) { for (auto p : n["ExtraClips"]) a.extraClips.push_back(p.as<std::string>()); }
             a.events.clear();

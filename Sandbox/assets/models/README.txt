@@ -70,7 +70,7 @@ these EXACT filenames (clip name == filename):
     run.fbx           <- "Running" (or "Fast Run")
     jump.fbx          <- "Jump" (or "Jumping Up" to leap onto a platform)
 
-  Turning in place (optional; movement turning is just rotation, no clip needed)
+  Turning in place (optional; used by the Robot Arena's A/D step turns)
     turn_left.fbx     <- "Left Turn"  (90 degree)
     turn_right.fbx    <- "Right Turn" (90 degree)
 
@@ -99,6 +99,34 @@ How the controller maps inputs -> clips (with HasAnimation fallbacks):
   detection. The current controller uses a flat ground height. Ask to switch the
   robot to a physics body (so it lands on any collider) or to add platform-height
   detection if you want true platform hopping.
+
+Robot Arena: blaster + pistol clips
+-----------------------------------
+"Load Robot Arena Showcase" puts a blaster in the robot's right hand: the "Gun"
+entity has a Bone Attachment component (target Robot, bone RightHand), so it
+follows the hand through every animation. The model is blaster-c from Kenney's
+Blaster Kit (CC0), in blaster/ (see blaster/README.txt).
+
+For pistol poses, download these four clips for the SAME character and save them
+here with these EXACT names (the Movement script uses them automatically and
+falls back to the unarmed clips when a file is missing):
+
+    pistol_idle.fbx   <- "Pistol Idle"
+    pistol_walk.fbx   <- "Pistol Walk"
+    pistol_run.fbx    <- "Pistol Run"
+    pistol_shoot.fbx  <- a pistol "Shooting" clip (played while standing and firing)
+
+  With your Mixamo session token (see fetch_mixamo.py):
+    MIXAMO_TOKEN="..." MIXAMO_CHARACTER_ID="..." python3 fetch_mixamo.py --pistol
+  It prints which Mixamo animation it picked for each; list candidates with
+    MIXAMO_TOKEN="..." python3 fetch_mixamo.py --search "pistol"
+  Rebuild (the build copies assets next to the binary) and load the showcase
+  again; the log prints "Merged 1 animation(s) named 'pistol_idle'" etc.
+
+  Turning in place: with turn_left.fbx / turn_right.fbx ("Left Turn" / "Right
+  Turn", 90 degrees each) the robot step-turns when A/D is pressed while standing.
+    MIXAMO_TOKEN="..." MIXAMO_CHARACTER_ID="..." python3 fetch_mixamo.py --turns
+  (combine with --pistol to get both sets in one run).
 
 Notes
 -----

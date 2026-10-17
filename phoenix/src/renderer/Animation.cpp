@@ -41,6 +41,33 @@ namespace Phoenix{
 
     // ---- Bone ----
 
+    glm::vec3 Bone::RemoveDrift(){
+        if (m_Positions.size() < 2) { return glm::vec3(0.0f); }
+        const KeyPosition first = m_Positions.front();
+        const KeyPosition last = m_Positions.back();
+        const float span = last.timeStamp - first.timeStamp;
+        const glm::vec3 drift = last.position - first.position;
+        if (span <= 0.0f || glm::length(drift) < 1e-4f) { return glm::vec3(0.0f); }
+        for (KeyPosition& k : m_Positions)
+            k.position -= drift * ((k.timeStamp - first.timeStamp) / span);
+        return drift;
+    }
+
+    glm::vec3 Animation::RemoveRootDrift(){
+        // Mixamo's root motion lives on the hips; otherwise use the topmost animated
+        // node with position keys.
+        Bone* root = nullptr;
+        for (Bone& b : m_Bones){
+            const std::string& n = b.GetBoneName();
+            if (n == "Hips" || (n.size() > 5 && n.compare(n.size() - 5, 5, ":Hips") == 0)) { root = &b; break; }
+        }
+        if (!root){
+            for (const Node& node : m_Nodes)
+                if (node.channel >= 0) { root = &m_Bones[node.channel]; break; }
+        }
+        return root ? root->RemoveDrift() : glm::vec3(0.0f);
+    }
+
     Bone::Bone(const std::string& name, int id,
                std::vector<KeyPosition> positions,
                std::vector<KeyRotation> rotations,

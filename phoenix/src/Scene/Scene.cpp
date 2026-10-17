@@ -8,6 +8,7 @@
 #include <Phoenix/core/Profiler.h>
 #include <Phoenix/Physics/Physics.h>
 #include <Phoenix/Scene/LuaScript.h>
+#include <Phoenix/Math/Math.h>
 #include <limits>
 #include <cmath>
 #include <algorithm>
@@ -344,7 +345,8 @@ namespace Phoenix{
         Entity e = CreateEntity(templateTag);
         CopyComponents<TransformComponent, MeshComponent, CubeComponent, PrimitiveComponent, WireframeComponent,
                        RigidBodyComponent, BoxColliderComponent, SphereColliderComponent, CapsuleColliderComponent,
-                       CylinderColliderComponent, MeshColliderComponent, AnimationComponent, LuaScriptComponent>(
+                       CylinderColliderComponent, MeshColliderComponent, AnimationComponent, LuaScriptComponent,
+                       BoneAttachmentComponent>(
             m_Registry, source, e);
         auto& t = e.GetComponent<TransformComponent>();
         t.Translation = position;
@@ -357,6 +359,45 @@ namespace Phoenix{
         }
         StartScripts(e, &args);
         return e;
+    }
+
+    void Scene::UpdateBoneAttachments(){
+        auto view = m_Registry.view<BoneAttachmentComponent, TransformComponent>();
+        for (auto entity : view){
+            const auto& att = view.get<BoneAttachmentComponent>(entity);
+            Entity target = FindEntityByTag(att.target);
+            if (!target || (entt::entity)target == entity || !target.HasComponent<MeshComponent>()) { continue; }
+            const auto& mesh = target.GetComponent<MeshComponent>();
+            BoneInfo bone;
+            if (!mesh.model || !mesh.model->FindBone(att.bone, bone)) { continue; }
+
+            // Bone pose in model space: the skinning matrix undoes the bind pose
+            // (offset), so multiply it back. Without an animator: the bind pose.
+            glm::mat4 boneModel = glm::inverse(bone.offset);
+            if (auto* anim = m_Registry.try_get<AnimationComponent>((entt::entity)target)){
+                if (anim->animator){
+                    const auto& finals = anim->animator->GetFinalBoneMatrices();
+                    if (bone.id >= 0 && bone.id < (int)finals.size()) { boneModel = finals[bone.id] * boneModel; }
+                }
+            }
+            glm::mat4 world = target.GetComponent<TransformComponent>().GetTransform() * boneModel;
+
+            // Keep the bone's position and orientation but drop its scale (the
+            // target's 0.01-ish import scale), then apply the attachment offset.
+            glm::mat4 basis(1.0f);
+            for (int c = 0; c < 3; c++) { basis[c] = glm::vec4(glm::normalize(glm::vec3(world[c])), 0.0f); }
+            basis[3] = world[3];
+            glm::mat4 local = glm::translate(glm::mat4(1.0f), att.offset)
+                * glm::rotate(glm::mat4(1.0f), att.rotation.x, { 1, 0, 0 })
+                * glm::rotate(glm::mat4(1.0f), att.rotation.y, { 0, 1, 0 })
+                * glm::rotate(glm::mat4(1.0f), att.rotation.z, { 0, 0, 1 });
+            glm::vec3 translation, rotation, scale;
+            if (Math::DecomposeTransform(basis * local, translation, rotation, scale)){
+                auto& t = view.get<TransformComponent>(entity);
+                t.Translation = translation;
+                t.Rotation = rotation;
+            }
+        }
     }
 
     void Scene::QueueDestroy(Entity entity){
@@ -765,6 +806,7 @@ namespace Phoenix{
                 if (!anim.extraClipsLoaded){
                     for (const auto& path : anim.extraClips)
                         if (!path.empty()) { mesh.model->AddAnimationsFromFile(path); }
+                    if (anim.inPlace) { mesh.model->RemoveRootMotion(); }
                     anim.extraClipsLoaded = true;
                 }
 
@@ -816,6 +858,9 @@ namespace Phoenix{
         }
 
 
+        // Bone attachments follow their (now posed) bones.
+        UpdateBoneAttachments();
+
         // Entities scripts destroyed this frame go now, before anything is drawn.
         FlushPendingDestroy();
 
@@ -851,6 +896,14 @@ namespace Phoenix{
                     }
                     if (targetT){
                         float yaw = follow.followYaw ? targetT->Rotation.y : 0.0f;
+                        // Trail the target's yaw (shortest way round) so turns and
+                        // step turns swing the camera instead of snapping it.
+                        if (follow.followYaw && follow.yawSmoothing > 0.0f){
+                            if (!follow.smoothedYawValid) { follow.smoothedYaw = yaw; follow.smoothedYawValid = true; }
+                            float diff = std::remainder(yaw - follow.smoothedYaw, glm::two_pi<float>());
+                            follow.smoothedYaw += diff * (1.0f - std::exp(-follow.yawSmoothing * (float)ts));
+                            yaw = follow.smoothedYaw;
+                        }
                         // The target faces local -Z = (-sin,0,-cos); "behind" is the opposite.
                         // For a +Z-facing model, behind is the other way.
                         glm::vec3 behind(std::sin(yaw), 0.0f, std::cos(yaw));
@@ -1232,6 +1285,10 @@ namespace Phoenix{
 
     template<>
 	void Scene::OnComponentAdded<WireframeComponent>(Entity entity, WireframeComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<BoneAttachmentComponent>(Entity entity, BoneAttachmentComponent& component){
 	}
 
     template<>

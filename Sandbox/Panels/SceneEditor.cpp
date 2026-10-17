@@ -506,6 +506,11 @@ namespace Phoenix{
                     m_SelectedEntity.AddComponent<JointComponent>();
                 ImGui::CloseCurrentPopup();
             }
+            if (ImGui::MenuItem("Bone Attachment")){
+                if (!m_SelectedEntity.HasComponent<BoneAttachmentComponent>())
+                    m_SelectedEntity.AddComponent<BoneAttachmentComponent>();
+                ImGui::CloseCurrentPopup();
+            }
             if (ImGui::MenuItem("Wireframe")){
                 if (!m_SelectedEntity.HasComponent<WireframeComponent>())
                     m_SelectedEntity.AddComponent<WireframeComponent>();
@@ -612,6 +617,10 @@ namespace Phoenix{
             const char* loopModes[] = { "Loop", "Once", "PingPong" };
             ImGui::Combo("Loop Mode", &component.loopMode, loopModes, IM_ARRAYSIZE(loopModes));
             ImGui::DragFloat("Crossfade (s)", &component.crossfade, 0.01f, 0.0f, 2.0f);
+            ImGui::Checkbox("In Place", &component.inPlace);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Strip the clips' forward travel (root motion) so scripts move the\n"
+                                  "character. Applied when the clips load; reload the scene after changing.");
 
             // Extra clip files merged onto this skeleton (e.g. more Mixamo clips).
             ImGui::Separator(); ImGui::TextDisabled("Extra Clip Files");
@@ -772,6 +781,8 @@ namespace Phoenix{
 			ImGui::DragFloat("Look Height", &component.lookHeight, 0.1f, -10.0f, 30.0f);
 			ImGui::Checkbox("Follow Yaw", &component.followYaw);
 			ImGui::Checkbox("Model Faces +Z", &component.modelForwardZ);
+			ImGui::DragFloat("Yaw Smoothing", &component.yawSmoothing, 0.1f, 0.0f, 30.0f);
+			if (ImGui::IsItemHovered()) { ImGui::SetTooltip("How fast the camera swings behind a turning target. 0 = no smoothing."); }
 			ImGui::TextDisabled("Set the camera Primary to view through it.");
 		});
 
@@ -925,6 +936,20 @@ namespace Phoenix{
 				? "Convex hull of the mesh (works for dynamic bodies)."
 				: "Exact triangle mesh (STATIC bodies only).");
 			ImGui::TextDisabled("Built from the Mesh on Run; needs a Rigid Body + Mesh.");
+		});
+
+		DrawComponent<BoneAttachmentComponent>("Bone Attachment", entity, [](BoneAttachmentComponent& component){
+			char target[128], bone[128];
+			std::snprintf(target, sizeof(target), "%s", component.target.c_str());
+			std::snprintf(bone, sizeof(bone), "%s", component.bone.c_str());
+			if (ImGui::InputText("Target", target, sizeof(target))) { component.target = target; }
+			if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Tag of the entity with the animated model."); }
+			if (ImGui::InputText("Bone", bone, sizeof(bone))) { component.bone = bone; }
+			if (ImGui::IsItemHovered()) { ImGui::SetTooltip("e.g. RightHand, LeftHand, Head (Mixamo prefixes are optional)."); }
+			ImGui::DragFloat3("Offset", glm::value_ptr(component.offset), 0.005f);
+			glm::vec3 degrees = glm::degrees(component.rotation);
+			if (ImGui::DragFloat3("Rotation", glm::value_ptr(degrees), 0.5f)) { component.rotation = glm::radians(degrees); }
+			ImGui::TextDisabled("Position/rotation follow the bone; Scale is kept.");
 		});
 
 		DrawComponent<WireframeComponent>("Wireframe", entity, [](auto& component){

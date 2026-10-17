@@ -286,6 +286,33 @@ namespace Phoenix{
         return true;
     }
 
+    void Model::RemoveRootMotion(){
+        for (std::size_t i = 0; i < m_Animations.size(); i++){
+            glm::vec3 d = m_Animations[i]->RemoveRootDrift();
+            if (glm::length(d) > 1e-3f)
+                PHX_CORE_INFO("In place: removed root travel ({0:.1f}, {1:.1f}, {2:.1f}) from clip '{3}'",
+                              d.x, d.y, d.z, GetAnimationName(i));
+        }
+    }
+
+    bool Model::FindBone(const std::string& name, BoneInfo& out) const{
+        if (!m_Uploaded || name.empty()) { return false; }
+        auto it = m_BoneInfoMap.find(name);
+        if (it == m_BoneInfoMap.end()){
+            const std::string suffix = ":" + name;
+            for (auto i = m_BoneInfoMap.begin(); i != m_BoneInfoMap.end(); ++i){
+                const std::string& n = i->first;
+                if (n.size() > suffix.size() && n.compare(n.size() - suffix.size(), suffix.size(), suffix) == 0){
+                    it = i;
+                    break;
+                }
+            }
+        }
+        if (it == m_BoneInfoMap.end()) { return false; }
+        out = it->second;
+        return true;
+    }
+
     int Model::GetAnimationIndex(const std::string& name) const{
         for (size_t i = 0; i < m_Animations.size(); i++)
             if (m_Animations[i]->GetName() == name) { return (int)i; }

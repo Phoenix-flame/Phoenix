@@ -1238,12 +1238,20 @@ local FALL_LIMIT = -12                     -- below this: back to the start
 local START = { GetTranslation() }
 local _, START_YAW = GetRotation()
 
+local STEP_TURN = math.pi / 2              -- how far one turn_left / turn_right clip turns
+
 local vy, grounded, jumps = 0.0, false, 2
 local rideId, rideX, rideY, rideZ = nil, 0, 0, 0
 local anim = ""
+local stepTurn = nil                       -- { clip, dir } while a turn clip plays
 
--- Named clip if the model has it, else the embedded clip 0 (a walk).
-local function clip(name) if HasAnimation(name) then return name end return 0 end
+-- The pistol variant of a clip when it was downloaded (pistol_idle, ...), else
+-- the plain clip, else the embedded clip 0 (a walk). See assets/models/README.txt.
+local function clip(name)
+    if HasAnimation("pistol_" .. name) then return "pistol_" .. name end
+    if HasAnimation(name) then return name end
+    return 0
+end
 local function play(name, loop, speed)
     if anim ~= name then
         anim = name
@@ -1292,13 +1300,37 @@ function OnUpdate(dt)
         end
     end
 
-    if IsKeyDown(Key.A) or IsKeyDown(Key.Left) then yaw = yaw + TURN * dt end
-    if IsKeyDown(Key.D) or IsKeyDown(Key.Right) then yaw = yaw - TURN * dt end
-
+    local left = IsKeyDown(Key.A) or IsKeyDown(Key.Left)
+    local right = IsKeyDown(Key.D) or IsKeyDown(Key.Right)
     local running = IsKeyDown(Key.LeftShift) or IsKeyDown(Key.RightShift)
     local speed = 0
     if IsKeyDown(Key.W) or IsKeyDown(Key.Up) then speed = running and RUN or WALK
     elseif IsKeyDown(Key.S) or IsKeyDown(Key.Down) then speed = -BACK end
+
+    -- Turning. Standing still with the turn clips (turn_left / turn_right): step
+    -- turns, 90 degrees per clip. The clip turns the body, so the robot itself is
+    -- rotated only when it ends (then straight to idle, so nothing swings back).
+    -- Walking, or without the clips: a smooth turn.
+    if stepTurn then
+        speed = 0  -- finish the step before walking off
+        if GetAnimationName() == stepTurn.clip and IsAnimationFinished() then
+            yaw = yaw + stepTurn.dir * STEP_TURN
+            stepTurn = nil
+            CrossFade(clip("idle"), 0.0)
+            SetAnimationLoop(0)
+            anim = "idle"
+        end
+    elseif grounded and speed == 0 and left ~= right and HasAnimation(left and "turn_left" or "turn_right") then
+        stepTurn = { clip = left and "turn_left" or "turn_right", dir = left and 1 or -1 }
+        anim = stepTurn.clip
+        CrossFade(stepTurn.clip, 0.12)
+        SetAnimationLoop(1)
+        SetAnimationSpeed(1.0)
+        ResumeAnimation()
+    else
+        if left then yaw = yaw + TURN * dt end
+        if right then yaw = yaw - TURN * dt end
+    end
 
     local fx, fz = math.sin(yaw), math.cos(yaw)  -- the robot mesh faces +Z
     if speed ~= 0 then
@@ -1308,7 +1340,7 @@ function OnUpdate(dt)
         end
     end
 
-    if IsKeyPressed(Key.Space) and jumps > 0 then
+    if IsKeyPressed(Key.Space) and jumps > 0 and not stepTurn then
         vy = grounded and JUMP or DOUBLE
         jumps = jumps - 1
         grounded, rideId = false, nil
@@ -1344,10 +1376,13 @@ function OnUpdate(dt)
     SetTranslation(x, ny, z)
     SetRotation(0, yaw, 0)
 
-    if grounded then
+    if stepTurn then
+        -- the turn clip is playing
+    elseif grounded then
         if speed > WALK then play("run", true)
         elseif speed > 0 then play("walk", true)
         elseif speed < 0 then play("walk", true, -0.8)  -- walk backwards
+        elseif GetShared("firing", false) and HasAnimation("pistol_shoot") then play("shoot", true)
         else play("idle", true) end
     elseif anim ~= "jump" then
         play("jump", false)  -- falling off a ledge
@@ -1356,19 +1391,29 @@ end
 )LUA";
 
 static const char* s_ArenaBlasterLua = R"LUA(
--- Blaster: hold F (or Ctrl) to fire energy bolts from the robot's chest. Each bolt
--- is a copy of the "Bullet" template made with Spawn().
+-- Blaster: hold F (or Ctrl) to fire energy bolts from the gun in the robot's hand
+-- (the "Gun" entity, attached to the RightHand bone). Each bolt is a copy of the
+-- "Bullet" template made with Spawn().
 local COOLDOWN = 0.18
+local MUZZLE = 0.35  -- from the gun's centre to its barrel tip, along the aim
 local cooldown, flash, shots = 0, 0, 0
+local gun = Find("Gun")
 
 function OnUpdate(dt)
     cooldown = math.max(0, cooldown - dt)
-    if (IsKeyDown(Key.F) or IsKeyDown(Key.LeftControl)) and cooldown == 0 then
+    local firing = IsKeyDown(Key.F) or IsKeyDown(Key.LeftControl)
+    SetShared("firing", firing)  -- Movement plays the shooting clip while standing
+    if firing and cooldown == 0 then
         cooldown = COOLDOWN
         local x, y, z = GetTranslation()
         local _, yaw = GetRotation()
         local fx, fz = math.sin(yaw), math.cos(yaw)
-        Spawn("Bullet", x + fx * 0.8, y + 1.25, z + fz * 0.8,
+        -- From the gun when it's there (else the chest), between waist and chest
+        -- height: a hand swinging at the hip would shoot under everything.
+        local gx, gy, gz = GetPositionOf(gun or -1)
+        if not gx then gx, gy, gz = x + fx * 0.5, y + 1.25, z + fz * 0.5 end
+        gy = math.max(y + 1.05, math.min(gy, y + 1.5))
+        Spawn("Bullet", gx + fx * MUZZLE, gy, gz + fz * MUZZLE,
               { dx = fx, dy = 0, dz = fz, owner = GetId(), yaw = yaw })
         shots = shots + 1
         SetShared("shots", shots)
@@ -1376,7 +1421,7 @@ function OnUpdate(dt)
     end
     if flash > 0 then  -- muzzle flash: the robot glows briefly
         flash = flash - dt
-        SetEmissive(0.3, 0.8, 1.0, flash > 0 and 2.5 or 0.0)
+        SetEmissive(0.3, 0.8, 1.0, flash > 0 and 1.5 or 0.0)
     end
 end
 )LUA";
@@ -1529,6 +1574,12 @@ function OnUpdate(dt)
 end
 )LUA";
 
+// Grip of the blaster in the robot's right hand (relative to the hand bone).
+// The blaster's barrel (-Z) runs along the hand bone's +Y (towards the fingers), its
+// top (+Y) along the thumb side (+X), with the grip in the palm.
+static const glm::vec3 GUN_OFFSET(0.144f, 0.169f, 0.04f);
+static const glm::vec3 GUN_ROTATION(glm::radians(90.0f), 0.0f, glm::radians(-90.0f));
+
 void MainLayer::BuildRobotArenaShowcase() {
     // A small third-person platformer: an animated robot that jumps (and double
     // jumps) up a route of platforms, one moving and one lift, shoots targets and
@@ -1658,16 +1709,16 @@ void MainLayer::BuildRobotArenaShowcase() {
     // ---- targets on posts: discs facing into the arena ----
     struct TargetDef { glm::vec3 pos; bool facesX; };
     const TargetDef targets[] = {
-        { { -6.0f, 1.9f, -14.3f }, false }, { { 6.0f, 1.9f, -14.3f }, false },
-        { { -14.3f, 1.9f, 0.0f }, true },   { { -14.3f, 1.9f, -8.0f }, true },
-        { { 14.3f, 1.9f, 4.0f }, true },    { { 14.3f, 1.9f, -6.0f }, true },
+        { { -6.0f, 1.45f, -14.3f }, false }, { { 6.0f, 1.45f, -14.3f }, false },
+        { { -14.3f, 1.45f, 0.0f }, true },   { { -14.3f, 1.45f, -8.0f }, true },
+        { { 14.3f, 1.45f, 4.0f }, true },    { { 14.3f, 1.45f, -6.0f }, true },
     };
     for (const TargetDef& d : targets){
         auto post = m_Scene->CreateEntity("Target Post");
         material(post.AddComponent<PrimitiveComponent>(PrimitiveComponent::Type::Cylinder).material, { 0.5f, 0.5f, 0.55f });
         auto& postT = post.GetComponent<TransformComponent>();
-        postT.Translation = { d.pos.x, 0.65f, d.pos.z };
-        postT.Scale = { 0.15f, 1.3f, 0.15f };
+        postT.Translation = { d.pos.x, 0.45f, d.pos.z };
+        postT.Scale = { 0.15f, 0.9f, 0.15f };
 
         auto target = m_Scene->CreateEntity("Target");
         auto& prim = target.AddComponent<PrimitiveComponent>(PrimitiveComponent::Type::Cylinder);
@@ -1732,8 +1783,13 @@ void MainLayer::BuildRobotArenaShowcase() {
         mesh.material.shininess = 32.0f;
         auto& anim = robot.AddComponent<AnimationComponent>();
         anim.crossfade = 0.15f;
+        // pistol_* and turn_* clips are optional (see assets/models/README.txt);
+        // missing files are skipped and Movement falls back to what it has.
         anim.extraClips = { "assets/models/walk.fbx", "assets/models/idle.fbx",
-                            "assets/models/run.fbx", "assets/models/jump.fbx" };
+                            "assets/models/run.fbx", "assets/models/jump.fbx",
+                            "assets/models/pistol_idle.fbx", "assets/models/pistol_walk.fbx",
+                            "assets/models/pistol_run.fbx", "assets/models/pistol_shoot.fbx",
+                            "assets/models/turn_left.fbx", "assets/models/turn_right.fbx" };
         auto& t = robot.GetComponent<TransformComponent>();
         t.Translation = { 0.0f, 0.0f, 10.0f };
         t.Rotation = { 0.0f, glm::pi<float>(), 0.0f }; // face into the arena (-Z)
@@ -1742,6 +1798,22 @@ void MainLayer::BuildRobotArenaShowcase() {
         auto& scripts = robot.AddComponent<LuaScriptComponent>("Movement", s_ArenaMovementLua);
         scripts.Add("Blaster", s_ArenaBlasterLua);
         scripts.Add("HUD", s_ArenaHudLua);
+
+        // The blaster in its right hand (Kenney Blaster Kit, CC0): follows the hand
+        // bone through every animation.
+        auto gun = m_Scene->CreateEntity("Gun");
+        auto& gunMesh = gun.AddComponent<MeshComponent>();
+        gunMesh.model = CreateRef<Model>("assets/models/blaster/blaster-c.obj");
+        gunMesh.material.ambient = glm::vec3(0.35f);
+        gunMesh.material.diffuse = glm::vec3(1.0f);
+        gunMesh.material.specular = glm::vec3(0.3f);
+        gunMesh.material.shininess = 32.0f;
+        gun.GetComponent<TransformComponent>().Scale = glm::vec3(1.2f);
+        auto& hold = gun.AddComponent<BoneAttachmentComponent>();
+        hold.target = "Robot";
+        hold.bone = "RightHand";
+        hold.offset = GUN_OFFSET;
+        hold.rotation = GUN_ROTATION;
     }
 }
 

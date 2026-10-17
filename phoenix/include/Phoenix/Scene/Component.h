@@ -40,6 +40,11 @@ namespace Phoenix{
         // Engine forward is local -Z. Some rigs (e.g. many Mixamo characters) face +Z;
         // set this so the camera sits behind the model's actual back, not its front.
         bool  modelForwardZ = false;
+        // How fast the camera swings round behind a turning target (1/s); 0 = snaps.
+        float yawSmoothing = 8.0f;
+        // Transient: the yaw the camera currently trails at.
+        float smoothedYaw = 0.0f;
+        bool  smoothedYawValid = false;
         CameraFollowComponent() = default;
         CameraFollowComponent(const CameraFollowComponent&) = default;
     };
@@ -176,6 +181,19 @@ namespace Phoenix{
     // When present, the entity is drawn as a wireframe ("mesh network"). The bool
     // exists only so the type is non-empty (entt returns void from emplace<> for
     // empty types, which AddComponent's `T&` return can't bind to).
+    // Keeps this entity on a bone of another entity's skinned model (a gun in a
+    // hand, a hat on a head). Every frame its Translation/Rotation are set from the
+    // animated bone; its own Scale is kept. Offset and rotation are relative to the
+    // bone, in world units / radians (the target's scale doesn't apply).
+    struct BoneAttachmentComponent{
+        std::string target;            // Tag of the entity with the skinned model
+        std::string bone = "RightHand"; // bone name; "RightHand" also finds "mixamorig:RightHand"
+        glm::vec3 offset{ 0.0f };
+        glm::vec3 rotation{ 0.0f };
+        BoneAttachmentComponent() = default;
+        BoneAttachmentComponent(const BoneAttachmentComponent&) = default;
+    };
+
     struct WireframeComponent{
         bool enabled = true;
         WireframeComponent() = default;
@@ -257,6 +275,7 @@ namespace Phoenix{
         float speed = 1.0f;
         int   loopMode = 0;      // 0 Loop, 1 Once, 2 PingPong (Animator::LoopMode)
         float crossfade = 0.2f;  // seconds; blend used when the clip changes
+        bool  inPlace = true;    // strip root travel from clips (scripts move the entity)
 
         std::vector<std::string> extraClips; // extra animation files merged onto the rig
         std::vector<AnimEvent> events;        // fired while playing
@@ -273,7 +292,7 @@ namespace Phoenix{
         AnimationComponent() = default;
         AnimationComponent(const AnimationComponent& o)
             : clip(o.clip), playing(o.playing), speed(o.speed), loopMode(o.loopMode),
-              crossfade(o.crossfade), extraClips(o.extraClips), events(o.events) {}
+              crossfade(o.crossfade), inPlace(o.inPlace), extraClips(o.extraClips), events(o.events) {}
     };
 
     // A Lua script (edited inline, serialized). It runs while the scene is playing;
