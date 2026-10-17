@@ -7,7 +7,7 @@ playing, and serializing scenes.
 
 > :warning: This project is under active development.
 
-![Phoenix](https://github.com/Phoenix-flame/Phoenix/blob/master/images/new_ver.png?raw=true)
+![The Phoenix editor showing the main showcase scene: neon cubes with bloom, shadows on the floor](images/editor.png)
 
 ---
 
@@ -92,6 +92,8 @@ gizmos**, and **directional-light arrows**. A global **wireframe** toggle is ava
 per entity via the `WireframeComponent`. [`Example/`](Example/ExampleLayer.cpp) is a
 one-file program that uses exactly this API to draw a lit, spinning cube.
 
+<img src="images/example.png" alt="The minimal Example app: a lit orange cube with a small settings panel" width="480">
+
 Textures loaded from disk get a full mip chain with trilinear + anisotropic filtering, and
 are cached by path so a model whose sub-meshes share a material uploads it once.
 
@@ -135,6 +137,8 @@ Settings (or `Renderer::SetLinearLighting(true)`) to light in linear space:
 Light falloff, blending and bloom are then physically correct. Scenes tuned without it
 usually need their lights and materials re-balanced.
 
+![The showcase scene with linear lighting off and on](images/linear-lighting.png)
+
 ### Mesh Loading
 
 Models are loaded with **Assimp** ([`Mesh.cpp`](phoenix/src/renderer/Mesh.cpp)) and support
@@ -166,6 +170,8 @@ Full GPU vertex skinning ([`Animation.h`](phoenix/include/Phoenix/renderer/Anima
 - Drive it with an `AnimationComponent` (`clip`, `playing`, `speed`, `loopMode`,
   `crossfade`, `extraClips`, `events`), from Lua, or by scrubbing in the **Timeline** panel.
   `extraClips` merges animation-only files (e.g. Mixamo "without skin" exports) onto the rig.
+
+![A rigged Mixamo character mid-walk, casting a skinned shadow](images/robot-showcase.png)
 
 Works with any rigged + animated file Assimp can read (FBX, glTF/GLB, Collada/DAE, …).
 See [Built-in Showcases](#built-in-showcases) for the walking-robot demo and how to download
