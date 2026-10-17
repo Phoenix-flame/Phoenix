@@ -545,12 +545,6 @@ namespace Phoenix{
         else if (entity.HasComponent<LuaScriptComponent>()) entity.RemoveComponent<LuaScriptComponent>();
     }
 
-    void SceneSerializer::RecountPointLights(){
-        int count = 0;
-        for (auto e : m_Scene->m_Registry.view<PointLightComponent>()) { (void)e; count++; }
-        m_Scene->m_NumPointLights = count;
-    }
-
     bool SceneSerializer::DeserializeNode(const YAML::Node& data){
         if (!data["Entities"]){
             PHX_CORE_ERROR("Scene data has no entities node");
@@ -569,7 +563,6 @@ namespace Phoenix{
             ApplyEntity(entity, entityNode);
         }
 
-        RecountPointLights();
         return true;
     }
 
@@ -623,7 +616,6 @@ namespace Phoenix{
             ApplyEntity(entity, node);
         }
 
-        RecountPointLights();
         return true;
     }
 }

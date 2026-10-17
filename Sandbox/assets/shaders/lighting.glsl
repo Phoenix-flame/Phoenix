@@ -124,6 +124,10 @@ uniform bool u_HasDiffuseMap;
 uniform sampler2D u_NormalMap;
 uniform bool u_HasNormalMap;
 
+// pow(0, 0) is undefined in GLSL (NaN on some drivers, which bloom then smears into
+// black blocks), and the editor allows shininess 0, so keep the exponent >= 1.
+float Shininess() { return max(material.shininess, 1.0); }
+
 vec3 PerturbNormal(vec3 N, vec2 uv)
 {
     vec3 mapN = texture(u_NormalMap, uv).xyz * 2.0 - 1.0;
@@ -135,7 +139,11 @@ vec3 PerturbNormal(vec3 N, vec2 uv)
     vec3 dp1perp = cross(N, dp1);
     vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
     vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
-    float invmax = inversesqrt(max(dot(T, T), dot(B, B)));
+    // No UV variation (e.g. a mesh without texcoords): the tangent frame is undefined
+    // and inversesqrt(0) would turn the normal into NaN, so keep the surface normal.
+    float lenSq = max(dot(T, T), dot(B, B));
+    if (lenSq < 1e-12) { return N; }
+    float invmax = inversesqrt(lenSq);
     mat3 TBN = mat3(T * invmax, B * invmax, N);
     return normalize(TBN * mapN);
 }
@@ -156,7 +164,7 @@ vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 diffuseColor, 
     vec3 lightDir = normalize(-light.direction);
     float diff = max(dot(normal, lightDir), 0.0);
     vec3 reflectDir = reflect(-lightDir, normal);
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), material.shininess);
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), Shininess());
     vec3 ambient  = light.ambient  * diffuseColor;
     vec3 diffuse  = light.diffuse  * diff * diffuseColor;
     vec3 specular = light.specular * spec * material.specular;
@@ -169,7 +177,7 @@ vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, v
     vec3 lightDir = normalize(light.position - fragPos);
     float diff = max(dot(normal, lightDir), 0.0);
     vec3 reflectDir = reflect(-lightDir, normal);
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), material.shininess);
+    float spec = pow(max(dot(viewDir, reflectDir), 0.0), Shininess());
     float distance    = length(light.position - fragPos);
     float attenuation = 1.0 / (light.constant + light.linear * distance +
   			     light.quadratic * (distance * distance));

@@ -74,6 +74,9 @@ namespace Phoenix{
         bool IsReady() const { return m_Uploaded; }
 
         const std::vector<Ref<Mesh>>& GetMeshes() const { return m_Meshes; }
+
+        // Model-space bounding box of all sub-meshes (bind pose). False until IsReady().
+        bool GetLocalBounds(glm::vec3& outMin, glm::vec3& outMax) const;
         const std::string& GetPath() const { return m_Path; }
 
         // Skeletal animation (empty for static models). Animations become available
@@ -98,6 +101,9 @@ namespace Phoenix{
         std::vector<Ref<Animation>> m_Animations;
         std::set<std::string> m_MergedAnimationFiles; // paths already merged by AddAnimationsFromFile
         std::future<ModelData> m_Future;
+        // Lazily computed by GetLocalBounds (geometry is immutable once uploaded).
+        mutable bool m_BoundsValid = false;
+        mutable glm::vec3 m_BoundsMin{ 0.0f }, m_BoundsMax{ 0.0f };
         bool m_Uploaded = false;
     };
 }

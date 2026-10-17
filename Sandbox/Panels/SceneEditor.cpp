@@ -5,6 +5,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <cstring>
 #include <cctype>
+#include <type_traits>
 #include <string>
 #include <vector>
 #include <unordered_set>
@@ -522,10 +523,16 @@ namespace Phoenix{
 			auto& component = entity.GetComponent<T>();
 			ImVec2 contentRegionAvailable = ImGui::GetContentRegionAvail();
 
+			// Scope every ID below (tree node, "+" button, popup) to this component type.
+			// TreeNodeEx only pushes its ID while open, so without this the "+" buttons and
+			// "ComponentSettings" popups of collapsed components collided, and "Remove"
+			// could remove a different component.
+			ImGui::PushID((void*)typeid(T).hash_code());
+
 			ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{ 4, 4 });
 			float lineHeight = ImGui::GetIO().FontDefault->FontSize + ImGui::GetStyle().FramePadding.y * 2.0;
 			ImGui::Separator();
-			bool open = ImGui::TreeNodeEx((void*)typeid(T).hash_code(), treeNodeFlags, name.c_str(), nullptr);
+			bool open = ImGui::TreeNodeEx("##component", treeNodeFlags, "%s", name.c_str());
 			ImGui::PopStyleVar();
 			ImGui::SameLine(contentRegionAvailable.x - lineHeight * 0.5f);
 			if (ImGui::Button("+", ImVec2{ lineHeight, lineHeight })){
@@ -534,7 +541,9 @@ namespace Phoenix{
 
 			bool removeComponent = false;
 			if (ImGui::BeginPopup("ComponentSettings")){
-				if (ImGui::MenuItem("Remove component"))
+				// Every entity is assumed to have a Transform (rendering, gizmos, sculpting).
+				constexpr bool removable = !std::is_same_v<T, TransformComponent>;
+				if (ImGui::MenuItem("Remove component", nullptr, false, removable))
 					removeComponent = true;
 
 				ImGui::EndPopup();
@@ -544,6 +553,7 @@ namespace Phoenix{
 				uiFunction(component);
 				ImGui::TreePop();
 			}
+			ImGui::PopID();
 
 			if (removeComponent){
                 entity.RemoveComponent<T>();
@@ -661,10 +671,11 @@ namespace Phoenix{
                 ImGui::CloseCurrentPopup();
             }
 			if (ImGui::MenuItem("Point Light")){
-                if (!m_SelectedEntity.HasComponent<PointLightComponent>())
+                // The shader only lights with the first MAX_NUM_POINT_LIGHTS; more are ignored.
+                if (m_ActiveScene->GetNumberOfPointLights() >= Scene::MAX_NUM_POINT_LIGHTS)
+                    PHX_ERROR("Reached maximum number of point lights ({0})", Scene::MAX_NUM_POINT_LIGHTS);
+                else if (!m_SelectedEntity.HasComponent<PointLightComponent>())
                     m_SelectedEntity.AddComponent<PointLightComponent>();
-                else
-                    PHX_CORE_ASSERT("This entity already has the Cube Component!");
                 ImGui::CloseCurrentPopup();
             }
             if (ImGui::MenuItem("Rigid Body")){

@@ -30,14 +30,18 @@ namespace Phoenix{
 
         void DestroyEntity(Entity entity);
         void OnResize(float width, float height);
-        int GetNumberOfPointLights() { return m_NumPointLights; }
+        // Counted from the registry so it can't drift from the actual components
+        // (Add/Remove Component, undo, load all change it).
+        int GetNumberOfPointLights();
+        static constexpr int MAX_NUM_POINT_LIGHTS = 4; // NR_POINT_LIGHTS in lighting.glsl
 
         // Global ambient light (editable; serialized).
         glm::vec3& AmbientColor() { return m_AmbientColor; }
         const glm::vec3& AmbientColor() const { return m_AmbientColor; }
 
-        // Returns the nearest entity whose (unit-cube) bounds the ray hits, or an
-        // empty entity if none. Used for click-to-select in the viewport.
+        // Returns the nearest entity whose bounds (of what it draws: mesh, terrain,
+        // water, cube/shape, camera/light gizmo) the ray hits, or an empty entity if
+        // none. Used for click-to-select in the viewport.
         Entity PickEntity(const glm::vec3& rayOrigin, const glm::vec3& rayDirection);
 
         // Physics runtime: start creates Jolt bodies from RigidBody + collider
@@ -53,6 +57,12 @@ namespace Phoenix{
 
         // Entity owning the given runtime physics body (empty if unknown).
         Entity FindEntityByBodyID(uint32_t bodyID);
+
+        // View/projection the last OnUpdate rendered with: the primary scene camera if
+        // there is one, else the editor camera. Editor tools (gizmo, picking, sculpting)
+        // use these so they line up with the image on screen.
+        const glm::mat4& GetActiveView() const { return m_ActiveView; }
+        const glm::mat4& GetActiveProjection() const { return m_ActiveProjection; }
     private:
 		template<typename T>
 		void OnComponentAdded(Entity entity, T& component);
@@ -67,10 +77,9 @@ namespace Phoenix{
         friend class SceneSerializer;
     
     private:
-        int m_NumPointLights = 0;
-        const int MAX_NUM_POINT_LIGHTS = 4;
         glm::vec3 m_AmbientColor = glm::vec3(0.1f);
         float m_Time = 0.0f; // accumulated seconds (drives water animation)
+        glm::mat4 m_ActiveView{ 1.0f }, m_ActiveProjection{ 1.0f };
 
         Scope<PhysicsWorld> m_PhysicsWorld;
         std::vector<Ref<LuaScript>> m_Scripts; // live Lua runtimes while playing

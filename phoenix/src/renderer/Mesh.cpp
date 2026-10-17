@@ -1,6 +1,7 @@
 #include <Phoenix/renderer/Mesh.h>
 #include <Phoenix/core/log.h>
 
+#include <limits>
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
@@ -266,6 +267,22 @@ namespace Phoenix{
     const std::string& Model::GetAnimationName(size_t index) const{
         static const std::string empty;
         return index < m_Animations.size() ? m_Animations[index]->GetName() : empty;
+    }
+
+    bool Model::GetLocalBounds(glm::vec3& outMin, glm::vec3& outMax) const{
+        if (!m_Uploaded) { return false; }
+        if (!m_BoundsValid){
+            glm::vec3 lo(std::numeric_limits<float>::max()), hi(-std::numeric_limits<float>::max());
+            for (const auto& mesh : m_Meshes)
+                for (const glm::vec3& p : mesh->GetPositions()){ lo = glm::min(lo, p); hi = glm::max(hi, p); }
+            if (lo.x > hi.x) { return false; } // no vertices
+            m_BoundsMin = lo;
+            m_BoundsMax = hi;
+            m_BoundsValid = true;
+        }
+        outMin = m_BoundsMin;
+        outMax = m_BoundsMax;
+        return true;
     }
 
     int Model::GetAnimationIndex(const std::string& name) const{

@@ -45,6 +45,16 @@ private:
     void Redo();
     void RestoreScene(const std::string& snapshot);
 
+    // Make scene the edited scene: stops any running simulation on the old one,
+    // retargets the editor panels and starts a fresh undo history.
+    void SetActiveScene(const Ref<Scene>& scene);
+    // SetActiveScene(new empty scene), then populate it with one of the Build* showcases.
+    void LoadShowcase(void (MainLayer::*build)());
+
+    // World-space ray through the mouse cursor; false if the cursor is outside the
+    // viewport image whose top-left screen position is imageMin.
+    bool MouseRay(const ImVec2& imageMin, glm::vec3& outOrigin, glm::vec3& outDir) const;
+
     // Run/Stop: Stop restores the edit-time scene captured when Run was pressed.
     void StartRuntime();
     void StopRuntime();

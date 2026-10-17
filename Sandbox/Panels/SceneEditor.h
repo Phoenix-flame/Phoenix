@@ -12,6 +12,9 @@ namespace Phoenix{
         SceneEditor(Ref<Scene> scene): m_ActiveScene(scene) {}
         ~SceneEditor() = default;
 
+        // Point the panels at another scene (the selection belonged to the old one).
+        void SetContext(const Ref<Scene>& scene) { m_ActiveScene = scene; m_SelectedEntity = {}; }
+
         void OnImGuiRender(){
             // Drop the selection if its entity no longer exists (e.g. after an
             // undo that removed it) so nothing references a stale handle.

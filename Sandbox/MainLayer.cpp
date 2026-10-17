@@ -985,6 +985,54 @@ void MainLayer::RestoreScene(const std::string& snapshot) {
     m_LastSnapshot = SceneSerializer(m_Scene).SerializeToString();
 }
 
+bool MainLayer::MouseRay(const ImVec2& imageMin, glm::vec3& outOrigin, glm::vec3& outDir) const {
+    ImVec2 mouse = ImGui::GetMousePos();
+    float mx = mouse.x - imageMin.x;
+    float my = mouse.y - imageMin.y;
+    if (mx < 0.0f || my < 0.0f || mx >= m_ViewportSize.x || my >= m_ViewportSize.y)
+        return false;
+
+    float ndcX = (mx / m_ViewportSize.x) * 2.0f - 1.0f;
+    float ndcY = 1.0f - (my / m_ViewportSize.y) * 2.0f;
+    // Unproject with the camera the viewport was rendered with (a primary scene
+    // camera may be active), so rays hit what is under the cursor.
+    glm::mat4 invViewProj = glm::inverse(m_Scene->GetActiveProjection() * m_Scene->GetActiveView());
+    glm::vec4 nearPoint = invViewProj * glm::vec4(ndcX, ndcY, -1.0f, 1.0f);
+    glm::vec4 farPoint  = invViewProj * glm::vec4(ndcX, ndcY,  1.0f, 1.0f);
+    nearPoint /= nearPoint.w;
+    farPoint  /= farPoint.w;
+
+    outOrigin = glm::vec3(nearPoint);
+    outDir = glm::normalize(glm::vec3(farPoint) - glm::vec3(nearPoint));
+    return true;
+}
+
+void MainLayer::SetActiveScene(const Ref<Scene>& scene) {
+    // The old scene is being discarded: just tear its simulation down, no restore.
+    if (m_Scene && m_Scene->IsRunning())
+        m_Scene->OnRuntimeStop();
+    m_RuntimeSnapshot.clear();
+
+    m_Scene = scene;
+    m_Scene->OnResize(m_ViewportSize.x, m_ViewportSize.y);
+    // Keep the editor (texture palette, panel visibility) and just retarget it.
+    if (m_SceneEditor)
+        m_SceneEditor->SetContext(m_Scene);
+    else
+        m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
+
+    // Snapshots of another scene can't be applied to this one.
+    m_UndoStack.clear();
+    m_RedoStack.clear();
+    m_LastSnapshot = SceneSerializer(m_Scene).SerializeToString();
+}
+
+void MainLayer::LoadShowcase(void (MainLayer::*build)()) {
+    SetActiveScene(CreateRef<Scene>());
+    (this->*build)(); // builders populate m_Scene
+    m_LastSnapshot = SceneSerializer(m_Scene).SerializeToString();
+}
+
 void MainLayer::StartRuntime() {
     m_RuntimeSnapshot = SceneSerializer(m_Scene).SerializeToString();
     m_Scene->OnRuntimeStart();
@@ -1153,59 +1201,17 @@ void MainLayer::OnImGuiRender(){
         {
             if (ImGui::BeginMenu("File"))
             {
-                if (ImGui::MenuItem("Load Showcase Scene")) {
-                    m_Scene = CreateRef<Scene>();
-                    m_Scene->OnResize(m_ViewportSize.x, m_ViewportSize.y);
-                    BuildShowcaseScene();
-                    m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
-                    m_UndoStack.clear();
-                    m_RedoStack.clear();
-                    m_LastSnapshot = SceneSerializer(m_Scene).SerializeToString();
-                }
-                if (ImGui::MenuItem("Load Water Showcase")) {
-                    m_Scene = CreateRef<Scene>();
-                    m_Scene->OnResize(m_ViewportSize.x, m_ViewportSize.y);
-                    BuildWaterShowcase();
-                    m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
-                    m_UndoStack.clear();
-                    m_RedoStack.clear();
-                    m_LastSnapshot = SceneSerializer(m_Scene).SerializeToString();
-                }
-                if (ImGui::MenuItem("Load Robot Showcase")) {
-                    m_Scene = CreateRef<Scene>();
-                    m_Scene->OnResize(m_ViewportSize.x, m_ViewportSize.y);
-                    BuildRobotShowcase();
-                    m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
-                    m_UndoStack.clear();
-                    m_RedoStack.clear();
-                    m_LastSnapshot = SceneSerializer(m_Scene).SerializeToString();
-                }
-                if (ImGui::MenuItem("Load Multi-Shadow Showcase")) {
-                    m_Scene = CreateRef<Scene>();
-                    m_Scene->OnResize(m_ViewportSize.x, m_ViewportSize.y);
-                    BuildMultiShadowShowcase();
-                    m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
-                    m_UndoStack.clear();
-                    m_RedoStack.clear();
-                    m_LastSnapshot = SceneSerializer(m_Scene).SerializeToString();
-                }
-                if (ImGui::MenuItem("Load Physics Showcase")) {
-                    m_Scene = CreateRef<Scene>();
-                    m_Scene->OnResize(m_ViewportSize.x, m_ViewportSize.y);
-                    BuildPhysicsShowcase();
-                    m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
-                    m_UndoStack.clear();
-                    m_RedoStack.clear();
-                    m_LastSnapshot = SceneSerializer(m_Scene).SerializeToString();
-                }
+                if (ImGui::MenuItem("Load Showcase Scene")) { LoadShowcase(&MainLayer::BuildShowcaseScene); }
+                if (ImGui::MenuItem("Load Water Showcase")) { LoadShowcase(&MainLayer::BuildWaterShowcase); }
+                if (ImGui::MenuItem("Load Robot Showcase")) { LoadShowcase(&MainLayer::BuildRobotShowcase); }
+                if (ImGui::MenuItem("Load Multi-Shadow Showcase")) { LoadShowcase(&MainLayer::BuildMultiShadowShowcase); }
+                if (ImGui::MenuItem("Load Physics Showcase")) { LoadShowcase(&MainLayer::BuildPhysicsShowcase); }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Import Scene")) {
                     std::string path = "scene.phx";
                     auto scene = CreateRef<Scene>();
                     if (SceneSerializer(scene).Deserialize(path)) {
-                        m_Scene = scene;
-                        m_Scene->OnResize(m_ViewportSize.x, m_ViewportSize.y);
-                        m_SceneEditor = CreateRef<SceneEditor>(m_Scene);
+                        SetActiveScene(scene);
                     }
                 }
                 if (ImGui::MenuItem("Export Scene")) {
@@ -1387,8 +1393,9 @@ void MainLayer::OnImGuiRender(){
         ImGuizmo::SetDrawlist();
         ImGuizmo::SetRect(imageMin.x, imageMin.y, m_ViewportSize.x, m_ViewportSize.y);
 
-        const glm::mat4& cameraProjection = m_MainCamera.GetProjection();
-        glm::mat4 cameraView = m_MainCamera.GetView();
+        // The camera the viewport was rendered with (a primary scene camera may be active).
+        const glm::mat4& cameraProjection = m_Scene->GetActiveProjection();
+        glm::mat4 cameraView = m_Scene->GetActiveView();
 
         auto& tc = selectedEntity.GetComponent<TransformComponent>();
         glm::mat4 transform = tc.GetTransform();
@@ -1416,21 +1423,9 @@ void MainLayer::OnImGuiRender(){
         && m_ViewportHovered && !ImGuizmo::IsUsing() && !ImGuizmo::IsOver()
         && ImGui::IsMouseDown(ImGuiMouseButton_Left))
     {
-        ImVec2 mouse = ImGui::GetMousePos();
-        float mx = mouse.x - imageMin.x;
-        float my = mouse.y - imageMin.y;
-        if (mx >= 0.0f && my >= 0.0f && mx < m_ViewportSize.x && my < m_ViewportSize.y)
+        glm::vec3 rayOrigin, rayDir;
+        if (MouseRay(imageMin, rayOrigin, rayDir))
         {
-            float ndcX = (mx / m_ViewportSize.x) * 2.0f - 1.0f;
-            float ndcY = 1.0f - (my / m_ViewportSize.y) * 2.0f;
-            glm::mat4 invViewProj = glm::inverse(m_MainCamera.GetProjection() * m_MainCamera.GetView());
-            glm::vec4 nearPoint = invViewProj * glm::vec4(ndcX, ndcY, -1.0f, 1.0f);
-            glm::vec4 farPoint  = invViewProj * glm::vec4(ndcX, ndcY,  1.0f, 1.0f);
-            nearPoint /= nearPoint.w;
-            farPoint  /= farPoint.w;
-            glm::vec3 rayOrigin = glm::vec3(nearPoint);
-            glm::vec3 rayDir = glm::normalize(glm::vec3(farPoint) - glm::vec3(nearPoint));
-
             auto& tc = selectedEntity.GetComponent<TransformComponent>();
             SculptTerrain(selectedEntity.GetComponent<TerrainComponent>(), tc.Translation, tc.Scale,
                 rayOrigin, rayDir, ImGui::GetIO().DeltaTime);
@@ -1443,23 +1438,9 @@ void MainLayer::OnImGuiRender(){
     if (!m_TerrainSculpt && m_ViewportHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
         && !ImGuizmo::IsUsing() && !ImGuizmo::IsOver())
     {
-        ImVec2 mouse = ImGui::GetMousePos();
-        float mx = mouse.x - imageMin.x;
-        float my = mouse.y - imageMin.y;
-        if (mx >= 0.0f && my >= 0.0f && mx < m_ViewportSize.x && my < m_ViewportSize.y)
+        glm::vec3 rayOrigin, rayDir;
+        if (MouseRay(imageMin, rayOrigin, rayDir))
         {
-            float ndcX = (mx / m_ViewportSize.x) * 2.0f - 1.0f;
-            float ndcY = 1.0f - (my / m_ViewportSize.y) * 2.0f;
-
-            glm::mat4 invViewProj = glm::inverse(m_MainCamera.GetProjection() * m_MainCamera.GetView());
-            glm::vec4 nearPoint = invViewProj * glm::vec4(ndcX, ndcY, -1.0f, 1.0f);
-            glm::vec4 farPoint  = invViewProj * glm::vec4(ndcX, ndcY,  1.0f, 1.0f);
-            nearPoint /= nearPoint.w;
-            farPoint  /= farPoint.w;
-
-            glm::vec3 rayOrigin = glm::vec3(nearPoint);
-            glm::vec3 rayDir = glm::normalize(glm::vec3(farPoint) - glm::vec3(nearPoint));
-
             m_SceneEditor->SetSelectedEntity(m_Scene->PickEntity(rayOrigin, rayDir));
         }
     }

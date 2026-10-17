@@ -306,10 +306,12 @@ namespace Phoenix{
         return { it->second, this };
     }
 
-    // Slab-method ray vs axis-aligned box. Returns true and the entry distance if hit.
+    // Slab-method ray vs axis-aligned box. Returns true and the hit distance: the entry
+    // point, or the exit point when the ray starts inside the box (so a large box
+    // around the camera, e.g. terrain, doesn't win every click at distance 0).
     static bool RayAABB(const glm::vec3& origin, const glm::vec3& dir,
                         const glm::vec3& boxMin, const glm::vec3& boxMax, float& outT){
-        float tMin = 0.0f;
+        float tMin = -std::numeric_limits<float>::max();
         float tMax = std::numeric_limits<float>::max();
         for (int i = 0; i < 3; i++){
             if (std::abs(dir[i]) < 1e-8f){
@@ -325,7 +327,46 @@ namespace Phoenix{
                 if (tMin > tMax) { return false; }
             }
         }
-        outT = tMin;
+        if (tMax < 0.0f) { return false; } // box is behind the ray
+        outT = (tMin >= 0.0f) ? tMin : tMax;
+        return true;
+    }
+
+    // Local-space bounds of what an entity draws, or false if it draws nothing.
+    static bool GetPickBounds(entt::registry& registry, entt::entity entity, glm::vec3& outMin, glm::vec3& outMax){
+        glm::vec3 lo(std::numeric_limits<float>::max()), hi(-std::numeric_limits<float>::max());
+        auto include = [&](const glm::vec3& a, const glm::vec3& b){ lo = glm::min(lo, a); hi = glm::max(hi, b); };
+        const glm::vec3 unitHalf(0.5f);
+
+        // Cubes, primitives (all built inside the unit cube) and the camera / light
+        // gizmos, which are drawn at about unit size.
+        if (registry.any_of<CubeComponent, PrimitiveComponent, CameraComponent, DirLightComponent>(entity))
+            include(-unitHalf, unitHalf);
+        if (auto* mesh = registry.try_get<MeshComponent>(entity)){
+            glm::vec3 a, b;
+            if (mesh->model && mesh->model->GetLocalBounds(a, b)) { include(a, b); }
+        }
+        if (auto* terrain = registry.try_get<TerrainComponent>(entity)){
+            float half = terrain->size * 0.5f;
+            float minH = 0.0f, maxH = 0.0f;
+            if (!terrain->heights.empty()){
+                auto [mn, mx] = std::minmax_element(terrain->heights.begin(), terrain->heights.end());
+                minH = *mn;
+                maxH = *mx;
+            }
+            include({ -half, minH, -half }, { half, maxH, half });
+        }
+        if (auto* water = registry.try_get<WaterComponent>(entity)){
+            float half = water->size * 0.5f;
+            float waves = std::max(water->amplitude * 2.0f, 0.05f);
+            include({ -half, -waves, -half }, { half, waves, half });
+        }
+
+        if (lo.x > hi.x) { return false; }
+        // Pad flat shapes (planes, flat terrain) so the slab test stays robust.
+        const glm::vec3 pad(1e-3f);
+        outMin = lo - pad;
+        outMax = hi + pad;
         return true;
     }
 
@@ -335,14 +376,17 @@ namespace Phoenix{
 
         auto view = m_Registry.view<TransformComponent>();
         for (auto entity : view){
-            auto& transform = view.get<TransformComponent>(entity);
-            glm::mat4 model = transform.GetTransform();
+            glm::vec3 localMin, localMax;
+            if (!GetPickBounds(m_Registry, entity, localMin, localMax)) { continue; }
 
-            // World-space AABB enclosing the unit cube under this transform.
+            // World-space AABB enclosing the local bounds under this transform.
+            glm::mat4 model = view.get<TransformComponent>(entity).GetTransform();
             glm::vec3 boxMin(std::numeric_limits<float>::max());
             glm::vec3 boxMax(-std::numeric_limits<float>::max());
             for (int i = 0; i < 8; i++){
-                glm::vec3 corner((i & 1) ? 0.5f : -0.5f, (i & 2) ? 0.5f : -0.5f, (i & 4) ? 0.5f : -0.5f);
+                glm::vec3 corner((i & 1) ? localMax.x : localMin.x,
+                                 (i & 2) ? localMax.y : localMin.y,
+                                 (i & 4) ? localMax.z : localMin.z);
                 glm::vec3 world = glm::vec3(model * glm::vec4(corner, 1.0f));
                 boxMin = glm::min(boxMin, world);
                 boxMax = glm::max(boxMax, world);
@@ -367,7 +411,7 @@ namespace Phoenix{
 
     Entity Scene::CreatePointLightEntity(const std::string& name)
     {
-        if (m_NumPointLights == MAX_NUM_POINT_LIGHTS)
+        if (GetNumberOfPointLights() >= MAX_NUM_POINT_LIGHTS)
         {
             throw std::runtime_error("Reached maximum number of point lights");
         }
@@ -383,7 +427,6 @@ namespace Phoenix{
         entity.AddComponent<PointLightComponent>();
         auto& tag = entity.AddComponent<TagComponent>();
 		tag.Tag = name.empty() ? "Entity" : name;
-        m_NumPointLights ++;
         return entity;
     }
 
@@ -401,11 +444,11 @@ namespace Phoenix{
         return entity;
     }
 
+    int Scene::GetNumberOfPointLights(){
+        return (int)m_Registry.view<PointLightComponent>().size();
+    }
+
     void Scene::DestroyEntity(Entity entity){
-        if (entity.HasComponent<PointLightComponent>())
-        {
-            m_NumPointLights --;
-        }
         m_Registry.destroy(entity);
     }
 
@@ -666,6 +709,8 @@ namespace Phoenix{
         {
             editorCamera.SetState(true);
         }
+        m_ActiveView = sceneCameraView;
+        m_ActiveProjection = sceneCameraProjection;
         // Collect up to MAX_DIR_LIGHTS active directional lights. Each can cast its own
         // shadow (shadow map i for directional light i). PointLightComponent derives from
         // DirLightComponent, so exclude point-light entities here.
