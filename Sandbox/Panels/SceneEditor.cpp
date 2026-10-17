@@ -82,6 +82,7 @@ namespace Phoenix{
 					{ "Cone",            "Cone",     PrimitiveComponent::Type::Cone     },
 					{ "Plane",           "Plane",    PrimitiveComponent::Type::Plane    },
 					{ "Cube",            "Cube",     PrimitiveComponent::Type::Cube     },
+					{ "Capsule",         "Capsule",  PrimitiveComponent::Type::Capsule  },
 				};
 				for (const auto& s : shapes){
 					if (ImGui::MenuItem(s.label)){
@@ -564,7 +565,7 @@ namespace Phoenix{
 		});
 
         DrawComponent<PrimitiveComponent>("Shape", entity, [](PrimitiveComponent& component){
-            const char* kinds[] = { "Cube", "Sphere", "Cylinder", "Cone", "Plane" };
+            const char* kinds[] = { "Cube", "Sphere", "Cylinder", "Cone", "Plane", "Capsule" };
             int current = (int)component.type;
             if (ImGui::Combo("Shape", &current, kinds, IM_ARRAYSIZE(kinds)))
                 component.type = (PrimitiveComponent::Type)current;

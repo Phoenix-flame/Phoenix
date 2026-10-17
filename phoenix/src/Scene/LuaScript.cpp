@@ -74,6 +74,7 @@ namespace Phoenix{
         glm::vec3 c((float)luaL_checknumber(L, 1), (float)luaL_checknumber(L, 2), (float)luaL_checknumber(L, 3));
         if (e.HasComponent<CubeComponent>()) { e.GetComponent<CubeComponent>().material.diffuse = c; }
         if (e.HasComponent<MeshComponent>()) { e.GetComponent<MeshComponent>().material.diffuse = c; }
+        if (e.HasComponent<PrimitiveComponent>()) { e.GetComponent<PrimitiveComponent>().material.diffuse = c; }
         return 0;
     }
 
@@ -83,6 +84,7 @@ namespace Phoenix{
         float strength = (lua_gettop(L) >= 4) ? (float)luaL_checknumber(L, 4) : 1.0f;
         if (e.HasComponent<CubeComponent>()){ auto& m = e.GetComponent<CubeComponent>().material; m.emissive = c; m.emissiveStrength = strength; }
         if (e.HasComponent<MeshComponent>()){ auto& m = e.GetComponent<MeshComponent>().material; m.emissive = c; m.emissiveStrength = strength; }
+        if (e.HasComponent<PrimitiveComponent>()){ auto& m = e.GetComponent<PrimitiveComponent>().material; m.emissive = c; m.emissiveStrength = strength; }
         return 0;
     }
 
@@ -279,6 +281,42 @@ namespace Phoenix{
         return 0;
     }
 
+    // ---- Shared values ----
+    // Each script has its own Lua state; these scene-wide values are how scripts
+    // talk to each other (one publishes, others read).
+
+    static int l_SetShared(lua_State* L){
+        Entity e = ScriptEntity(L);
+        Scene* scene = e.GetScene();
+        const char* key = luaL_checkstring(L, 1);
+        if (!scene) { return 0; }
+        switch (lua_type(L, 2)){
+            case LUA_TNUMBER:  scene->SetShared(key, ScriptValue((double)lua_tonumber(L, 2))); break;
+            case LUA_TBOOLEAN: scene->SetShared(key, ScriptValue((bool)lua_toboolean(L, 2))); break;
+            case LUA_TSTRING:  scene->SetShared(key, ScriptValue(std::string(lua_tostring(L, 2)))); break;
+            case LUA_TNIL:
+            case LUA_TNONE:    scene->ClearShared(key); break;
+            default: return luaL_argerror(L, 2, "number, boolean, string or nil expected");
+        }
+        return 0;
+    }
+
+    static int l_GetShared(lua_State* L){
+        Entity e = ScriptEntity(L);
+        Scene* scene = e.GetScene();
+        const char* key = luaL_checkstring(L, 1);
+        const ScriptValue* value = scene ? scene->GetShared(key) : nullptr;
+        if (!value){
+            if (lua_gettop(L) >= 2) { lua_pushvalue(L, 2); } // the default
+            else { lua_pushnil(L); }
+            return 1;
+        }
+        if (const double* d = std::get_if<double>(value)) { lua_pushnumber(L, *d); }
+        else if (const bool* b = std::get_if<bool>(value)) { lua_pushboolean(L, *b); }
+        else { lua_pushstring(L, std::get<std::string>(*value).c_str()); }
+        return 1;
+    }
+
     // print(...) -> the scene's script console (tab-separated, like Lua's own print).
     static int l_print(lua_State* L){
         std::string text;
@@ -321,7 +359,7 @@ namespace Phoenix{
         { "Rotate",         l_Rotate,         "Transform", "Rotate(dx, dy, dz)", "Adds to the Euler rotation (radians)." },
         { "MoveForward",    l_MoveForward,    "Transform", "MoveForward(distance)", "Moves along the entity's facing (local -Z turned by its yaw)." },
 
-        { "SetColor",    l_SetColor,    "Material", "SetColor(r, g, b)", "Sets the diffuse colour of the cube/mesh material (0..1)." },
+        { "SetColor",    l_SetColor,    "Material", "SetColor(r, g, b)", "Sets the diffuse colour of the cube/shape/mesh material (0..1)." },
         { "SetEmissive", l_SetEmissive, "Material", "SetEmissive(r, g, b [, strength])", "Makes the material glow; strength defaults to 1." },
 
         { "PlayAnimation",        l_PlayAnimation,        "Animation", "PlayAnimation(clip)", "Plays a clip by index or name." },
@@ -348,6 +386,9 @@ namespace Phoenix{
 
         { "IsKeyDown",    l_IsKeyDown,    "Input", "IsKeyDown(key) -> bool", "True while the key is held, e.g. IsKeyDown(Key.W)." },
         { "IsKeyPressed", l_IsKeyPressed, "Input", "IsKeyPressed(key) -> bool", "True only on the frame the key goes down." },
+
+        { "SetShared", l_SetShared, "Shared", "SetShared(key, value)", "Publishes a number, boolean or string to every script (nil removes it). Cleared on Run." },
+        { "GetShared", l_GetShared, "Shared", "GetShared(key [, default]) -> value", "Reads a value another script published, or default (nil) if unset." },
 
         { "print", l_print, "Debug", "print(...)", "Writes its arguments to the Script Editor console." },
     };

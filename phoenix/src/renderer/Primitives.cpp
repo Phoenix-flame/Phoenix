@@ -131,4 +131,37 @@ namespace Phoenix::Primitives{
         std::vector<uint32_t> idx = { 0, 2, 1, 0, 3, 2 };
         return CreateRef<Mesh>(v, idx);
     }
+
+    Ref<Mesh> Capsule(int segments, int capRings){
+        // A sphere split at its equator, with the halves pushed apart by the
+        // cylinder length; the two equator rings form the straight side.
+        const float radius = 0.25f, halfCylinder = 0.25f;
+        std::vector<Vertex> v;
+        std::vector<uint32_t> idx;
+        const int rings = capRings * 2 + 1; // top cap rings, side, bottom cap rings
+        for (int r = 0; r <= rings; r++){
+            // theta from 0 (top) to PI (bottom); the side is the extra ring at the equator.
+            bool upper = r <= capRings;
+            float theta = upper ? (float)r / capRings * PI * 0.5f
+                                : PI * 0.5f + (float)(r - capRings - 1) / capRings * PI * 0.5f;
+            float st = std::sin(theta), ct = std::cos(theta);
+            float yOffset = upper ? halfCylinder : -halfCylinder;
+            for (int x = 0; x <= segments; x++){
+                float u = (float)x / segments;
+                float phi = u * 2.0f * PI;
+                glm::vec3 n(st * std::cos(phi), ct, st * std::sin(phi));
+                glm::vec3 p = n * radius + glm::vec3(0.0f, yOffset, 0.0f);
+                v.push_back({ p, n, glm::vec2(u, 0.5f - p.y) });
+            }
+        }
+        int stride = segments + 1;
+        for (int y = 0; y < rings; y++){
+            for (int x = 0; x < segments; x++){
+                uint32_t a = y * stride + x, b = a + 1, c = a + stride, d = c + 1;
+                idx.push_back(a); idx.push_back(c); idx.push_back(b);
+                idx.push_back(b); idx.push_back(c); idx.push_back(d);
+            }
+        }
+        return CreateRef<Mesh>(v, idx);
+    }
 }

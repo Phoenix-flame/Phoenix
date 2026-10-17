@@ -11,4 +11,6 @@ namespace Phoenix::Primitives{
     Ref<Mesh> Cylinder(int segments = 32);
     Ref<Mesh> Cone(int segments = 32);
     Ref<Mesh> Plane();
+    // Radius 0.25, total height 1 (same proportions as a 1-wide, 2-tall capsule).
+    Ref<Mesh> Capsule(int segments = 32, int capRings = 8);
 }

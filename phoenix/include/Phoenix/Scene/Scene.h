@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <deque>
+#include <variant>
 #include <string>
 
 namespace Phoenix{
@@ -32,6 +33,9 @@ namespace Phoenix{
         float time = 0.0f;       // scene time of the latest occurrence
         std::string text;
     };
+
+    // A value scripts share through the scene (SetShared / GetShared in Lua).
+    using ScriptValue = std::variant<double, bool, std::string>;
 
     class Scene{
     public:
@@ -81,6 +85,14 @@ namespace Phoenix{
         // (hot reload after editing, adding, removing or toggling scripts).
         void ReloadScripts(Entity entity);
 
+        // Values scripts share with each other while playing (cleared when play starts).
+        void SetShared(const std::string& key, ScriptValue value) { m_Shared[key] = std::move(value); }
+        void ClearShared(const std::string& key) { m_Shared.erase(key); }
+        const ScriptValue* GetShared(const std::string& key) const{
+            auto it = m_Shared.find(key);
+            return it != m_Shared.end() ? &it->second : nullptr;
+        }
+
         // Whether the entity still exists in this scene.
         bool IsValid(Entity entity) const;
 
@@ -119,6 +131,7 @@ namespace Phoenix{
         Scope<PhysicsWorld> m_PhysicsWorld;
         std::vector<Ref<LuaScript>> m_Scripts; // live Lua runtimes while playing
         std::deque<ScriptLogEntry> m_ScriptLog;
+        std::unordered_map<std::string, ScriptValue> m_Shared;
         // Runtime body id -> owning entity, for contact-event dispatch (rebuilt each run).
         std::unordered_map<uint32_t, entt::entity> m_BodyToEntity;
         // Bodies currently touching a water surface (splash edge detection).

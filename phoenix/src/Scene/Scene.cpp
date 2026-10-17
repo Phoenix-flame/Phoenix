@@ -30,6 +30,7 @@ namespace Phoenix{
             case PrimitiveComponent::Type::Cylinder: mesh = Primitives::Cylinder(); break;
             case PrimitiveComponent::Type::Cone:     mesh = Primitives::Cone();     break;
             case PrimitiveComponent::Type::Plane:    mesh = Primitives::Plane();    break;
+            case PrimitiveComponent::Type::Capsule:  mesh = Primitives::Capsule();  break;
         }
         cache[(int)type] = mesh;
         return mesh;
@@ -280,6 +281,7 @@ namespace Phoenix{
         // Instantiate Lua scripts for the runtime.
         // Snapshot the ids first: a script's top-level code could create entities.
         m_ScriptLog.clear();
+        m_Shared.clear();
         auto scriptView = m_Registry.view<LuaScriptComponent>();
         std::vector<entt::entity> scripted(scriptView.begin(), scriptView.end());
         for (auto entity : scripted)

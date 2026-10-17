@@ -18,6 +18,7 @@
 #include <Phoenix/Math/Math.h>
 #include <cmath>
 #include <algorithm>
+#include <random>
 MainLayer::MainLayer(const std::string& name): Phoenix::Layer(name), 
         m_MainCamera()
     { }
@@ -812,6 +813,414 @@ void MainLayer::BuildPhysicsShowcase() {
     }
 }
 
+// Lua for the maze showcase. The pathfinder gets the maze, start and first goal
+// prepended by BuildMazeShowcase; each tile gets its id.
+static const char* s_MazeRunnerLua = R"LUA(
+local W, H = #MAZE[1], #MAZE
+local OX, OZ = -(W - 1) / 2, -(H - 1) / 2   -- world position of cell (1, 1)
+local Y = 0.75                              -- capsule centre height
+
+local function walkable(x, z)
+    return x >= 1 and x <= W and z >= 1 and z <= H and MAZE[z]:sub(x, x) ~= "#"
+end
+local function id(x, z) return (z - 1) * W + x end
+local function cellOf(i) return (i - 1) % W + 1, (i - 1) // W + 1 end
+local function world(x, z) return OX + x - 1, OZ + z - 1 end
+
+-- Binary min-heap of { f, h, cell }: lowest f first, ties go to the lower h
+-- (the node closer to the goal), which keeps A* heading straight for it.
+local heap = {}
+local function less(a, b) return a[1] < b[1] or (a[1] == b[1] and a[2] < b[2]) end
+local function push(item)
+    heap[#heap + 1] = item
+    local i = #heap
+    while i > 1 do
+        local p = i // 2
+        if not less(heap[i], heap[p]) then break end
+        heap[i], heap[p] = heap[p], heap[i]
+        i = p
+    end
+end
+local function pop()
+    local top = heap[1]
+    local last = table.remove(heap)
+    if #heap > 0 then
+        heap[1] = last
+        local i = 1
+        while true do
+            local l, r, m = i * 2, i * 2 + 1, i
+            if l <= #heap and less(heap[l], heap[m]) then m = l end
+            if r <= #heap and less(heap[r], heap[m]) then m = r end
+            if m == i then break end
+            heap[i], heap[m] = heap[m], heap[i]
+            i = m
+        end
+    end
+    return top
+end
+
+-- Floor tiles colour themselves from the shared value "tile<id>".
+local OPEN, CLOSED, PATH = 1, 2, 3
+local touched = {}
+local function mark(i, state)
+    SetShared("tile" .. i, state)
+    touched[i] = true
+end
+local function clearTiles()
+    for i in pairs(touched) do SetShared("tile" .. i, 0) end
+    touched = {}
+end
+
+local DIRS = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }
+local start, goal, g, parent, closed
+local path, step
+local mode = "search"
+local stepsPerFrame = 2
+local expanded = 0
+local wait = 0
+
+local function heuristic(i)  -- Manhattan distance: exact on an open 4-way grid
+    local x, z = cellOf(i)
+    local gx, gz = cellOf(goal)
+    return math.abs(x - gx) + math.abs(z - gz)
+end
+
+local function beginSearch(from, to)
+    clearTiles()
+    start, goal = from, to
+    local gx, gz = world(cellOf(goal))
+    SetShared("goalX", gx)
+    SetShared("goalZ", gz)
+    heap, g, parent, closed = {}, { [start] = 0 }, {}, {}
+    push({ heuristic(start), heuristic(start), start })
+    mark(start, OPEN)
+    expanded = 0
+    mode = "search"
+end
+
+local function buildPath()
+    path = {}
+    local i = goal
+    while i do
+        table.insert(path, 1, i)
+        i = parent[i]
+    end
+    for _, c in ipairs(path) do mark(c, PATH) end
+    step = 1  -- path[1] is our cell: walk back to its centre first
+    print(string.format("A*: %d steps, %d nodes expanded", #path - 1, expanded))
+    mode = "walk"
+end
+
+-- One A* iteration: expand the best open node. Returns true when done.
+local function expand()
+    while #heap > 0 do
+        local i = pop()[3]
+        if not closed[i] then  -- skip stale heap entries
+            closed[i] = true
+            expanded = expanded + 1
+            if i == goal then
+                buildPath()
+                return true
+            end
+            mark(i, CLOSED)
+            local x, z = cellOf(i)
+            for _, d in ipairs(DIRS) do
+                local nx, nz = x + d[1], z + d[2]
+                if walkable(nx, nz) then
+                    local n = id(nx, nz)
+                    local cost = g[i] + 1
+                    if not closed[n] and (g[n] == nil or cost < g[n]) then
+                        g[n] = cost
+                        parent[n] = i
+                        local h = heuristic(n)
+                        push({ cost + h, h, n })
+                        mark(n, OPEN)
+                    end
+                end
+            end
+            return false
+        end
+    end
+    print("A*: no path to the goal")
+    mode = "arrived"
+    wait = 1.0
+    return true
+end
+
+local cells = {}
+for z = 1, H do
+    for x = 1, W do
+        if walkable(x, z) then cells[#cells + 1] = id(x, z) end
+    end
+end
+local function randomGoal(from)
+    local fx, fz = cellOf(from)
+    for _ = 1, 50 do  -- prefer goals at least a third of the maze away
+        local c = cells[math.random(#cells)]
+        local x, z = cellOf(c)
+        if math.abs(x - fx) + math.abs(z - fz) >= (W + H) // 3 then return c end
+    end
+    return cells[math.random(#cells)]
+end
+
+local speed = 3.5  -- cells per second
+local here = id(START[1], START[2])
+local px, pz = world(START[1], START[2])
+local t = 0
+beginSearch(here, id(GOAL[1], GOAL[2]))
+
+function OnUpdate(dt)
+    t = t + dt
+    if IsKeyPressed(Key.Up) then stepsPerFrame = math.min(stepsPerFrame * 2, 64) end
+    if IsKeyPressed(Key.Down) then stepsPerFrame = math.max(stepsPerFrame // 2, 1) end
+    if IsKeyPressed(Key.Space) then beginSearch(here, randomGoal(here)) end
+
+    if mode == "search" then
+        for _ = 1, stepsPerFrame do
+            if expand() then break end
+        end
+        SetRotation(0, 0, 0)
+        SetTranslation(px, Y + 0.05 * math.sin(t * 6), pz)  -- "thinking"
+    elseif mode == "walk" then
+        local tx, tz = world(cellOf(path[step]))
+        local dx, dz = tx - px, tz - pz
+        local dist = math.sqrt(dx * dx + dz * dz)
+        local move = speed * dt
+        local nx, nz = 0, 0
+        if dist > 1e-4 then nx, nz = dx / dist, dz / dist end
+        if dist <= move then
+            px, pz = tx, tz
+            here = path[step]
+            SetShared("tile" .. here, 0)  -- eat the breadcrumb
+            step = step + 1
+            if step > #path then
+                mode = "arrived"
+                wait = 0.8
+            end
+        else
+            px, pz = px + nx * move, pz + nz * move
+        end
+        local lean = 0.18  -- tip into the direction of travel
+        SetRotation(nz * lean, 0, -nx * lean)
+        SetTranslation(px, Y + 0.06 * math.abs(math.sin(t * 12)), pz)
+    else -- arrived
+        wait = wait - dt
+        SetRotation(0, 0, 0)
+        SetTranslation(px, Y + 0.3 * math.abs(math.sin(t * 9)), pz)  -- celebrate
+        if wait <= 0 then beginSearch(here, randomGoal(here)) end
+    end
+end
+)LUA";
+
+static const char* s_MazeTileLua = R"LUA(
+-- A floor tile showing the A* search: the pathfinder publishes "tile<id>".
+local colors = {
+    [0] = { 0.16, 0.17, 0.20 },  -- untouched
+    [1] = { 0.15, 0.45, 0.95 },  -- open set (frontier)
+    [2] = { 0.35, 0.27, 0.60 },  -- closed (expanded)
+    [3] = { 1.00, 0.72, 0.20 },  -- path
+}
+local key = "tile" .. ID
+local shown = -1
+function OnUpdate(dt)
+    local state = GetShared(key, 0)
+    if state ~= shown then
+        shown = state
+        local c = colors[state]
+        SetColor(c[1], c[2], c[3])
+        if state == 3 then SetEmissive(1.0, 0.55, 0.1, 1.2)
+        elseif state == 1 then SetEmissive(0.1, 0.35, 1.0, 0.6)
+        else SetEmissive(0, 0, 0, 0) end
+    end
+end
+)LUA";
+
+static const char* s_MazeGoalLua = R"LUA(
+-- Hovers over the pathfinder's current goal (shared "goalX" / "goalZ").
+local t = 0
+function OnUpdate(dt)
+    t = t + dt
+    local x, z = GetShared("goalX"), GetShared("goalZ")
+    if x then SetTranslation(x, 1.0 + 0.15 * math.sin(t * 3), z) end
+    local pulse = 0.5 + 0.5 * math.sin(t * 5)
+    local s = 0.45 + 0.08 * pulse
+    SetScale(s, s, s)
+    SetEmissive(0.2, 1.0, 0.45, 1.5 + 2.5 * pulse)
+end
+)LUA";
+
+void MainLayer::BuildMazeShowcase() {
+    // A maze solved by A*: the capsule's Lua script runs the search a few nodes per
+    // frame, the floor tiles' scripts light up the frontier/closed set/path from
+    // shared values, then the capsule walks the path and picks a new goal.
+    m_Scene->AmbientColor() = glm::vec3(0.08f);
+
+    // ---- maze: recursive backtracker on a CW x CH cell grid, plus a few loops ----
+    const int CW = 12, CH = 8;
+    const int W = CW * 2 + 1, H = CH * 2 + 1;
+    std::vector<std::string> grid(H, std::string(W, '#'));
+    std::mt19937 rng(1017);
+    {
+        std::vector<char> visited(CW * CH, 0);
+        std::vector<std::pair<int, int>> stack = { { 0, 0 } };
+        visited[0] = 1;
+        grid[1][1] = '.';
+        const int dx[] = { 1, -1, 0, 0 }, dy[] = { 0, 0, 1, -1 };
+        while (!stack.empty()){
+            auto [cx, cy] = stack.back();
+            int options[4], count = 0;
+            for (int d = 0; d < 4; d++){
+                int nx = cx + dx[d], ny = cy + dy[d];
+                if (nx >= 0 && ny >= 0 && nx < CW && ny < CH && !visited[ny * CW + nx]) { options[count++] = d; }
+            }
+            if (count == 0) { stack.pop_back(); continue; }
+            int d = options[rng() % count];
+            int nx = cx + dx[d], ny = cy + dy[d];
+            visited[ny * CW + nx] = 1;
+            grid[1 + cy * 2 + dy[d]][1 + cx * 2 + dx[d]] = '.'; // the wall between
+            grid[1 + ny * 2][1 + nx * 2] = '.';
+            stack.push_back({ nx, ny });
+        }
+        // Knock out some walls so there are several routes and A* has to choose.
+        for (int removed = 0; removed < 14;){
+            int r = 1 + (int)(rng() % (H - 2)), c = 1 + (int)(rng() % (W - 2));
+            if (grid[r][c] != '#' || (r % 2) == (c % 2)) { continue; } // only walls between two cells
+            grid[r][c] = '.';
+            removed++;
+        }
+    }
+    const float originX = -(W - 1) * 0.5f, originZ = -(H - 1) * 0.5f; // cell (0,0)
+    const glm::ivec2 start = { 1, 1 }, goal = { W - 2, H - 2 };       // 0-based column/row
+
+    // ---- camera, light, base ----
+    {
+        auto cam = m_Scene->CreateEntity("Camera");
+        auto& c = cam.AddComponent<CameraComponent>();
+        c.primary = true; // untick Primary to fly the editor camera instead
+        auto& t = cam.GetComponent<TransformComponent>();
+        t.Translation = { 0.0f, 16.5f, 11.0f };
+        t.Rotation = { glm::radians(-56.0f), 0.0f, 0.0f };
+    }
+    {
+        auto sun = m_Scene->CreateDirLightEntity("Sun");
+        auto& t = sun.GetComponent<TransformComponent>();
+        t.Rotation = { glm::radians(-60.0f), glm::radians(35.0f), 0.0f };
+        auto& dl = sun.GetComponent<DirLightComponent>();
+        dl.ambient = glm::vec3(0.05f);
+        dl.diffuse = glm::vec3(0.85f, 0.82f, 0.78f);
+        dl.specular = glm::vec3(0.3f);
+        dl.castsShadow = true;
+    }
+    {
+        auto base = m_Scene->CreateEntity("Maze Base");
+        auto& c = base.AddComponent<CubeComponent>();
+        c.material.ambient = glm::vec3(0.05f);
+        c.material.diffuse = glm::vec3(0.08f, 0.08f, 0.1f);
+        c.material.specular = glm::vec3(0.05f);
+        auto& t = base.GetComponent<TransformComponent>();
+        t.Translation = { 0.0f, -0.15f, 0.0f };
+        t.Scale = { (float)W + 1.0f, 0.2f, (float)H + 1.0f };
+    }
+
+    // ---- walls: horizontal runs merged into one cube, leftovers merged vertically ----
+    {
+        auto wall = [&](int c0, int r0, int cols, int rows){
+            auto e = m_Scene->CreateEntity("Wall");
+            auto& c = e.AddComponent<CubeComponent>();
+            c.material.ambient = glm::vec3(0.12f, 0.13f, 0.16f);
+            c.material.diffuse = glm::vec3(0.55f, 0.58f, 0.65f);
+            c.material.specular = glm::vec3(0.15f);
+            c.material.shininess = 16.0f;
+            auto& t = e.GetComponent<TransformComponent>();
+            t.Translation = { originX + c0 + (cols - 1) * 0.5f, 0.6f, originZ + r0 + (rows - 1) * 0.5f };
+            t.Scale = { (float)cols, 1.2f, (float)rows };
+        };
+        std::vector<std::string> left = grid; // walls not yet covered
+        for (int r = 0; r < H; r++){
+            for (int c = 0; c < W;){
+                if (left[r][c] != '#') { c++; continue; }
+                int end = c;
+                while (end < W && left[r][end] == '#') { end++; }
+                if (end - c >= 2){
+                    wall(c, r, end - c, 1);
+                    for (int i = c; i < end; i++) { left[r][i] = 'x'; }
+                }
+                c = end;
+            }
+        }
+        for (int c = 0; c < W; c++){
+            for (int r = 0; r < H;){
+                if (left[r][c] != '#') { r++; continue; }
+                int end = r;
+                while (end < H && left[end][c] == '#') { end++; }
+                wall(c, r, 1, end - r);
+                r = end;
+            }
+        }
+    }
+
+    // ---- floor tiles (each colours itself from the shared search state) ----
+    for (int r = 0; r < H; r++){
+        for (int c = 0; c < W; c++){
+            if (grid[r][c] == '#') { continue; }
+            const int id = r * W + c + 1; // Lua: (z - 1) * W + x with 1-based x, z
+            auto e = m_Scene->CreateEntity("Tile " + std::to_string(c + 1) + "," + std::to_string(r + 1));
+            auto& cube = e.AddComponent<CubeComponent>();
+            cube.material.ambient = glm::vec3(0.06f);
+            cube.material.diffuse = glm::vec3(0.16f, 0.17f, 0.2f);
+            cube.material.specular = glm::vec3(0.1f);
+            cube.material.shininess = 8.0f;
+            auto& t = e.GetComponent<TransformComponent>();
+            t.Translation = { originX + c, 0.0f, originZ + r };
+            t.Scale = { 0.94f, 0.1f, 0.94f };
+            e.AddComponent<LuaScriptComponent>("Tile", "local ID = " + std::to_string(id) + "\n" + s_MazeTileLua);
+        }
+    }
+
+    // ---- the runner: a capsule with the A* script ----
+    {
+        std::string header =
+            "-- A* maze runner: plans a route with A* (4-way moves, Manhattan heuristic),\n"
+            "-- shows the search on the floor tiles, walks it, then picks a new goal.\n"
+            "--   Space: new goal now    Up / Down: search faster / slower\n"
+            "\n"
+            "-- '#' = wall. Generated with the scene; edit it to change where A* may go\n"
+            "-- (the wall cubes won't follow).\n"
+            "local MAZE = {\n";
+        for (const std::string& row : grid) { header += "    \"" + row + "\",\n"; }
+        header += "}\n";
+        header += "local START = { " + std::to_string(start.x + 1) + ", " + std::to_string(start.y + 1) + " }  -- column, row\n";
+        header += "local GOAL = { " + std::to_string(goal.x + 1) + ", " + std::to_string(goal.y + 1) + " }\n";
+
+        auto runner = m_Scene->CreateEntity("Runner");
+        auto& p = runner.AddComponent<PrimitiveComponent>(PrimitiveComponent::Type::Capsule);
+        p.material.ambient = glm::vec3(0.1f, 0.15f, 0.25f);
+        p.material.diffuse = glm::vec3(0.25f, 0.6f, 1.0f);
+        p.material.specular = glm::vec3(0.8f);
+        p.material.shininess = 64.0f;
+        p.material.emissive = glm::vec3(0.2f, 0.5f, 1.0f);
+        p.material.emissiveStrength = 0.4f;
+        auto& t = runner.GetComponent<TransformComponent>();
+        t.Translation = { originX + start.x, 0.75f, originZ + start.y };
+        t.Scale = glm::vec3(1.2f); // radius 0.3, height 1.2
+        runner.AddComponent<LuaScriptComponent>("A* Pathfinder", header + s_MazeRunnerLua);
+    }
+
+    // ---- goal beacon ----
+    {
+        auto beacon = m_Scene->CreateEntity("Goal");
+        auto& p = beacon.AddComponent<PrimitiveComponent>(PrimitiveComponent::Type::Sphere);
+        p.material.ambient = glm::vec3(0.05f, 0.2f, 0.1f);
+        p.material.diffuse = glm::vec3(0.2f, 1.0f, 0.45f);
+        p.material.emissive = glm::vec3(0.2f, 1.0f, 0.45f);
+        p.material.emissiveStrength = 2.0f;
+        auto& t = beacon.GetComponent<TransformComponent>();
+        t.Translation = { originX + goal.x, 1.0f, originZ + goal.y };
+        t.Scale = glm::vec3(0.45f);
+        beacon.AddComponent<LuaScriptComponent>("Goal Beacon", s_MazeGoalLua);
+    }
+}
+
 void MainLayer::BuildMultiShadowShowcase() {
     // Three coloured directional lights from different angles, each casting its OWN
     // shadow map -> the central objects cast three shadows fanning out, tinted where the
@@ -1273,6 +1682,7 @@ void MainLayer::OnImGuiRender(){
                 if (ImGui::MenuItem("Load Robot Showcase")) { LoadShowcase(&MainLayer::BuildRobotShowcase); }
                 if (ImGui::MenuItem("Load Multi-Shadow Showcase")) { LoadShowcase(&MainLayer::BuildMultiShadowShowcase); }
                 if (ImGui::MenuItem("Load Physics Showcase")) { LoadShowcase(&MainLayer::BuildPhysicsShowcase); }
+                if (ImGui::MenuItem("Load Maze A* Showcase")) { LoadShowcase(&MainLayer::BuildMazeShowcase); }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Import Scene")) {
                     std::string path = "scene.phx";

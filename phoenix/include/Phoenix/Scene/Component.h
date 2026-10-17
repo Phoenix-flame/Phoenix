@@ -84,7 +84,7 @@ namespace Phoenix{
     // type (cached by the Scene); scale it with the entity transform. Add a Rigid Body
     // + Mesh Collider to make it interact physically.
     struct PrimitiveComponent{
-        enum class Type { Cube = 0, Sphere = 1, Cylinder = 2, Cone = 3, Plane = 4 };
+        enum class Type { Cube = 0, Sphere = 1, Cylinder = 2, Cone = 3, Plane = 4, Capsule = 5 };
         Type type = Type::Sphere;
         Material material;
         PrimitiveComponent() = default;

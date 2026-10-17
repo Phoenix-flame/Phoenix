@@ -72,6 +72,8 @@ private:
     void BuildMultiShadowShowcase();
     // Populate m_Scene with the physics playground (joints, materials, triggers, cannon).
     void BuildPhysicsShowcase();
+    // Populate m_Scene with a maze a capsule solves with A* (all logic in Lua scripts).
+    void BuildMazeShowcase();
 
     // Terrain sculpting: raycast to the terrain plane and raise/lower/smooth heights.
     void SculptTerrain(TerrainComponent& terrain, const glm::vec3& terrainPos,
