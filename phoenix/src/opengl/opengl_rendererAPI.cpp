@@ -14,10 +14,12 @@ namespace Phoenix{
 		const char* message,
 		const void* userParam){
 		switch (severity){
-			case GL_DEBUG_SEVERITY_HIGH:         PHX_CORE_CRITICAL(message); return;
-			case GL_DEBUG_SEVERITY_MEDIUM:       PHX_CORE_ERROR(message); return;
-			case GL_DEBUG_SEVERITY_LOW:          PHX_CORE_WARN(message); return;
-			case GL_DEBUG_SEVERITY_NOTIFICATION: PHX_CORE_TRACE(message); return;
+			// Pass the driver text as an argument: used as the format string, a '{' in
+			// it would make fmt throw.
+			case GL_DEBUG_SEVERITY_HIGH:         PHX_CORE_CRITICAL("GL: {0}", message); return;
+			case GL_DEBUG_SEVERITY_MEDIUM:       PHX_CORE_ERROR("GL: {0}", message); return;
+			case GL_DEBUG_SEVERITY_LOW:          PHX_CORE_WARN("GL: {0}", message); return;
+			case GL_DEBUG_SEVERITY_NOTIFICATION: PHX_CORE_TRACE("GL: {0}", message); return;
 		}
 		
 		PHX_CORE_ASSERT(false, "Unknown severity level!");

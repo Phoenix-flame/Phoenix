@@ -62,6 +62,7 @@ namespace Phoenix{
                             const glm::vec3& position, const glm::vec3& rotationEuler,
                             const BodyProps& props);
 
+        // Removes and destroys a body, along with any constraints attached to it.
         void RemoveBody(uint32_t bodyID);
 
         // ---- Constraints (pass InvalidBody as `other` to anchor to the world) ----

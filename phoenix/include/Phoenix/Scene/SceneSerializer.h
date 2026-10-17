@@ -27,6 +27,7 @@ namespace Phoenix{
     private:
         bool DeserializeNode(const YAML::Node& data);
         void ApplyEntity(Entity entity, const YAML::Node& node);
+        void TryApplyEntity(Entity entity, const YAML::Node& node);
 
         Ref<Scene> m_Scene;
     };

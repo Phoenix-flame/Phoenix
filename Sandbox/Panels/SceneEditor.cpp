@@ -542,7 +542,9 @@ namespace Phoenix{
 			bool removeComponent = false;
 			if (ImGui::BeginPopup("ComponentSettings")){
 				// Every entity is assumed to have a Transform (rendering, gizmos, sculpting).
-				constexpr bool removable = !std::is_same_v<T, TransformComponent>;
+				// While playing, the runtime's bodies and scripts were built from these
+				// components (and Stop restores the scene anyway), so don't allow removal.
+				bool removable = !std::is_same_v<T, TransformComponent> && !entity.GetScene()->IsRunning();
 				if (ImGui::MenuItem("Remove component", nullptr, false, removable))
 					removeComponent = true;
 
@@ -655,7 +657,7 @@ namespace Phoenix{
                 if (!m_SelectedEntity.HasComponent<CameraComponent>())
                     m_SelectedEntity.AddComponent<CameraComponent>();
                 else
-                    PHX_CORE_ASSERT("This entity already has the Camera Component!");
+                    PHX_WARN("This entity already has the Camera Component");
                 ImGui::CloseCurrentPopup();
             }
             if (ImGui::MenuItem("Camera Follow")){
@@ -667,7 +669,7 @@ namespace Phoenix{
                 if (!m_SelectedEntity.HasComponent<CubeComponent>())
                     m_SelectedEntity.AddComponent<CubeComponent>();
                 else
-                    PHX_CORE_ASSERT("This entity already has the Cube Component!");
+                    PHX_WARN("This entity already has the Cube Component");
                 ImGui::CloseCurrentPopup();
             }
 			if (ImGui::MenuItem("Point Light")){

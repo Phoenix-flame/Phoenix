@@ -278,10 +278,53 @@ namespace Phoenix{
         return 0;
     }
 
+    // The count hook fires every HOOK_INTERVAL VM instructions; a single call may run
+    // MAX_HOOK_TICKS * HOOK_INTERVAL (~100M) instructions, far beyond any per-frame
+    // script but short enough (well under a second) to recover from a runaway loop.
+    static const int HOOK_INTERVAL = 10000;
+    static const int MAX_HOOK_TICKS = 10000;
+
+    void LuaScript::InstructionHook(lua_State* L, lua_Debug* /*ar*/){
+        LuaScript* script = *static_cast<LuaScript**>(lua_getextraspace(L));
+        if (++script->m_HookTicks > MAX_HOOK_TICKS)
+            luaL_error(L, "script exceeded its instruction budget (infinite loop?)");
+    }
+
+    bool LuaScript::ProtectedCall(int nargs, const char* what){
+        m_HookTicks = 0;
+        if (lua_pcall(m_L, nargs, 0, 0) != LUA_OK){
+            PHX_CORE_ERROR("Lua {0} error: {1}", what, lua_tostring(m_L, -1));
+            lua_pop(m_L, 1);
+            m_Valid = false; // stop running a broken script
+            return false;
+        }
+        return true;
+    }
+
     LuaScript::LuaScript(const std::string& source, Entity entity) : m_Entity(entity){
         m_L = luaL_newstate();
-        luaL_openlibs(m_L);
         *static_cast<LuaScript**>(lua_getextraspace(m_L)) = this;
+
+        // Scripts come from scene files, which get shared, so only open the pure
+        // libraries: no io / os (file access, os.execute) or package (loading native
+        // modules). dofile/loadfile/load can read files or run unchecked bytecode.
+        const luaL_Reg safeLibs[] = {
+            { "_G",              luaopen_base },
+            { LUA_TABLIBNAME,    luaopen_table },
+            { LUA_STRLIBNAME,    luaopen_string },
+            { LUA_MATHLIBNAME,   luaopen_math },
+            { LUA_UTF8LIBNAME,   luaopen_utf8 },
+            { LUA_COLIBNAME,     luaopen_coroutine },
+        };
+        for (const luaL_Reg& lib : safeLibs){
+            luaL_requiref(m_L, lib.name, lib.func, 1);
+            lua_pop(m_L, 1);
+        }
+        for (const char* unsafe : { "dofile", "loadfile", "load" }){
+            lua_pushnil(m_L);
+            lua_setglobal(m_L, unsafe);
+        }
+        lua_sethook(m_L, &LuaScript::InstructionHook, LUA_MASKCOUNT, HOOK_INTERVAL);
 
         lua_register(m_L, "GetTranslation", l_GetTranslation);
         lua_register(m_L, "SetTranslation", l_SetTranslation);
@@ -336,13 +379,14 @@ namespace Phoenix{
         for (int i = 0; i <= 9; i++){ char n[2] = { (char)('0' + i), 0 }; setKey(n, Key::D0 + i); }
         lua_setglobal(m_L, "Key");
 
-        if (luaL_dostring(m_L, source.c_str()) != LUA_OK){
+        if (luaL_loadstring(m_L, source.c_str()) != LUA_OK){
             PHX_CORE_ERROR("Lua load error: {0}", lua_tostring(m_L, -1));
             lua_pop(m_L, 1);
             m_Valid = false;
         }
         else{
             m_Valid = true;
+            ProtectedCall(0, "load"); // run the chunk (defines OnUpdate etc.)
         }
     }
 
@@ -370,11 +414,7 @@ namespace Phoenix{
         lua_getglobal(m_L, "OnUpdate");
         if (lua_isfunction(m_L, -1)){
             lua_pushnumber(m_L, dt);
-            if (lua_pcall(m_L, 1, 0, 0) != LUA_OK){
-                PHX_CORE_ERROR("Lua OnUpdate error: {0}", lua_tostring(m_L, -1));
-                lua_pop(m_L, 1);
-                m_Valid = false; // stop running a broken script
-            }
+            ProtectedCall(1, "OnUpdate");
         }
         else{
             lua_pop(m_L, 1);
@@ -386,11 +426,7 @@ namespace Phoenix{
         lua_getglobal(m_L, "OnAnimationEvent");
         if (lua_isfunction(m_L, -1)){
             lua_pushstring(m_L, name.c_str());
-            if (lua_pcall(m_L, 1, 0, 0) != LUA_OK){
-                PHX_CORE_ERROR("Lua OnAnimationEvent error: {0}", lua_tostring(m_L, -1));
-                lua_pop(m_L, 1);
-                m_Valid = false;
-            }
+            ProtectedCall(1, "OnAnimationEvent");
         }
         else{
             lua_pop(m_L, 1);
@@ -402,12 +438,7 @@ namespace Phoenix{
         lua_getglobal(m_L, entered ? "OnCollisionEnter" : "OnCollisionExit");
         if (lua_isfunction(m_L, -1)){
             lua_pushstring(m_L, otherTag.c_str());
-            if (lua_pcall(m_L, 1, 0, 0) != LUA_OK){
-                PHX_CORE_ERROR("Lua {0} error: {1}", entered ? "OnCollisionEnter" : "OnCollisionExit",
-                    lua_tostring(m_L, -1));
-                lua_pop(m_L, 1);
-                m_Valid = false;
-            }
+            ProtectedCall(1, entered ? "OnCollisionEnter" : "OnCollisionExit");
         }
         else{
             lua_pop(m_L, 1);

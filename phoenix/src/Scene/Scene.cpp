@@ -449,6 +449,22 @@ namespace Phoenix{
     }
 
     void Scene::DestroyEntity(Entity entity){
+        // While playing, the entity may own a physics body and Lua scripts; tear those
+        // down too, or the body keeps colliding invisibly and the script keeps running.
+        if (IsRunning()){
+            uint32_t bodies[2] = { PhysicsWorld::InvalidBody, PhysicsWorld::InvalidBody };
+            if (auto* rb = m_Registry.try_get<RigidBodyComponent>(entity)) { bodies[0] = rb->runtimeBodyID; }
+            if (auto* terrain = m_Registry.try_get<TerrainComponent>(entity)) { bodies[1] = terrain->runtimeBodyID; }
+            for (uint32_t body : bodies){
+                if (body == PhysicsWorld::InvalidBody) { continue; }
+                m_PhysicsWorld->RemoveBody(body);
+                m_BodyToEntity.erase(body);
+                m_SubmergedBodies.erase(body);
+            }
+            m_Scripts.erase(std::remove_if(m_Scripts.begin(), m_Scripts.end(),
+                [&](const Ref<LuaScript>& script){ return (entt::entity)script->GetEntity() == (entt::entity)entity; }),
+                m_Scripts.end());
+        }
         m_Registry.destroy(entity);
     }
 

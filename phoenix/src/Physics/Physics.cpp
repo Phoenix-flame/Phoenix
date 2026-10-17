@@ -331,7 +331,18 @@ namespace Phoenix{
     void PhysicsWorld::RemoveBody(uint32_t bodyID){
         if (bodyID == InvalidBody) { return; }
         JPH::BodyID id(bodyID);
-        JPH::BodyInterface& bodyInterface = m_Impl->physicsSystem.GetBodyInterface();
+        JPH::PhysicsSystem& system = m_Impl->physicsSystem;
+
+        // Constraints hold raw Body pointers: remove the ones attached to this body
+        // first, or the next Step would read the destroyed body.
+        for (const JPH::Ref<JPH::Constraint>& constraint : system.GetConstraints()){
+            if (constraint->GetType() != JPH::EConstraintType::TwoBodyConstraint) { continue; }
+            auto* twoBody = static_cast<JPH::TwoBodyConstraint*>(constraint.GetPtr());
+            if (twoBody->GetBody1()->GetID() == id || twoBody->GetBody2()->GetID() == id)
+                system.RemoveConstraint(constraint);
+        }
+
+        JPH::BodyInterface& bodyInterface = system.GetBodyInterface();
         bodyInterface.RemoveBody(id);
         bodyInterface.DestroyBody(id);
     }

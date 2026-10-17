@@ -1,7 +1,20 @@
 #ifndef __ASSERT__
 #define __ASSERT__
 #include <filesystem>
+#include <Phoenix/core/log.h>
 
+// Helpers the assert macros rely on (they were never defined, so enabling
+// PHX_ENABLE_ASSERTS failed to compile).
+#define PHX_EXPAND_MACRO(x) x
+#define PHX_STRINGIFY_MACRO(x) #x
+#if defined(_MSC_VER)
+	#define PHX_DEBUGBREAK() __debugbreak()
+#else
+	#include <csignal>
+	#define PHX_DEBUGBREAK() std::raise(SIGTRAP)
+#endif
+
+// Enabled in Debug builds (see phoenix/CMakeLists.txt).
 #ifdef PHX_ENABLE_ASSERTS
 
 	// Alteratively we could use the same "default" message for both "WITH_MSG" and "NO_MSG" and

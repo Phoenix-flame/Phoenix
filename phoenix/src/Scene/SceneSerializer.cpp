@@ -16,8 +16,11 @@ namespace Phoenix{
         return out;
     }
 
-    static glm::vec3 ReadVec3(const YAML::Node& node){
-        return { node[0].as<float>(), node[1].as<float>(), node[2].as<float>() };
+    // Readers fall back to the given default when a key is missing or malformed (older
+    // or hand-edited scene files), instead of throwing and aborting the whole load.
+    static glm::vec3 ReadVec3(const YAML::Node& node, const glm::vec3& fallback = glm::vec3(0.0f)){
+        if (!node || !node.IsSequence() || node.size() < 3) { return fallback; }
+        return { node[0].as<float>(fallback.x), node[1].as<float>(fallback.y), node[2].as<float>(fallback.z) };
     }
 
     static void SerializeMaterial(YAML::Emitter& out, const Material& material){
@@ -36,15 +39,16 @@ namespace Phoenix{
 
     static Material ReadMaterial(const YAML::Node& node){
         Material material;
-        material.ambient   = ReadVec3(node["ambient"]);
-        material.diffuse   = ReadVec3(node["diffuse"]);
-        material.specular  = ReadVec3(node["specular"]);
-        material.shininess = node["shininess"].as<float>();
-        if (node["emissive"])         material.emissive = ReadVec3(node["emissive"]);
-        if (node["emissiveStrength"]) material.emissiveStrength = node["emissiveStrength"].as<float>();
-        if (node["reflectivity"])     material.reflectivity = node["reflectivity"].as<float>();
-        if (node["diffusePath"])      material.diffusePath = node["diffusePath"].as<std::string>();
-        if (node["normalPath"])       material.normalPath = node["normalPath"].as<std::string>();
+        if (!node || !node.IsMap()) { return material; }
+        material.ambient   = ReadVec3(node["ambient"], material.ambient);
+        material.diffuse   = ReadVec3(node["diffuse"], material.diffuse);
+        material.specular  = ReadVec3(node["specular"], material.specular);
+        material.shininess = node["shininess"].as<float>(material.shininess);
+        material.emissive  = ReadVec3(node["emissive"], material.emissive);
+        material.emissiveStrength = node["emissiveStrength"].as<float>(material.emissiveStrength);
+        material.reflectivity = node["reflectivity"].as<float>(material.reflectivity);
+        material.diffusePath = node["diffusePath"].as<std::string>(material.diffusePath);
+        material.normalPath  = node["normalPath"].as<std::string>(material.normalPath);
         return material;
     }
 
@@ -331,37 +335,41 @@ namespace Phoenix{
     // when the path is unchanged, so undo/redo of unrelated edits never reloads it.
     void SceneSerializer::ApplyEntity(Entity entity, const YAML::Node& node){
         if (node["TagComponent"])
-            entity.GetComponent<TagComponent>().Tag = node["TagComponent"]["Tag"].as<std::string>();
+            entity.GetComponent<TagComponent>().Tag = node["TagComponent"]["Tag"].as<std::string>("Entity");
 
         if (auto n = node["TransformComponent"]){
             auto& tc = entity.GetComponent<TransformComponent>();
-            tc.Translation = ReadVec3(n["Translation"]);
-            tc.Rotation    = ReadVec3(n["Rotation"]);
-            tc.Scale       = ReadVec3(n["Scale"]);
+            const TransformComponent def{}; // fallbacks for keys missing from the file
+            tc.Translation = ReadVec3(n["Translation"], def.Translation);
+            tc.Rotation    = ReadVec3(n["Rotation"], def.Rotation);
+            tc.Scale       = ReadVec3(n["Scale"], def.Scale);
         }
 
         if (auto n = node["CameraComponent"]){
             auto& cc = entity.HasComponent<CameraComponent>() ? entity.GetComponent<CameraComponent>() : entity.AddComponent<CameraComponent>();
-            cc.primary = n["Primary"].as<bool>();
+            const CameraComponent def{}; // fallbacks for keys missing from the file
+            cc.primary = n["Primary"].as<bool>(def.primary);
             auto& camera = cc.camera;
-            camera.SetProjectionType((SceneCamera::ProjectionType)n["ProjectionType"].as<int>());
-            camera.SetPerspectiveVerticalFOV(n["PerspectiveFOV"].as<float>());
-            camera.SetPerspectiveNearClip(n["PerspectiveNear"].as<float>());
-            camera.SetPerspectiveFarClip(n["PerspectiveFar"].as<float>());
-            camera.SetOrthographicSize(n["OrthographicSize"].as<float>());
-            camera.SetOrthographicNearClip(n["OrthographicNear"].as<float>());
-            camera.SetOrthographicFarClip(n["OrthographicFar"].as<float>());
+            const SceneCamera& dc = def.camera;
+            camera.SetProjectionType((SceneCamera::ProjectionType)n["ProjectionType"].as<int>((int)dc.GetProjectionType()));
+            camera.SetPerspectiveVerticalFOV(n["PerspectiveFOV"].as<float>(dc.GetPerspectiveVerticalFOV()));
+            camera.SetPerspectiveNearClip(n["PerspectiveNear"].as<float>(dc.GetPerspectiveNearClip()));
+            camera.SetPerspectiveFarClip(n["PerspectiveFar"].as<float>(dc.GetPerspectiveFarClip()));
+            camera.SetOrthographicSize(n["OrthographicSize"].as<float>(dc.GetOrthographicSize()));
+            camera.SetOrthographicNearClip(n["OrthographicNear"].as<float>(dc.GetOrthographicNearClip()));
+            camera.SetOrthographicFarClip(n["OrthographicFar"].as<float>(dc.GetOrthographicFarClip()));
         }
         else if (entity.HasComponent<CameraComponent>()) entity.RemoveComponent<CameraComponent>();
 
         if (auto n = node["CameraFollowComponent"]){
             auto& f = entity.HasComponent<CameraFollowComponent>() ? entity.GetComponent<CameraFollowComponent>() : entity.AddComponent<CameraFollowComponent>();
-            f.target = n["Target"].as<std::string>();
-            f.distance = n["Distance"].as<float>();
-            f.height = n["Height"].as<float>();
-            f.lookHeight = n["LookHeight"].as<float>();
-            f.followYaw = n["FollowYaw"].as<bool>();
-            if (n["ModelForwardZ"]) f.modelForwardZ = n["ModelForwardZ"].as<bool>();
+            const CameraFollowComponent def{}; // fallbacks for keys missing from the file
+            f.target = n["Target"].as<std::string>(def.target);
+            f.distance = n["Distance"].as<float>(def.distance);
+            f.height = n["Height"].as<float>(def.height);
+            f.lookHeight = n["LookHeight"].as<float>(def.lookHeight);
+            f.followYaw = n["FollowYaw"].as<bool>(def.followYaw);
+            if (n["ModelForwardZ"]) f.modelForwardZ = n["ModelForwardZ"].as<bool>(def.modelForwardZ);
         }
         else if (entity.HasComponent<CameraFollowComponent>()) entity.RemoveComponent<CameraFollowComponent>();
 
@@ -373,29 +381,31 @@ namespace Phoenix{
 
         if (auto n = node["PointLightComponent"]){
             auto& pl = entity.HasComponent<PointLightComponent>() ? entity.GetComponent<PointLightComponent>() : entity.AddComponent<PointLightComponent>();
-            pl.ambient   = ReadVec3(n["ambient"]);
-            pl.diffuse   = ReadVec3(n["diffuse"]);
-            pl.specular  = ReadVec3(n["specular"]);
-            pl.isActive  = n["isActive"].as<bool>();
-            pl.constant  = n["constant"].as<float>();
-            pl.linear    = n["linear"].as<float>();
-            pl.quadratic = n["quadratic"].as<float>();
+            const PointLightComponent def{}; // fallbacks for keys missing from the file
+            pl.ambient   = ReadVec3(n["ambient"], def.ambient);
+            pl.diffuse   = ReadVec3(n["diffuse"], def.diffuse);
+            pl.specular  = ReadVec3(n["specular"], def.specular);
+            pl.isActive  = n["isActive"].as<bool>(def.isActive);
+            pl.constant  = n["constant"].as<float>(def.constant);
+            pl.linear    = n["linear"].as<float>(def.linear);
+            pl.quadratic = n["quadratic"].as<float>(def.quadratic);
         }
         else if (entity.HasComponent<PointLightComponent>()) entity.RemoveComponent<PointLightComponent>();
 
         if (auto n = node["DirLightComponent"]){
             auto& dl = entity.HasComponent<DirLightComponent>() ? entity.GetComponent<DirLightComponent>() : entity.AddComponent<DirLightComponent>();
-            dl.ambient  = ReadVec3(n["ambient"]);
-            dl.diffuse  = ReadVec3(n["diffuse"]);
-            dl.specular = ReadVec3(n["specular"]);
-            dl.isActive = n["isActive"].as<bool>();
-            if (n["castsShadow"]) dl.castsShadow = n["castsShadow"].as<bool>();
+            const DirLightComponent def{}; // fallbacks for keys missing from the file
+            dl.ambient  = ReadVec3(n["ambient"], def.ambient);
+            dl.diffuse  = ReadVec3(n["diffuse"], def.diffuse);
+            dl.specular = ReadVec3(n["specular"], def.specular);
+            dl.isActive = n["isActive"].as<bool>(def.isActive);
+            if (n["castsShadow"]) dl.castsShadow = n["castsShadow"].as<bool>(def.castsShadow);
         }
         else if (entity.HasComponent<DirLightComponent>()) entity.RemoveComponent<DirLightComponent>();
 
         if (auto n = node["MeshComponent"]){
             auto& mc = entity.HasComponent<MeshComponent>() ? entity.GetComponent<MeshComponent>() : entity.AddComponent<MeshComponent>();
-            std::string path = n["Path"].as<std::string>();
+            std::string path = n["Path"].as<std::string>("");
             if (path.empty())
                 mc.model = nullptr;
             else if (!mc.model || mc.model->GetPath() != path)
@@ -406,7 +416,8 @@ namespace Phoenix{
 
         if (auto n = node["RigidBodyComponent"]){
             auto& rb = entity.HasComponent<RigidBodyComponent>() ? entity.GetComponent<RigidBodyComponent>() : entity.AddComponent<RigidBodyComponent>();
-            rb.type = (RigidBodyComponent::Type)n["Type"].as<int>();
+            const RigidBodyComponent def{}; // fallbacks for keys missing from the file
+            rb.type = (RigidBodyComponent::Type)n["Type"].as<int>((int)def.type);
             // Assign every field (with its default when absent): the component may be
             // reused from the live scene, so stale values must not survive.
             rb.friction = n["Friction"] ? n["Friction"].as<float>() : 0.5f;
@@ -423,27 +434,31 @@ namespace Phoenix{
 
         if (auto n = node["SphereColliderComponent"]){
             auto& sc = entity.HasComponent<SphereColliderComponent>() ? entity.GetComponent<SphereColliderComponent>() : entity.AddComponent<SphereColliderComponent>();
-            sc.radius = n["Radius"].as<float>();
+            const SphereColliderComponent def{}; // fallbacks for keys missing from the file
+            sc.radius = n["Radius"].as<float>(def.radius);
         }
         else if (entity.HasComponent<SphereColliderComponent>()) entity.RemoveComponent<SphereColliderComponent>();
 
         if (auto n = node["CapsuleColliderComponent"]){
             auto& cc = entity.HasComponent<CapsuleColliderComponent>() ? entity.GetComponent<CapsuleColliderComponent>() : entity.AddComponent<CapsuleColliderComponent>();
-            cc.radius = n["Radius"].as<float>();
-            cc.halfHeight = n["HalfHeight"].as<float>();
+            const CapsuleColliderComponent def{}; // fallbacks for keys missing from the file
+            cc.radius = n["Radius"].as<float>(def.radius);
+            cc.halfHeight = n["HalfHeight"].as<float>(def.halfHeight);
         }
         else if (entity.HasComponent<CapsuleColliderComponent>()) entity.RemoveComponent<CapsuleColliderComponent>();
 
         if (auto n = node["CylinderColliderComponent"]){
             auto& cc = entity.HasComponent<CylinderColliderComponent>() ? entity.GetComponent<CylinderColliderComponent>() : entity.AddComponent<CylinderColliderComponent>();
-            cc.radius = n["Radius"].as<float>();
-            cc.halfHeight = n["HalfHeight"].as<float>();
+            const CylinderColliderComponent def{}; // fallbacks for keys missing from the file
+            cc.radius = n["Radius"].as<float>(def.radius);
+            cc.halfHeight = n["HalfHeight"].as<float>(def.halfHeight);
         }
         else if (entity.HasComponent<CylinderColliderComponent>()) entity.RemoveComponent<CylinderColliderComponent>();
 
         if (auto n = node["JointComponent"]){
             auto& j = entity.HasComponent<JointComponent>() ? entity.GetComponent<JointComponent>() : entity.AddComponent<JointComponent>();
-            j.type = (JointComponent::Type)n["Type"].as<int>();
+            const JointComponent def{}; // fallbacks for keys missing from the file
+            j.type = (JointComponent::Type)n["Type"].as<int>((int)def.type);
             j.connectedTag = n["ConnectedTag"] ? n["ConnectedTag"].as<std::string>() : std::string();
             j.pivot = n["Pivot"] ? ReadVec3(n["Pivot"]) : glm::vec3(0.0f);
             j.axis = n["Axis"] ? ReadVec3(n["Axis"]) : glm::vec3(0.0f, 0.0f, 1.0f);
@@ -457,13 +472,15 @@ namespace Phoenix{
 
         if (auto n = node["BoxColliderComponent"]){
             auto& bc = entity.HasComponent<BoxColliderComponent>() ? entity.GetComponent<BoxColliderComponent>() : entity.AddComponent<BoxColliderComponent>();
-            bc.halfExtents = ReadVec3(n["HalfExtents"]);
+            const BoxColliderComponent def{}; // fallbacks for keys missing from the file
+            bc.halfExtents = ReadVec3(n["HalfExtents"], def.halfExtents);
         }
         else if (entity.HasComponent<BoxColliderComponent>()) entity.RemoveComponent<BoxColliderComponent>();
 
         if (auto n = node["MeshColliderComponent"]){
             auto& mc = entity.HasComponent<MeshColliderComponent>() ? entity.GetComponent<MeshColliderComponent>() : entity.AddComponent<MeshColliderComponent>();
-            mc.convex = n["Convex"].as<bool>();
+            const MeshColliderComponent def{}; // fallbacks for keys missing from the file
+            mc.convex = n["Convex"].as<bool>(def.convex);
         }
         else if (entity.HasComponent<MeshColliderComponent>()) entity.RemoveComponent<MeshColliderComponent>();
 
@@ -474,9 +491,10 @@ namespace Phoenix{
 
         if (auto n = node["TerrainComponent"]){
             auto& t = entity.HasComponent<TerrainComponent>() ? entity.GetComponent<TerrainComponent>() : entity.AddComponent<TerrainComponent>();
-            t.resolution = n["Resolution"].as<int>();
-            t.size = n["Size"].as<float>();
-            t.generateCollider = n["GenerateCollider"].as<bool>();
+            const TerrainComponent def{}; // fallbacks for keys missing from the file
+            t.resolution = n["Resolution"].as<int>(def.resolution);
+            t.size = n["Size"].as<float>(def.size);
+            t.generateCollider = n["GenerateCollider"].as<bool>(def.generateCollider);
             t.material = ReadMaterial(n["Material"]);
             t.heights.clear();
             for (auto h : n["Heights"]) { t.heights.push_back(h.as<float>()); }
@@ -488,13 +506,14 @@ namespace Phoenix{
 
         if (auto n = node["WaterComponent"]){
             auto& w = entity.HasComponent<WaterComponent>() ? entity.GetComponent<WaterComponent>() : entity.AddComponent<WaterComponent>();
-            w.size = n["Size"].as<float>();
-            w.resolution = n["Resolution"].as<int>();
-            w.color = ReadVec3(n["Color"]);
-            w.alpha = n["Alpha"].as<float>();
-            w.amplitude = n["Amplitude"].as<float>();
-            w.waveScale = n["WaveScale"].as<float>();
-            w.speed = n["Speed"].as<float>();
+            const WaterComponent def{}; // fallbacks for keys missing from the file
+            w.size = n["Size"].as<float>(def.size);
+            w.resolution = n["Resolution"].as<int>(def.resolution);
+            w.color = ReadVec3(n["Color"], def.color);
+            w.alpha = n["Alpha"].as<float>(def.alpha);
+            w.amplitude = n["Amplitude"].as<float>(def.amplitude);
+            w.waveScale = n["WaveScale"].as<float>(def.waveScale);
+            w.speed = n["Speed"].as<float>(def.speed);
             w.choppiness = n["Choppiness"] ? n["Choppiness"].as<float>() : 0.6f;
             w.foam = n["Foam"] ? n["Foam"].as<float>() : 0.5f;
             w.interactiveRipples = n["InteractiveRipples"] ? n["InteractiveRipples"].as<bool>() : true;
@@ -508,11 +527,12 @@ namespace Phoenix{
 
         if (auto n = node["AnimationComponent"]){
             auto& a = entity.HasComponent<AnimationComponent>() ? entity.GetComponent<AnimationComponent>() : entity.AddComponent<AnimationComponent>();
-            a.clip = n["Clip"].as<int>();
-            a.playing = n["Playing"].as<bool>();
-            a.speed = n["Speed"].as<float>();
-            if (n["LoopMode"])  a.loopMode = n["LoopMode"].as<int>();
-            if (n["Crossfade"]) a.crossfade = n["Crossfade"].as<float>();
+            const AnimationComponent def{}; // fallbacks for keys missing from the file
+            a.clip = n["Clip"].as<int>(def.clip);
+            a.playing = n["Playing"].as<bool>(def.playing);
+            a.speed = n["Speed"].as<float>(def.speed);
+            if (n["LoopMode"])  a.loopMode = n["LoopMode"].as<int>(def.loopMode);
+            if (n["Crossfade"]) a.crossfade = n["Crossfade"].as<float>(def.crossfade);
             a.extraClips.clear();
             if (n["ExtraClips"]) { for (auto p : n["ExtraClips"]) a.extraClips.push_back(p.as<std::string>()); }
             a.events.clear();
@@ -533,16 +553,32 @@ namespace Phoenix{
 
         if (auto n = node["PrimitiveComponent"]){
             auto& p = entity.HasComponent<PrimitiveComponent>() ? entity.GetComponent<PrimitiveComponent>() : entity.AddComponent<PrimitiveComponent>();
-            p.type = (PrimitiveComponent::Type)n["Type"].as<int>();
+            const PrimitiveComponent def{}; // fallbacks for keys missing from the file
+            p.type = (PrimitiveComponent::Type)n["Type"].as<int>((int)def.type);
             p.material = ReadMaterial(n["Material"]);
         }
         else if (entity.HasComponent<PrimitiveComponent>()) entity.RemoveComponent<PrimitiveComponent>();
 
         if (auto n = node["LuaScriptComponent"]){
             auto& s = entity.HasComponent<LuaScriptComponent>() ? entity.GetComponent<LuaScriptComponent>() : entity.AddComponent<LuaScriptComponent>();
-            s.source = n["Source"].as<std::string>();
+            const LuaScriptComponent def{}; // fallbacks for keys missing from the file
+            s.source = n["Source"].as<std::string>(def.source);
         }
         else if (entity.HasComponent<LuaScriptComponent>()) entity.RemoveComponent<LuaScriptComponent>();
+    }
+
+    // Missing keys fall back to defaults inside ApplyEntity; this catches what's left
+    // (e.g. a list element of the wrong type) so one bad entity doesn't abort the load
+    // or escape as an uncaught exception.
+    void SceneSerializer::TryApplyEntity(Entity entity, const YAML::Node& node){
+        try{
+            ApplyEntity(entity, node);
+        }
+        catch (const YAML::Exception& e){
+            PHX_CORE_ERROR("Scene entity '{0}' partially loaded: {1}",
+                entity.HasComponent<TagComponent>() ? entity.GetComponent<TagComponent>().Tag : std::string(),
+                e.what());
+        }
     }
 
     bool SceneSerializer::DeserializeNode(const YAML::Node& data){
@@ -556,11 +592,11 @@ namespace Phoenix{
         for (auto entityNode : data["Entities"]){
             std::string name;
             if (entityNode["TagComponent"])
-                name = entityNode["TagComponent"]["Tag"].as<std::string>();
+                name = entityNode["TagComponent"]["Tag"].as<std::string>("Entity");
 
             // CreateEntity already attaches a TransformComponent and a TagComponent.
             Entity entity = m_Scene->CreateEntity(name);
-            ApplyEntity(entity, entityNode);
+            TryApplyEntity(entity, entityNode);
         }
 
         return true;
@@ -587,8 +623,11 @@ namespace Phoenix{
 
         // Collect the snapshot's entity ids.
         std::unordered_set<uint32_t> targetIds;
-        for (std::size_t i = 0; i < entities.size(); i++)
-            targetIds.insert(entities[i]["Entity"].as<uint32_t>());
+        const uint32_t noId = (uint32_t)entt::entity{ entt::null };
+        for (std::size_t i = 0; i < entities.size(); i++){
+            uint32_t id = entities[i]["Entity"].as<uint32_t>(noId);
+            if (id != noId) { targetIds.insert(id); }
+        }
 
         // Destroy live entities not present in the snapshot (collect first to avoid
         // mutating the storage while iterating it).
@@ -604,16 +643,16 @@ namespace Phoenix{
         // Update matching entities in place; create any that are missing.
         for (std::size_t i = 0; i < entities.size(); i++){
             YAML::Node node = entities[i];
-            entt::entity handle = (entt::entity)node["Entity"].as<uint32_t>();
+            entt::entity handle = (entt::entity)node["Entity"].as<uint32_t>(noId); // missing -> created new
             Entity entity;
             if (registry.valid(handle))
                 entity = Entity{ handle, m_Scene.get() };
             else{
                 std::string name;
-                if (node["TagComponent"]) name = node["TagComponent"]["Tag"].as<std::string>();
+                if (node["TagComponent"]) name = node["TagComponent"]["Tag"].as<std::string>("Entity");
                 entity = m_Scene->CreateEntity(name);
             }
-            ApplyEntity(entity, node);
+            TryApplyEntity(entity, node);
         }
 
         return true;

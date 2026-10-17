@@ -5,6 +5,7 @@
 #include <unordered_set>
 
 struct lua_State;
+struct lua_Debug;
 
 namespace Phoenix{
 
@@ -35,9 +36,18 @@ namespace Phoenix{
         bool KeyDown(int keycode);
         bool KeyPressed(int keycode);
     private:
+        // Pops the function + nargs arguments already pushed and calls it under the
+        // instruction budget. On error logs it (prefixed with `what`) and disables the
+        // script. Returns false on error.
+        bool ProtectedCall(int nargs, const char* what);
+        // Count hook: aborts a call that runs past the instruction budget, so an
+        // infinite loop in a script can't freeze the editor.
+        static void InstructionHook(lua_State* L, lua_Debug* ar);
+    private:
         Entity m_Entity;
         lua_State* m_L = nullptr;
         bool m_Valid = false;
+        int m_HookTicks = 0; // count-hook firings during the current call
         std::unordered_set<int> m_KeysPrev; // keys down at the start of last frame
         std::unordered_set<int> m_KeysCur;  // keys queried/down this frame
     };

@@ -42,6 +42,8 @@ target_compile_features(${APP_TARGET}
     PRIVATE
     cxx_std_17
 )
+# Debug builds: PHX_CORE_ASSERT checks and the OpenGL debug-message callback.
+target_compile_definitions(${APP_TARGET} PUBLIC "$<$<CONFIG:Debug>:PHX_DEBUG;PHX_ENABLE_ASSERTS>")
 
 
 find_package(glfw3 3.3 REQUIRED)
