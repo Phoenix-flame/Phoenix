@@ -1,9 +1,43 @@
 #include <Phoenix/renderer/Animation.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <algorithm>
 #include <cmath>
 
 namespace Phoenix{
+
+    // ---- JointPose ----
+
+    glm::mat4 JointPose::ToMatrix() const{
+        // T * R * S without the three matrix products.
+        glm::mat4 m = glm::mat4_cast(rotation);
+        m[0] *= scale.x;
+        m[1] *= scale.y;
+        m[2] *= scale.z;
+        m[3] = glm::vec4(translation, 1.0f);
+        return m;
+    }
+
+    JointPose JointPose::FromMatrix(const glm::mat4& m){
+        JointPose p;
+        p.translation = glm::vec3(m[3]);
+        glm::vec3 c0(m[0]), c1(m[1]), c2(m[2]);
+        p.scale = glm::vec3(glm::length(c0), glm::length(c1), glm::length(c2));
+        // A mirrored basis: fold the reflection into one scale axis so the rest is a rotation.
+        if (glm::dot(glm::cross(c0, c1), c2) < 0.0f) { p.scale.x = -p.scale.x; }
+        if (p.scale.x == 0.0f || p.scale.y == 0.0f || p.scale.z == 0.0f) { return p; }
+        glm::mat3 r(c0 / p.scale.x, c1 / p.scale.y, c2 / p.scale.z);
+        p.rotation = glm::normalize(glm::quat_cast(r));
+        return p;
+    }
+
+    JointPose JointPose::Blend(const JointPose& a, const JointPose& b, float t){
+        JointPose p;
+        p.translation = glm::mix(a.translation, b.translation, t);
+        p.rotation = glm::normalize(glm::slerp(a.rotation, b.rotation, t)); // shortest arc
+        p.scale = glm::mix(a.scale, b.scale, t);
+        return p;
+    }
 
     // ---- Bone ----
 
@@ -14,66 +48,90 @@ namespace Phoenix{
         : m_Positions(std::move(positions)), m_Rotations(std::move(rotations)),
           m_Scales(std::move(scales)), m_Name(name), m_ID(id) {}
 
-    float Bone::GetScaleFactor(float lastTime, float nextTime, float t){
-        float midway = t - lastTime;
-        float frames = nextTime - lastTime;
-        if (frames <= 0.0f) { return 0.0f; }
-        return midway / frames;
+    // Index of the last key at or before t (0 when t precedes the first key), and the
+    // [0, 1] factor towards the next key. Binary search: long clips have hundreds of keys.
+    template<typename Key>
+    static size_t FindKey(const std::vector<Key>& keys, float t, float& factor){
+        auto it = std::upper_bound(keys.begin(), keys.end(), t,
+            [](float value, const Key& key){ return value < key.timeStamp; });
+        size_t i = (it == keys.begin()) ? 0 : (size_t)(it - keys.begin()) - 1;
+        factor = 0.0f;
+        if (i + 1 < keys.size()){
+            float span = keys[i + 1].timeStamp - keys[i].timeStamp;
+            if (span > 0.0f) { factor = glm::clamp((t - keys[i].timeStamp) / span, 0.0f, 1.0f); }
+        }
+        return i;
     }
 
-    int Bone::GetPositionIndex(float t) const{
-        for (size_t i = 0; i + 1 < m_Positions.size(); i++)
-            if (t < m_Positions[i + 1].timeStamp) { return (int)i; }
-        return m_Positions.empty() ? 0 : (int)m_Positions.size() - 1;
-    }
-    int Bone::GetRotationIndex(float t) const{
-        for (size_t i = 0; i + 1 < m_Rotations.size(); i++)
-            if (t < m_Rotations[i + 1].timeStamp) { return (int)i; }
-        return m_Rotations.empty() ? 0 : (int)m_Rotations.size() - 1;
-    }
-    int Bone::GetScaleIndex(float t) const{
-        for (size_t i = 0; i + 1 < m_Scales.size(); i++)
-            if (t < m_Scales[i + 1].timeStamp) { return (int)i; }
-        return m_Scales.empty() ? 0 : (int)m_Scales.size() - 1;
-    }
-
-    glm::mat4 Bone::InterpolatePosition(float t) const{
-        if (m_Positions.empty()) { return glm::mat4(1.0f); }
-        int p0 = GetPositionIndex(t);
-        if (p0 + 1 >= (int)m_Positions.size()) { return glm::translate(glm::mat4(1.0f), m_Positions[p0].position); }
-        int p1 = p0 + 1;
-        float factor = GetScaleFactor(m_Positions[p0].timeStamp, m_Positions[p1].timeStamp, t);
-        glm::vec3 pos = glm::mix(m_Positions[p0].position, m_Positions[p1].position, factor);
-        return glm::translate(glm::mat4(1.0f), pos);
-    }
-
-    glm::mat4 Bone::InterpolateRotation(float t) const{
-        if (m_Rotations.empty()) { return glm::mat4(1.0f); }
-        int p0 = GetRotationIndex(t);
-        if (p0 + 1 >= (int)m_Rotations.size()) { return glm::mat4_cast(glm::normalize(m_Rotations[p0].orientation)); }
-        int p1 = p0 + 1;
-        float factor = GetScaleFactor(m_Rotations[p0].timeStamp, m_Rotations[p1].timeStamp, t);
-        glm::quat q = glm::slerp(m_Rotations[p0].orientation, m_Rotations[p1].orientation, factor);
-        return glm::mat4_cast(glm::normalize(q));
-    }
-
-    glm::mat4 Bone::InterpolateScaling(float t) const{
-        if (m_Scales.empty()) { return glm::mat4(1.0f); }
-        int p0 = GetScaleIndex(t);
-        if (p0 + 1 >= (int)m_Scales.size()) { return glm::scale(glm::mat4(1.0f), m_Scales[p0].scale); }
-        int p1 = p0 + 1;
-        float factor = GetScaleFactor(m_Scales[p0].timeStamp, m_Scales[p1].timeStamp, t);
-        glm::vec3 s = glm::mix(m_Scales[p0].scale, m_Scales[p1].scale, factor);
-        return glm::scale(glm::mat4(1.0f), s);
-    }
-
-    void Bone::Update(float animationTime){
-        m_LocalTransform = InterpolatePosition(animationTime)
-                         * InterpolateRotation(animationTime)
-                         * InterpolateScaling(animationTime);
+    JointPose Bone::Sample(float t) const{
+        JointPose p;
+        float f;
+        if (!m_Positions.empty()){
+            size_t i = FindKey(m_Positions, t, f);
+            p.translation = (i + 1 < m_Positions.size())
+                ? glm::mix(m_Positions[i].position, m_Positions[i + 1].position, f)
+                : m_Positions[i].position;
+        }
+        if (!m_Rotations.empty()){
+            size_t i = FindKey(m_Rotations, t, f);
+            p.rotation = (i + 1 < m_Rotations.size())
+                ? glm::slerp(m_Rotations[i].orientation, m_Rotations[i + 1].orientation, f)
+                : m_Rotations[i].orientation;
+            p.rotation = glm::normalize(p.rotation);
+        }
+        if (!m_Scales.empty()){
+            size_t i = FindKey(m_Scales, t, f);
+            p.scale = (i + 1 < m_Scales.size())
+                ? glm::mix(m_Scales[i].scale, m_Scales[i + 1].scale, f)
+                : m_Scales[i].scale;
+        }
+        return p;
     }
 
     // ---- Animation ----
+
+    void Animation::BuildNodeCache(){
+        m_Nodes.clear();
+        m_NodeIndex.clear();
+
+        std::unordered_map<std::string, int> channelByName;
+        for (size_t i = 0; i < m_Bones.size(); i++)
+            channelByName.emplace(m_Bones[i].GetBoneName(), (int)i);
+
+        // Iterative pre-order walk, so every parent lands before its children.
+        struct Item { const AssimpNodeData* node; int parent; };
+        std::vector<Item> stack{ { &m_RootNode, -1 } };
+        while (!stack.empty()){
+            Item item = stack.back();
+            stack.pop_back();
+
+            Node n;
+            n.name = item.node->name;
+            n.parent = item.parent;
+            n.bindLocal = item.node->transformation;
+            n.bindPose = JointPose::FromMatrix(n.bindLocal);
+            auto ch = channelByName.find(n.name);
+            if (ch != channelByName.end()) { n.channel = ch->second; }
+            auto bi = m_BoneInfoMap.find(n.name);
+            if (bi != m_BoneInfoMap.end() && bi->second.id >= 0 && bi->second.id < MAX_BONES){
+                n.boneIndex = bi->second.id;
+                n.offset = bi->second.offset;
+            }
+
+            int index = (int)m_Nodes.size();
+            m_NodeIndex.emplace(n.name, index); // first wins on duplicate names
+            m_Nodes.push_back(std::move(n));
+
+            // Push children reversed so they pop in their original order.
+            for (auto c = item.node->children.rbegin(); c != item.node->children.rend(); ++c)
+                stack.push_back({ &*c, index });
+        }
+    }
+
+    int Animation::FindNode(const std::string& name) const{
+        auto it = m_NodeIndex.find(name);
+        return it != m_NodeIndex.end() ? it->second : -1;
+    }
 
     Bone* Animation::FindBone(const std::string& name){
         for (auto& bone : m_Bones)
@@ -85,8 +143,13 @@ namespace Phoenix{
 
     Animator::Animator(){
         m_FinalBoneMatrices.resize(MAX_BONES, glm::mat4(1.0f));
-        m_PoseA.resize(MAX_BONES, glm::mat4(1.0f));
-        m_PoseB.resize(MAX_BONES, glm::mat4(1.0f));
+    }
+
+    void Animator::CancelBlend(){
+        m_PrevAnimation = nullptr;
+        m_BlendElapsed = m_BlendDuration = 0.0f;
+        m_SourceFrozen = false;
+        m_LastBlendedValid = false;
     }
 
     void Animator::PlayAnimation(Animation* animation){
@@ -94,22 +157,44 @@ namespace Phoenix{
         m_CurrentTime = 0.0f;
         m_Finished = false;
         m_PingPongDir = 1;
-        m_PrevAnimation = nullptr; // cancel any in-flight crossfade
-        m_BlendElapsed = m_BlendDuration = 0.0f;
+        CancelBlend(); // cancel any in-flight crossfade
     }
 
     void Animator::CrossFade(Animation* next, float fadeSeconds){
         if (!next) { return; }
         if (!m_CurrentAnimation || fadeSeconds <= 0.0f){ PlayAnimation(next); return; }
-        // Snapshot the outgoing clip as the blend source.
+
+        if (m_PrevAnimation && m_LastBlendedValid){
+            // Interrupting a crossfade: start from the pose actually on screen rather
+            // than snapping back to the outgoing clip.
+            m_FrozenPose = m_LastBlended;
+            m_SourceFrozen = true;
+        }
+        else{
+            m_PrevTime = m_CurrentTime;
+            m_SourceFrozen = false;
+        }
         m_PrevAnimation = m_CurrentAnimation;
-        m_PrevTime = m_CurrentTime;
+        m_LastBlendedValid = false;
+
         m_CurrentAnimation = next;
         m_CurrentTime = 0.0f;
         m_Finished = false;
         m_PingPongDir = 1;
         m_BlendDuration = fadeSeconds;
         m_BlendElapsed = 0.0f;
+        BuildBlendMap();
+    }
+
+    void Animator::BuildBlendMap(){
+        const auto& nodes = m_CurrentAnimation->GetNodes();
+        m_BlendMap.resize(nodes.size());
+        if (m_PrevAnimation == m_CurrentAnimation){
+            for (size_t i = 0; i < nodes.size(); i++) { m_BlendMap[i] = (int)i; }
+            return;
+        }
+        for (size_t i = 0; i < nodes.size(); i++)
+            m_BlendMap[i] = m_PrevAnimation->FindNode(nodes[i].name);
     }
 
     void Animator::Stop(){
@@ -117,8 +202,7 @@ namespace Phoenix{
         m_Paused = true;
         m_Finished = false;
         m_PingPongDir = 1;
-        m_PrevAnimation = nullptr;
-        m_BlendElapsed = m_BlendDuration = 0.0f;
+        CancelBlend();
     }
 
     void Animator::Seek(float seconds){
@@ -127,8 +211,7 @@ namespace Phoenix{
         float dur = m_CurrentAnimation->GetDuration();
         m_CurrentTime = glm::clamp(seconds * tps, 0.0f, dur);
         m_Finished = false;
-        m_PrevAnimation = nullptr; // a manual seek cancels any crossfade
-        m_BlendElapsed = m_BlendDuration = 0.0f;
+        CancelBlend(); // a manual seek cancels any crossfade
     }
 
     float Animator::GetCurrentSeconds() const{
@@ -179,50 +262,67 @@ namespace Phoenix{
             if (!m_Paused && dt > 0.0f){
                 m_BlendElapsed += dt;
                 float pdur = m_PrevAnimation->GetDuration();
-                if (pdur > 0.0f){
-                    m_PrevTime += m_PrevAnimation->GetTicksPerSecond() * dt * m_Speed;
-                    m_PrevTime = std::fmod(m_PrevTime, pdur);
+                if (!m_SourceFrozen && pdur > 0.0f){
+                    m_PrevTime += m_PrevAnimation->GetTicksPerSecond() * dt * std::abs(m_Speed);
+                    m_PrevTime = (m_LoopMode == LoopMode::Loop) ? std::fmod(m_PrevTime, pdur)
+                                                                : std::min(m_PrevTime, pdur);
                 }
             }
             float t = (m_BlendDuration > 0.0f) ? glm::clamp(m_BlendElapsed / m_BlendDuration, 0.0f, 1.0f) : 1.0f;
-            ComputePose(m_PrevAnimation, m_PrevTime, m_PoseA);
-            ComputePose(m_CurrentAnimation, m_CurrentTime, m_PoseB);
-            for (int i = 0; i < MAX_BONES; i++)
-                m_FinalBoneMatrices[i] = m_PoseA[i] * (1.0f - t) + m_PoseB[i] * t; // matrix lerp (ok for short fades)
-            if (t >= 1.0f){ m_PrevAnimation = nullptr; m_BlendElapsed = m_BlendDuration = 0.0f; }
+            if (t >= 1.0f){
+                CancelBlend();
+                ComputePose();
+            }
+            else{
+                ComputeBlendedPose(t);
+            }
         }
         else{
-            ComputePose(m_CurrentAnimation, m_CurrentTime, m_FinalBoneMatrices);
+            ComputePose();
         }
     }
 
-    void Animator::ComputePose(Animation* anim, float timeTicks, std::vector<glm::mat4>& out){
-        ComputeNode(anim, &anim->GetRootNode(), glm::mat4(1.0f), timeTicks, out);
+    void Animator::ComputePose(){
+        Animation* anim = m_CurrentAnimation;
+        const auto& nodes = anim->GetNodes();
+        m_Globals.resize(nodes.size());
+        for (size_t i = 0; i < nodes.size(); i++){
+            const Animation::Node& n = nodes[i];
+            glm::mat4 local = (n.channel >= 0) ? anim->m_Bones[n.channel].Sample(m_CurrentTime).ToMatrix()
+                                               : n.bindLocal;
+            m_Globals[i] = (n.parent >= 0) ? m_Globals[n.parent] * local : local;
+            if (n.boneIndex >= 0)
+                m_FinalBoneMatrices[n.boneIndex] = anim->m_GlobalInverseTransform * m_Globals[i] * n.offset;
+        }
     }
 
-    void Animator::ComputeNode(Animation* anim, const AssimpNodeData* node,
-            const glm::mat4& parentTransform, float timeTicks, std::vector<glm::mat4>& out){
-        const std::string& nodeName = node->name;
-        glm::mat4 nodeTransform = node->transformation;
+    void Animator::ComputeBlendedPose(float t){
+        Animation* anim = m_CurrentAnimation;
+        Animation* src = m_PrevAnimation;
+        const auto& nodes = anim->GetNodes();
+        const auto& srcNodes = src->GetNodes();
+        m_Globals.resize(nodes.size());
+        m_LastBlended.resize(nodes.size());
 
-        Bone* bone = anim->FindBone(nodeName);
-        if (bone){
-            bone->Update(timeTicks);
-            nodeTransform = bone->GetLocalTransform();
+        for (size_t i = 0; i < nodes.size(); i++){
+            const Animation::Node& n = nodes[i];
+            JointPose pose = (n.channel >= 0) ? anim->m_Bones[n.channel].Sample(m_CurrentTime) : n.bindPose;
+
+            int j = m_BlendMap[i];
+            if (j >= 0){
+                JointPose from;
+                if (m_SourceFrozen && (size_t)j < m_FrozenPose.size()) { from = m_FrozenPose[j]; }
+                else if (srcNodes[j].channel >= 0) { from = src->m_Bones[srcNodes[j].channel].Sample(m_PrevTime); }
+                else { from = srcNodes[j].bindPose; }
+                pose = JointPose::Blend(from, pose, t);
+            }
+            m_LastBlended[i] = pose;
+
+            glm::mat4 local = pose.ToMatrix();
+            m_Globals[i] = (n.parent >= 0) ? m_Globals[n.parent] * local : local;
+            if (n.boneIndex >= 0)
+                m_FinalBoneMatrices[n.boneIndex] = anim->m_GlobalInverseTransform * m_Globals[i] * n.offset;
         }
-
-        glm::mat4 globalTransform = parentTransform * nodeTransform;
-
-        const auto& boneInfoMap = anim->GetBoneIDMap();
-        auto it = boneInfoMap.find(nodeName);
-        if (it != boneInfoMap.end()){
-            int index = it->second.id;
-            const glm::mat4& offset = it->second.offset;
-            if (index >= 0 && index < MAX_BONES)
-                out[index] = anim->m_GlobalInverseTransform * globalTransform * offset;
-        }
-
-        for (const auto& child : node->children)
-            ComputeNode(anim, &child, globalTransform, timeTicks, out);
+        m_LastBlendedValid = true;
     }
 }

@@ -196,6 +196,7 @@ namespace Phoenix{
         }
 
         out->m_BoneInfoMap = boneInfoMap; // snapshot (meshes' bones + channels' bones)
+        out->BuildNodeCache();
         return out;
     }
 
