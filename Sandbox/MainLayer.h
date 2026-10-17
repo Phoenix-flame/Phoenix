@@ -45,6 +45,9 @@ private:
     void Redo();
     void RestoreScene(const std::string& snapshot);
 
+    // Dock the editor panels around the viewport (first run, or View > Reset Layout).
+    void BuildDefaultLayout(ImGuiID dockspaceID);
+
     // Make scene the edited scene: stops any running simulation on the old one,
     // retargets the editor panels and starts a fresh undo history.
     void SetActiveScene(const Ref<Scene>& scene);
@@ -90,6 +93,10 @@ private:
     Scope<Phoenix::ShaderLibrary> m_ShaderLibrary;
 
     bool m_OverlayEnabled = true;
+
+    bool m_LayoutChecked = false; // first-frame check for a saved dock layout
+    bool m_ResetLayout = false;   // rebuild the default layout before the next DockSpace()
+    int m_SelectDefaultTabsFrames = 0; // frames left to select the default tabs after a rebuild
 
     // Active ImGuizmo operation: 0=translate, 1=rotate, 2=scale, -1=none.
     int m_GizmoType = 0;

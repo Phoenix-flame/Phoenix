@@ -1007,6 +1007,37 @@ bool MainLayer::MouseRay(const ImVec2& imageMin, glm::vec3& outOrigin, glm::vec3
     return true;
 }
 
+void MainLayer::BuildDefaultLayout(ImGuiID dockspaceID) {
+    //  +-----------------+---------------------------------+
+    //  | Scene | Settings|                                 |
+    //  | Textures | ...  |            Viewport             |
+    //  +-----------------+                                 |
+    //  |                 +---------------------------------+
+    //  |   Properties    |  Timeline | Script Editor       |
+    //  +-----------------+---------------------------------+
+    ImGui::DockBuilderRemoveNode(dockspaceID);
+    ImGui::DockBuilderAddNode(dockspaceID, ImGuiDockNodeFlags_DockSpace);
+    ImGui::DockBuilderSetNodeSize(dockspaceID, ImGui::GetMainViewport()->WorkSize);
+
+    ImGuiID center = dockspaceID;
+    ImGuiID left = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, 0.30f, nullptr, &center);
+    ImGuiID leftBottom = ImGui::DockBuilderSplitNode(left, ImGuiDir_Down, 0.55f, nullptr, &left);
+    ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.30f, nullptr, &center);
+
+    for (const char* name : { "Scene", "Settings", "Textures", "Profiler", "Shader Library" })
+        ImGui::DockBuilderDockWindow(name, left);
+    ImGui::DockBuilderDockWindow("Properties", leftBottom);
+    ImGui::DockBuilderDockWindow("Timeline", bottom);
+    ImGui::DockBuilderDockWindow("Script Editor", bottom);
+    ImGui::DockBuilderDockWindow("Viewport", center);
+
+    ImGui::DockBuilderFinish(dockspaceID);
+
+    // New windows take focus as they first appear, which selects the last-created tab
+    // in each group; pick the intended tabs once the windows exist (see OnImGuiRender).
+    m_SelectDefaultTabsFrames = 2;
+}
+
 void MainLayer::SetActiveScene(const Ref<Scene>& scene) {
     // The old scene is being discarded: just tear its simulation down, no restore.
     if (m_Scene && m_Scene->IsRunning())
@@ -1189,6 +1220,19 @@ void MainLayer::OnImGuiRender(){
     if (io.ConfigFlags & ImGuiConfigFlags_DockingEnable)
     {
         ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
+        // imgui.ini lives next to the executable, so a fresh build has no saved layout
+        // and every panel would open floating on top of the others. Lay them out on the
+        // first frame unless a saved layout already splits the dockspace.
+        if (!m_LayoutChecked){
+            m_LayoutChecked = true;
+            ImGuiDockNode* node = ImGui::DockBuilderGetNode(dockspace_id);
+            if (!node || !node->IsSplitNode())
+                m_ResetLayout = true;
+        }
+        if (m_ResetLayout){
+            m_ResetLayout = false;
+            BuildDefaultLayout(dockspace_id);
+        }
         ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags);
     }
 
@@ -1238,6 +1282,15 @@ void MainLayer::OnImGuiRender(){
                     ImGui::MenuItem("Timeline", nullptr, &m_SceneEditor->ShowTimeline());
                     ImGui::MenuItem("Script Editor", nullptr, &m_SceneEditor->ShowScriptEditor());
                     ImGui::MenuItem("Textures", nullptr, &m_SceneEditor->ShowTextures());
+                }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Reset Layout")){
+                    m_ResetLayout = true; // applied next frame, before the dockspace is submitted
+                    if (m_SceneEditor){
+                        m_SceneEditor->ShowTimeline() = true;
+                        m_SceneEditor->ShowScriptEditor() = true;
+                        m_SceneEditor->ShowTextures() = true;
+                    }
                 }
                 ImGui::EndMenu();
             }
@@ -1451,6 +1504,16 @@ void MainLayer::OnImGuiRender(){
     m_SceneEditor->OnImGuiRender();
 
     ImGui::End();
+
+    // After a layout rebuild: show the hierarchy and the timeline in their tab groups
+    // and leave keyboard focus on the viewport. Repeated for a second frame because the
+    // dock tab bars only exist once the windows have been docked for a frame.
+    if (m_SelectDefaultTabsFrames > 0){
+        m_SelectDefaultTabsFrames--;
+        ImGui::SetWindowFocus("Scene");
+        ImGui::SetWindowFocus("Timeline");
+        ImGui::SetWindowFocus("Viewport");
+    }
 
     // Record an undo snapshot once the current edit has settled.
     CommitHistory();
