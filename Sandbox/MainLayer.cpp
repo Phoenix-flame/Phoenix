@@ -11,6 +11,7 @@
 #include <Phoenix/Scene/SceneSerializer.h>
 
 #include <Phoenix/renderer/Framebuffer.h>
+#include <Phoenix/renderer/renderer.h>
 #include <Phoenix/core/log.h>
 #include <vendor/ImGuizmo/ImGuizmo.h>
 #include <Phoenix/core/Input.h>
@@ -1118,17 +1119,21 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
         m_MainCamera.OnUpdate(ts);
     }
 
-    if (m_BloomEnabled){
+    // Linear lighting needs the HDR path even without bloom: its composite pass is
+    // where the linear result is tonemapped and encoded to sRGB for display.
+    const bool linear = Phoenix::Renderer::IsLinearLighting();
+    if (m_BloomEnabled || linear){
         // Render the scene to the HDR target, then bloom + composite into m_Framebuffer.
         m_Bloom.Resize((uint32_t)m_ViewportSize.x, (uint32_t)m_ViewportSize.y);
         m_Bloom.BindHDRTarget();
-        Phoenix::RenderCommand::SetClearColor(glm::vec4(m_BackgroundColor, 1.0));
+        Phoenix::RenderCommand::SetClearColor(glm::vec4(Phoenix::Renderer::ToLinear(m_BackgroundColor), 1.0));
         Phoenix::RenderCommand::Clear();
         {
             PHX_PROFILE("Scene Update");
             m_Scene->OnUpdate(m_MainCamera, ts, m_SceneEditor->GetSelectedEntity());
         }
-        m_Bloom.Composite(m_Framebuffer->GetRendererID(), m_BloomIntensity, m_BloomThreshold, m_Exposure);
+        m_Bloom.Composite(m_Framebuffer->GetRendererID(), m_BloomEnabled ? m_BloomIntensity : 0.0f,
+                          m_BloomThreshold, m_Exposure, linear);
     }
     else{
         m_Framebuffer->Bind();
@@ -1333,9 +1338,17 @@ void MainLayer::OnImGuiRender(){
         ImGui::ColorEdit3("Ambient Light", glm::value_ptr(m_Scene->AmbientColor()));
 
         ImGui::Separator();
+        bool linearLighting = Phoenix::Renderer::IsLinearLighting();
+        if (ImGui::Checkbox("Linear Lighting (sRGB)", &linearLighting))
+            Phoenix::Renderer::SetLinearLighting(linearLighting);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Light in linear space: sRGB textures/colours are decoded and the\n"
+                              "output is encoded for display. Physically correct falloff and\n"
+                              "blending, but scenes tuned without it will look brighter.");
         ImGui::Checkbox("Bloom", &m_BloomEnabled);
-        if (m_BloomEnabled){
+        if (m_BloomEnabled || linearLighting)
             ImGui::DragFloat("Exposure", &m_Exposure, 0.05f, 0.1f, 8.0f);
+        if (m_BloomEnabled){
             ImGui::DragFloat("Bloom Intensity", &m_BloomIntensity, 0.05f, 0.0f, 5.0f);
             ImGui::DragFloat("Bloom Threshold", &m_BloomThreshold, 0.05f, 0.0f, 5.0f);
         }

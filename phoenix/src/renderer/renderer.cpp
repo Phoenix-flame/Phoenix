@@ -1,6 +1,7 @@
 #include <Phoenix/renderer/renderer.h>
 #include <Phoenix/renderer/renderer_command.h>
 #include <Phoenix/core/base.h>
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <string>
@@ -21,6 +22,17 @@ namespace Phoenix{
     bool Renderer::s_ShadowsEnabled = false;
     int Renderer::s_PrevFBO = 0;
     int Renderer::s_PrevViewport[4] = { 0, 0, 0, 0 };
+    bool Renderer::s_LinearLighting = false;
+
+    glm::vec3 Renderer::ToLinear(const glm::vec3& c){
+        if (!s_LinearLighting) { return c; }
+        // sRGB EOTF; the power segment also extends sensibly to HDR values above 1.
+        auto channel = [](float v){
+            v = std::max(v, 0.0f);
+            return v <= 0.04045f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f);
+        };
+        return { channel(c.r), channel(c.g), channel(c.b) };
+    }
 
     // Shadow atlas: a SHADOW_COLS x SHADOW_ROWS grid of SHADOW_TILE-sized tiles, one per
     // directional light. COLS*ROWS must be >= MAX_DIR_LIGHTS and the grid must match the
@@ -139,8 +151,8 @@ namespace Phoenix{
         shader->SetInt("u_NumShadows", s_NumShadows);
         shader->SetInt("u_ShadowMap", 1);
         glBindTextureUnit(1, s_ShadowAtlasTex);
-        for (int i = 0; i < MAX_DIR_LIGHTS; i++)
-            shader->SetMat4("u_LightSpaceMatrices[" + std::to_string(i) + "]", s_LightSpaceMatrix[i]);
+        shader->SetMat4Array("u_LightSpaceMatrices", s_LightSpaceMatrix, MAX_DIR_LIGHTS);
+        shader->SetInt("u_LinearLighting", s_LinearLighting ? 1 : 0);
     }
 
     // Uniform names for the light arrays, built once rather than every frame.
@@ -185,16 +197,16 @@ namespace Phoenix{
 
         auto& shader = s_RenderLightCube->m_Shader;
 
-        shader->SetFloat3("u_Ambient", ambient);
+        shader->SetFloat3("u_Ambient", ToLinear(ambient));
 
         if (numDirLights > MAX_DIR_LIGHTS) { numDirLights = MAX_DIR_LIGHTS; }
         shader->SetInt("u_NumDirLights", numDirLights);
         for (int i = 0; i < MAX_DIR_LIGHTS; i++){
             const DirLightUniformNames& u = DirLightNames(i);
             if (i < numDirLights){
-                shader->SetFloat3(u.ambient, dirLights[i].ambient);
-                shader->SetFloat3(u.diffuse, dirLights[i].diffuse);
-                shader->SetFloat3(u.specular, dirLights[i].specular);
+                shader->SetFloat3(u.ambient, ToLinear(dirLights[i].ambient));
+                shader->SetFloat3(u.diffuse, ToLinear(dirLights[i].diffuse));
+                shader->SetFloat3(u.specular, ToLinear(dirLights[i].specular));
                 shader->SetFloat3(u.direction, dirLightDirs[i]);
             }
             else{
@@ -205,6 +217,7 @@ namespace Phoenix{
             }
         }
 
+        shader->SetInt("u_NumPointLights", std::min(std::max(numOfPointLight, 0), NUM_POINT_LIGHTS));
         for (int i = 0 ; i < NUM_POINT_LIGHTS ; i ++)
         {
             const PointLightUniformNames& u = PointLightNames(i);
@@ -213,9 +226,9 @@ namespace Phoenix{
                 shader->SetFloat(u.constant, pointLight[i].constant);
                 shader->SetFloat(u.linear, pointLight[i].linear);
                 shader->SetFloat(u.quadratic, pointLight[i].quadratic);
-                shader->SetFloat3(u.ambient, pointLight[i].ambient);
-                shader->SetFloat3(u.diffuse, pointLight[i].diffuse);
-                shader->SetFloat3(u.specular, pointLight[i].specular);
+                shader->SetFloat3(u.ambient, ToLinear(pointLight[i].ambient));
+                shader->SetFloat3(u.diffuse, ToLinear(pointLight[i].diffuse));
+                shader->SetFloat3(u.specular, ToLinear(pointLight[i].specular));
                 shader->SetFloat3(u.position, pointLightPos[i]);
             }
             else{
@@ -237,16 +250,16 @@ namespace Phoenix{
     // the Textures panel) overrides the mesh-embedded `diffuseMap`; the normal path adds
     // tangent-space detail. Both are resolved from path through Texture2D's path cache.
     static void BindMaterial(const Ref<Shader>& shader, const Material& material, const Ref<Texture2D>& diffuseMap){
-        shader->SetFloat3("material.ambient", material.ambient);
-        shader->SetFloat3("material.diffuse", material.diffuse);
-        shader->SetFloat3("material.specular", material.specular);
+        shader->SetFloat3("material.ambient", Renderer::ToLinear(material.ambient));
+        shader->SetFloat3("material.diffuse", Renderer::ToLinear(material.diffuse));
+        shader->SetFloat3("material.specular", Renderer::ToLinear(material.specular));
         shader->SetFloat("material.shininess", material.shininess);
-        shader->SetFloat3("u_Emissive", material.emissive * material.emissiveStrength);
+        shader->SetFloat3("u_Emissive", Renderer::ToLinear(material.emissive) * material.emissiveStrength);
         shader->SetFloat("u_Reflectivity", material.reflectivity);
 
         Ref<Texture2D> diffuse = !material.diffusePath.empty() ? Texture2D::Create(material.diffusePath) : diffuseMap;
         if (diffuse){
-            diffuse->Bind(0);
+            diffuse->Bind(0, Renderer::IsLinearLighting()); // colour data: sRGB-decoded when linear
             shader->SetInt("u_DiffuseMap", 0);
             shader->SetInt("u_HasDiffuseMap", 1);
         }
@@ -274,6 +287,7 @@ namespace Phoenix{
         auto& shader = s_RenderLightCube->m_Shader;
         BindMaterial(shader, material, diffuseMap);
         shader->SetMat4("model", transform);
+        shader->UploadUniformMat3("u_NormalMatrix", glm::transpose(glm::inverse(glm::mat3(transform))));
         shader->SetInt("u_Animated", 0);
 
         vertexArray->Bind();
@@ -285,6 +299,7 @@ namespace Phoenix{
         auto& shader = s_RenderLightCube->m_Shader;
         BindMaterial(shader, material, diffuseMap);
         shader->SetMat4("model", transform);
+        shader->UploadUniformMat3("u_NormalMatrix", glm::transpose(glm::inverse(glm::mat3(transform))));
         shader->SetInt("u_Animated", 1);
         if (!boneMatrices.empty())
             shader->SetMat4Array("u_BoneMatrices", boneMatrices.data(), (uint32_t)boneMatrices.size());
@@ -310,7 +325,7 @@ namespace Phoenix{
         s_OutlineShader->Bind();
         s_OutlineShader->SetMat4("view", s_SceneData->ViewMatrix);
         s_OutlineShader->SetMat4("projection", s_SceneData->ProjectionMatrix);
-        s_OutlineShader->SetFloat3("u_Color", color);
+        s_OutlineShader->SetFloat3("u_Color", ToLinear(color));
 
         // Skin the silhouette for animated meshes so it tracks the posed geometry.
         if (boneMatrices && !boneMatrices->empty()){
@@ -363,7 +378,7 @@ namespace Phoenix{
         s_OutlineShader->SetMat4("view", s_SceneData->ViewMatrix);
         s_OutlineShader->SetMat4("projection", s_SceneData->ProjectionMatrix);
         s_OutlineShader->SetMat4("model", model);
-        s_OutlineShader->SetFloat3("u_Color", color);
+        s_OutlineShader->SetFloat3("u_Color", ToLinear(color));
         s_OutlineShader->SetInt("u_Animated", 0); // DrawOutline may have left skinning on
 
         s_CameraGizmo->m_Vertex_array->Bind();
@@ -386,7 +401,7 @@ namespace Phoenix{
         s_OutlineShader->SetMat4("view", s_SceneData->ViewMatrix);
         s_OutlineShader->SetMat4("projection", s_SceneData->ProjectionMatrix);
         s_OutlineShader->SetMat4("model", model);
-        s_OutlineShader->SetFloat3("u_Color", color);
+        s_OutlineShader->SetFloat3("u_Color", ToLinear(color));
         s_OutlineShader->SetInt("u_Animated", 0); // DrawOutline may have left skinning on
 
         s_DirLightGizmo->m_Vertex_array->Bind();
@@ -406,7 +421,8 @@ namespace Phoenix{
         s_WaterShader->SetMat4("projection", s_SceneData->ProjectionMatrix);
         s_WaterShader->SetMat4("model", transform);
         s_WaterShader->SetFloat3("u_CameraPos", s_SceneData->CameraPos);
-        s_WaterShader->SetFloat3("u_Color", params.color);
+        s_WaterShader->SetFloat3("u_Color", ToLinear(params.color));
+        s_WaterShader->SetInt("u_LinearLighting", s_LinearLighting ? 1 : 0);
         s_WaterShader->SetFloat("u_Alpha", params.alpha);
         s_WaterShader->SetFloat3("u_LightDir", params.lightDir);
         s_WaterShader->SetFloat("u_Time", params.time);

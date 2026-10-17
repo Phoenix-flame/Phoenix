@@ -37,6 +37,9 @@ namespace Phoenix{
 		virtual void SetData(void* data, uint32_t size) override;
 
 		virtual void Bind(uint32_t slot = 0) const override;
+		// Bind for sampling as sRGB-encoded colour (decoded to linear by the hardware)
+		// when `srgb` is set. Only textures loaded from a file have an sRGB view.
+		void Bind(uint32_t slot, bool srgb) const;
 
 		virtual bool operator==(const Texture& other) const override
 		{
@@ -49,6 +52,7 @@ namespace Phoenix{
 		std::string m_Path;
 		uint32_t m_Width = 0, m_Height = 0;
 		uint32_t m_RendererID = 0;
+		uint32_t m_SRGBView = 0;
 		GLenum m_InternalFormat = 0, m_DataFormat = 0;
 	};
 

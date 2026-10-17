@@ -237,6 +237,16 @@ namespace Phoenix{
 		static void SubmitWater(const Ref<VertexArray>& vertexArray, const glm::mat4& transform,
 			const WaterParams& params);
 
+		// Linear lighting (opt-in; off keeps the original look). When on, colour textures
+		// are sampled through their sRGB views, colours picked in the editor (materials,
+		// lights, ambient, water, gizmos) are converted from sRGB to linear before shading,
+		// and the HDR composite (see Bloom) encodes its output back to sRGB. Lighting and
+		// blending then happen in linear space, so falloff and mixing are correct.
+		static void SetLinearLighting(bool enabled) { s_LinearLighting = enabled; }
+		static bool IsLinearLighting() { return s_LinearLighting; }
+		// sRGB -> linear for an editor colour; returns it unchanged when linear lighting is off.
+		static glm::vec3 ToLinear(const glm::vec3& srgb);
+
 		static RendererAPI::API GetAPI() { return RendererAPI::GetAPI(); }
 	private:
 		struct SceneData{
@@ -263,5 +273,6 @@ namespace Phoenix{
         static bool s_ShadowsEnabled;
         static int s_PrevFBO;
         static int s_PrevViewport[4];
+        static bool s_LinearLighting;
 	};
 }

@@ -21,6 +21,7 @@ uniform sampler2D u_Scene;
 uniform sampler2D u_Bloom;
 uniform float u_Intensity;
 uniform float u_Exposure;
+uniform bool u_EncodeSRGB; // linear lighting: the scene is linear, the display expects sRGB
 
 // Narkowicz ACES filmic tonemap: rolls bright HDR values off to white smoothly
 // instead of hard-clipping, so glowing areas keep colour/detail.
@@ -36,6 +37,12 @@ vec3 ACESFilm(vec3 x){
 void main(){
     vec3 scene = texture(u_Scene, TexCoords).rgb;
     vec3 bloom = texture(u_Bloom, TexCoords).rgb;
-    vec3 color = (scene + bloom * u_Intensity) * u_Exposure;
-    FragColor = vec4(ACESFilm(color), 1.0);
+    vec3 color = ACESFilm((scene + bloom * u_Intensity) * u_Exposure);
+    if (u_EncodeSRGB){
+        // sRGB OETF (piecewise, matches what an sRGB framebuffer would apply).
+        vec3 lo = color * 12.92;
+        vec3 hi = 1.055 * pow(color, vec3(1.0 / 2.4)) - 0.055;
+        color = mix(hi, lo, vec3(lessThanEqual(color, vec3(0.0031308))));
+    }
+    FragColor = vec4(color, 1.0);
 }

@@ -7,8 +7,8 @@
 namespace Phoenix{
 
     // HDR scene target + bloom post-process. Render the scene into the HDR target
-    // (BindHDRTarget), then Composite() extracts bright areas, blurs them, and
-    // writes scene+bloom into the given (LDR) target framebuffer.
+    // (BindHDRTarget), then Composite() extracts bright areas, blurs them at half
+    // resolution, and writes tonemapped scene+bloom into the given (LDR) framebuffer.
     class Bloom{
     public:
         void Init();
@@ -18,11 +18,15 @@ namespace Phoenix{
         void BindHDRTarget();
 
         // Run the bloom passes and composite into targetFBO (0 = default framebuffer).
-        void Composite(uint32_t targetFBO, float intensity, float threshold, float exposure);
+        // intensity <= 0 skips the bloom passes (tonemap only). encodeSRGB applies the
+        // sRGB transfer curve after tonemapping, for linear lighting.
+        void Composite(uint32_t targetFBO, float intensity, float threshold, float exposure,
+                       bool encodeSRGB = false);
     private:
         void DrawFullscreenQuad();
 
         uint32_t m_Width = 0, m_Height = 0;
+        uint32_t m_BloomWidth = 0, m_BloomHeight = 0; // half resolution
 
         uint32_t m_HDRFBO = 0, m_HDRColor = 0, m_DepthStencil = 0;
         uint32_t m_PingFBO[2] = { 0, 0 };

@@ -2,6 +2,7 @@
 #define GL_GLEXT_PROTOTYPES
 #include <GLFW/glfw3.h>
 #include <Phoenix/core/assert.h>
+#include <algorithm>
 
 namespace Phoenix{
 
@@ -64,13 +65,16 @@ namespace Phoenix{
 
         PHX_CORE_ASSERT(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE, "HDR framebuffer incomplete!");
 
-        // Ping-pong buffers for the separable blur.
+        // Ping-pong buffers for the separable blur, at half resolution: the blur is low
+        // frequency, so a quarter of the pixels looks the same and costs a quarter.
+        m_BloomWidth  = std::max(1u, width / 2);
+        m_BloomHeight = std::max(1u, height / 2);
         glGenFramebuffers(2, m_PingFBO);
         glGenTextures(2, m_PingColor);
         for (int i = 0; i < 2; i++){
             glBindFramebuffer(GL_FRAMEBUFFER, m_PingFBO[i]);
             glBindTexture(GL_TEXTURE_2D, m_PingColor[i]);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_FLOAT, nullptr);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, m_BloomWidth, m_BloomHeight, 0, GL_RGBA, GL_FLOAT, nullptr);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -92,39 +96,41 @@ namespace Phoenix{
         glDrawArrays(GL_TRIANGLES, 0, 6);
     }
 
-    void Bloom::Composite(uint32_t targetFBO, float intensity, float threshold, float exposure){
+    void Bloom::Composite(uint32_t targetFBO, float intensity, float threshold, float exposure, bool encodeSRGB){
         if (!m_HDRFBO) { return; }
 
         glDisable(GL_DEPTH_TEST);
 
-        // Bright pass: HDR colour -> ping[0].
-        glBindFramebuffer(GL_FRAMEBUFFER, m_PingFBO[0]);
-        glViewport(0, 0, m_Width, m_Height);
-        m_BrightShader->Bind();
-        m_BrightShader->SetInt("u_Scene", 0);
-        m_BrightShader->SetFloat("u_Threshold", threshold);
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, m_HDRColor);
-        DrawFullscreenQuad();
-
-        // Separable Gaussian blur, ping-ponging between the two buffers.
-        const int passes = 10;
-        bool horizontal = true;
-        bool first = true;
-        m_BlurShader->Bind();
-        m_BlurShader->SetInt("u_Image", 0);
-        for (int i = 0; i < passes; i++){
-            glBindFramebuffer(GL_FRAMEBUFFER, m_PingFBO[horizontal ? 1 : 0]);
-            glViewport(0, 0, m_Width, m_Height);
-            m_BlurShader->SetInt("u_Horizontal", horizontal ? 1 : 0);
+        uint32_t bloomTex = 0;
+        if (intensity > 0.0f){
+            // Bright pass + 2x downsample: HDR colour -> ping[0] (half resolution).
+            glBindFramebuffer(GL_FRAMEBUFFER, m_PingFBO[0]);
+            glViewport(0, 0, m_BloomWidth, m_BloomHeight);
+            m_BrightShader->Bind();
+            m_BrightShader->SetInt("u_Scene", 0);
+            m_BrightShader->SetFloat("u_Threshold", threshold);
             glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, first ? m_PingColor[0] : m_PingColor[horizontal ? 0 : 1]);
+            glBindTexture(GL_TEXTURE_2D, m_HDRColor);
             DrawFullscreenQuad();
-            horizontal = !horizontal;
-            first = false;
+
+            // Separable Gaussian blur, ping-ponging between the two buffers. Each half-res
+            // pass spans twice the screen distance of a full-res one, so one horizontal +
+            // one vertical pass gives about the radius the old 10 full-res passes did.
+            const int passes = 2;
+            bool horizontal = true;
+            m_BlurShader->Bind();
+            m_BlurShader->SetInt("u_Image", 0);
+            for (int i = 0; i < passes; i++){
+                // Horizontal reads ping[0] -> ping[1]; vertical reads ping[1] -> ping[0].
+                glBindFramebuffer(GL_FRAMEBUFFER, m_PingFBO[horizontal ? 1 : 0]);
+                m_BlurShader->SetInt("u_Horizontal", horizontal ? 1 : 0);
+                glBindTexture(GL_TEXTURE_2D, m_PingColor[horizontal ? 0 : 1]);
+                DrawFullscreenQuad();
+                horizontal = !horizontal;
+            }
+            // The last pass wrote ping[horizontal ? 0 : 1] (horizontal already flipped).
+            bloomTex = m_PingColor[horizontal ? 0 : 1];
         }
-        // After the loop the last-written buffer is m_PingColor[horizontal ? 0 : 1].
-        uint32_t bloomTex = m_PingColor[horizontal ? 0 : 1];
 
         // Composite scene + bloom into the target framebuffer.
         glBindFramebuffer(GL_FRAMEBUFFER, targetFBO);
@@ -132,12 +138,13 @@ namespace Phoenix{
         m_CompositeShader->Bind();
         m_CompositeShader->SetInt("u_Scene", 0);
         m_CompositeShader->SetInt("u_Bloom", 1);
-        m_CompositeShader->SetFloat("u_Intensity", intensity);
+        m_CompositeShader->SetFloat("u_Intensity", bloomTex ? intensity : 0.0f);
         m_CompositeShader->SetFloat("u_Exposure", exposure);
+        m_CompositeShader->SetInt("u_EncodeSRGB", encodeSRGB ? 1 : 0);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, m_HDRColor);
         glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, bloomTex);
+        glBindTexture(GL_TEXTURE_2D, bloomTex ? bloomTex : m_HDRColor); // unused at intensity 0
         DrawFullscreenQuad();
 
         // Restore default state.

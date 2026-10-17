@@ -15,6 +15,9 @@ out vec2 TexCoords;
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
+// transpose(inverse(mat3(model))), computed once per draw on the CPU rather than
+// per vertex here (a 3x3 inverse for every vertex of every mesh).
+uniform mat3 u_NormalMatrix;
 
 // Skeletal animation: when u_Animated, blend the bone matrices by the vertex weights.
 const int MAX_BONES = 100;
@@ -40,9 +43,10 @@ void main()
         }
     }
 
-    gl_Position = projection * view * model * vec4(localPos, 1.0);
-    Normal = mat3(transpose(inverse(model))) * localNormal;
-    FragPos = vec3(model * vec4(localPos, 1.0));
+    vec4 worldPos = model * vec4(localPos, 1.0);
+    gl_Position = projection * view * worldPos;
+    Normal = u_NormalMatrix * localNormal;
+    FragPos = vec3(worldPos);
     TexCoords = aTexCoords;
 }
 
@@ -79,6 +83,7 @@ struct PointLight {
 #define NR_DIR_LIGHTS 8
 #define NR_SHADOWS 8
 uniform PointLight pointLights[NR_POINT_LIGHTS];
+uniform int u_NumPointLights;
 
 // Multiple directional lights, each optionally casting its own shadow. Directional
 // light i is shadowed by u_ShadowMaps[i] / u_LightSpaceMatrices[i] when i < u_NumShadows.
@@ -105,6 +110,11 @@ uniform bool u_ShadowsEnabled;
 uniform vec3 cameraPos;
 
 uniform Material material;
+
+// Linear lighting (Renderer::SetLinearLighting): colour uniforms and diffuse maps arrive
+// already linear; the constants authored in this file are sRGB and get converted here.
+uniform bool u_LinearLighting;
+vec3 SrgbToLinear(vec3 c) { return u_LinearLighting ? pow(c, vec3(2.2)) : c; }
 
 // Global ambient light, applied to every fragment regardless of light sources.
 uniform vec3 u_Ambient;
@@ -156,7 +166,7 @@ vec3 SampleEnvironment(vec3 dir)
     vec3 zenith  = vec3(0.15, 0.35, 0.75);
     vec3 ground  = vec3(0.10, 0.10, 0.12);
     vec3 sky = mix(horizon, zenith, smoothstep(0.5, 1.0, t));
-    return mix(ground, sky, smoothstep(0.45, 0.55, t));
+    return SrgbToLinear(mix(ground, sky, smoothstep(0.45, 0.55, t)));
 }
 
 vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 diffuseColor, float shadow)
@@ -235,8 +245,10 @@ void main()
     }
 
     // Point lights (unshadowed).
-    for (int i = 0; i < NR_POINT_LIGHTS; i++)
+    for (int i = 0; i < NR_POINT_LIGHTS; i++){
+        if (i >= u_NumPointLights) { break; }
         result += CalcPointLight(pointLights[i], norm, FragPos, viewDir, diffuseColor);
+    }
 
     // environment reflection (mirror a procedural sky/ground)
     if (u_Reflectivity > 0.0){

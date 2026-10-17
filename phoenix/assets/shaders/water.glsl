@@ -99,6 +99,10 @@ uniform float u_Alpha;
 uniform vec3 u_LightDir; // direction the sun travels
 uniform float u_Foam;    // foam intensity (0 disables)
 
+// Linear lighting: u_Color arrives linear; the sRGB constants below are converted here.
+uniform bool u_LinearLighting;
+vec3 SrgbToLinear(vec3 c) { return u_LinearLighting ? pow(c, vec3(2.2)) : c; }
+
 // Same procedural sky/ground as the reflective materials.
 vec3 SampleEnvironment(vec3 dir){
     float t = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
@@ -106,7 +110,7 @@ vec3 SampleEnvironment(vec3 dir){
     vec3 zenith  = vec3(0.15, 0.35, 0.75);
     vec3 ground  = vec3(0.10, 0.10, 0.12);
     vec3 sky = mix(horizon, zenith, smoothstep(0.5, 1.0, t));
-    return mix(ground, sky, smoothstep(0.45, 0.55, t));
+    return SrgbToLinear(mix(ground, sky, smoothstep(0.45, 0.55, t)));
 }
 
 void main(){
@@ -132,7 +136,7 @@ void main(){
 
     // Foam on sharp crests and where ripples are active.
     float foam = u_Foam * clamp(smoothstep(0.62, 0.95, Crest) + Ripple, 0.0, 1.0);
-    color = mix(color, vec3(0.92, 0.96, 1.0), foam);
+    color = mix(color, SrgbToLinear(vec3(0.92, 0.96, 1.0)), foam);
 
     // grazing/reflective angles and foam read more opaque
     float alpha = clamp(u_Alpha + fresnel * 0.4 + spec + foam * 0.5, 0.0, 1.0);
