@@ -8,6 +8,8 @@
 #include <Phoenix/renderer/Mesh.h>
 #include <Phoenix/renderer/WaterRipples.h>
 #include <Phoenix/Scene/ScriptableEntity.h>
+#include <string>
+#include <vector>
 namespace Phoenix{
 
     struct TagComponent{
@@ -276,7 +278,10 @@ namespace Phoenix{
 
     // A Lua script (edited inline, serialized). It runs while the scene is playing;
     // the live runtime is owned by the Scene, not stored here.
-    struct LuaScriptComponent{
+    // One Lua script on an entity. Each script runs in its own Lua state, so several
+    // scripts on the same entity can all define OnUpdate (etc.) without colliding.
+    struct LuaScriptEntry{
+        std::string name = "Script";
         std::string source =
             "-- runs while playing (press Run)\n"
             "local t = 0.0\n"
@@ -285,8 +290,20 @@ namespace Phoenix{
             "    local x, y, z = GetTranslation()\n"
             "    SetTranslation(x, y, z)\n"
             "end\n";
-        LuaScriptComponent() = default;
+        bool enabled = true; // disabled scripts are kept but not run
+    };
+
+    struct LuaScriptComponent{
+        std::vector<LuaScriptEntry> scripts;
+
+        LuaScriptComponent() : scripts(1) {}
+        LuaScriptComponent(const std::string& name, const std::string& source) { Add(name, source); }
         LuaScriptComponent(const LuaScriptComponent&) = default;
+
+        LuaScriptEntry& Add(const std::string& name, const std::string& source){
+            scripts.push_back({ name, source, true });
+            return scripts.back();
+        }
     };
 
 

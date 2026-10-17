@@ -11,12 +11,28 @@
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
+#include <deque>
+#include <string>
 
 namespace Phoenix{
     class Entity;
     class SceneEditor;
     class PhysicsWorld;
     class LuaScript;
+
+    // One line of the Lua script console (print output or an error).
+    struct ScriptLogEntry{
+        entt::entity entity = entt::null;
+        std::string entityName;  // tag when logged (the entity may be gone later)
+        int script = 0;          // index in the entity's LuaScriptComponent
+        std::string scriptName;
+        bool error = false;
+        int line = -1;           // source line of an error, -1 if unknown
+        int count = 1;           // identical consecutive messages are collapsed
+        float time = 0.0f;       // scene time of the latest occurrence
+        std::string text;
+    };
+
     class Scene{
     public:
         Scene();
@@ -55,6 +71,25 @@ namespace Phoenix{
         // bindings for impulses/velocities/raycasts.
         PhysicsWorld* GetPhysicsWorld() { return m_PhysicsWorld.get(); }
 
+        // Entities that have all of the given components (a live registry view).
+        template<typename... Components>
+        auto GetAllEntitiesWith() { return m_Registry.view<Components...>(); }
+
+        // Live Lua runtime of an entity's script `index` while playing, or null.
+        LuaScript* FindScript(Entity entity, int index);
+        // While playing, rebuild the entity's Lua runtimes from its LuaScriptComponent
+        // (hot reload after editing, adding, removing or toggling scripts).
+        void ReloadScripts(Entity entity);
+
+        // Whether the entity still exists in this scene.
+        bool IsValid(Entity entity) const;
+
+        // Script console: print() output and script errors. Cleared when play starts.
+        void LogScript(Entity entity, int script, const std::string& scriptName, bool error,
+                       const std::string& text, int line = -1);
+        const std::deque<ScriptLogEntry>& GetScriptLog() const { return m_ScriptLog; }
+        void ClearScriptLog() { m_ScriptLog.clear(); }
+
         // Entity owning the given runtime physics body (empty if unknown).
         Entity FindEntityByBodyID(uint32_t bodyID);
 
@@ -83,6 +118,7 @@ namespace Phoenix{
 
         Scope<PhysicsWorld> m_PhysicsWorld;
         std::vector<Ref<LuaScript>> m_Scripts; // live Lua runtimes while playing
+        std::deque<ScriptLogEntry> m_ScriptLog;
         // Runtime body id -> owning entity, for contact-event dispatch (rebuilt each run).
         std::unordered_map<uint32_t, entt::entity> m_BodyToEntity;
         // Bodies currently touching a water surface (splash edge detection).

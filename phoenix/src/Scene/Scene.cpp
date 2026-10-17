@@ -278,11 +278,60 @@ namespace Phoenix{
         m_PhysicsWorld->OptimizeBroadPhase();
 
         // Instantiate Lua scripts for the runtime.
+        // Snapshot the ids first: a script's top-level code could create entities.
+        m_ScriptLog.clear();
         auto scriptView = m_Registry.view<LuaScriptComponent>();
-        for (auto entity : scriptView){
-            Entity e{ entity, this };
-            m_Scripts.push_back(CreateRef<LuaScript>(scriptView.get<LuaScriptComponent>(entity).source, e));
+        std::vector<entt::entity> scripted(scriptView.begin(), scriptView.end());
+        for (auto entity : scripted)
+            ReloadScripts(Entity{ entity, this });
+    }
+
+    LuaScript* Scene::FindScript(Entity entity, int index){
+        for (auto& script : m_Scripts)
+            if ((entt::entity)script->GetEntity() == (entt::entity)entity && script->GetIndex() == index)
+                return script.get();
+        return nullptr;
+    }
+
+    void Scene::ReloadScripts(Entity entity){
+        if (!IsRunning()) { return; }
+        m_Scripts.erase(std::remove_if(m_Scripts.begin(), m_Scripts.end(),
+            [&](const Ref<LuaScript>& script){ return (entt::entity)script->GetEntity() == (entt::entity)entity; }),
+            m_Scripts.end());
+        if (!m_Registry.valid((entt::entity)entity) || !entity.HasComponent<LuaScriptComponent>()) { return; }
+        // Copy: a script's top-level code runs in the constructor and must not see
+        // the vector reallocate under it.
+        std::vector<LuaScriptEntry> entries = entity.GetComponent<LuaScriptComponent>().scripts;
+        for (int i = 0; i < (int)entries.size(); i++)
+            if (entries[i].enabled)
+                m_Scripts.push_back(CreateRef<LuaScript>(entries[i].source, entity, i, entries[i].name));
+    }
+
+    bool Scene::IsValid(Entity entity) const{
+        return m_Registry.valid((entt::entity)entity);
+    }
+
+    void Scene::LogScript(Entity entity, int script, const std::string& scriptName, bool error,
+                          const std::string& text, int line){
+        if (!m_ScriptLog.empty()){
+            ScriptLogEntry& last = m_ScriptLog.back();
+            if (last.entity == (entt::entity)entity && last.script == script && last.error == error && last.text == text){
+                last.count++;
+                last.time = m_Time;
+                return;
+            }
         }
+        ScriptLogEntry entry;
+        entry.entity = (entt::entity)entity;
+        if (entity.HasComponent<TagComponent>()) { entry.entityName = entity.GetComponent<TagComponent>().Tag; }
+        entry.script = script;
+        entry.scriptName = scriptName;
+        entry.error = error;
+        entry.line = line;
+        entry.time = m_Time;
+        entry.text = text;
+        m_ScriptLog.push_back(std::move(entry));
+        while (m_ScriptLog.size() > 2000) { m_ScriptLog.pop_front(); }
     }
 
     void Scene::OnRuntimeStop(){

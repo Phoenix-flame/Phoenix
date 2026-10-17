@@ -275,7 +275,15 @@ namespace Phoenix{
 
         if (entity.HasComponent<LuaScriptComponent>()){
             out << YAML::Key << "LuaScriptComponent" << YAML::Value << YAML::BeginMap;
-            out << YAML::Key << "Source" << YAML::Value << entity.GetComponent<LuaScriptComponent>().source;
+            out << YAML::Key << "Scripts" << YAML::Value << YAML::BeginSeq;
+            for (const auto& script : entity.GetComponent<LuaScriptComponent>().scripts){
+                out << YAML::BeginMap;
+                out << YAML::Key << "Name" << YAML::Value << script.name;
+                out << YAML::Key << "Enabled" << YAML::Value << script.enabled;
+                out << YAML::Key << "Source" << YAML::Value << script.source;
+                out << YAML::EndMap;
+            }
+            out << YAML::EndSeq;
             out << YAML::EndMap;
         }
 
@@ -561,8 +569,23 @@ namespace Phoenix{
 
         if (auto n = node["LuaScriptComponent"]){
             auto& s = entity.HasComponent<LuaScriptComponent>() ? entity.GetComponent<LuaScriptComponent>() : entity.AddComponent<LuaScriptComponent>();
-            const LuaScriptComponent def{}; // fallbacks for keys missing from the file
-            s.source = n["Source"].as<std::string>(def.source);
+            const LuaScriptEntry def{}; // fallbacks for keys missing from the file
+            s.scripts.clear();
+            if (auto list = n["Scripts"]){
+                for (std::size_t i = 0; i < list.size(); i++){
+                    LuaScriptEntry entry;
+                    entry.name = list[i]["Name"].as<std::string>(def.name);
+                    entry.enabled = list[i]["Enabled"].as<bool>(def.enabled);
+                    entry.source = list[i]["Source"].as<std::string>(def.source);
+                    s.scripts.push_back(std::move(entry));
+                }
+            }
+            else{
+                // Older scenes stored a single script as LuaScriptComponent.Source.
+                LuaScriptEntry entry;
+                entry.source = n["Source"].as<std::string>(def.source);
+                s.scripts.push_back(std::move(entry));
+            }
         }
         else if (entity.HasComponent<LuaScriptComponent>()) entity.RemoveComponent<LuaScriptComponent>();
     }

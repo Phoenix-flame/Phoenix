@@ -23,6 +23,12 @@ namespace Phoenix{
 		//io.ConfigFlags |= ImGuiConfigFlags_ViewportsNoMerge;
 		io.Fonts->AddFontFromFileTTF("assets/fonts/Roboto-Bold.ttf", 15.0f);
 		io.FontDefault = io.Fonts->AddFontFromFileTTF("assets/fonts/Roboto-Regular.ttf", 15.0f);
+
+		// Code font for the script editor: JetBrains Mono (SIL OFL, see
+		// JetBrainsMono-OFL.txt), falling back to the mono font compiled into ImGui.
+		s_MonospaceFont = io.Fonts->AddFontFromFileTTF("assets/fonts/JetBrainsMono-Regular.ttf", 15.0f);
+		if (!s_MonospaceFont)
+			s_MonospaceFont = io.Fonts->AddFontDefault();
 	
         ImGuiStyle& style = ImGui::GetStyle();
         style.WindowRounding = 0.0f;

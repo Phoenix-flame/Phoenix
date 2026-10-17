@@ -146,20 +146,25 @@ void MainLayer::BuildShowcaseScene() {
         bp.AddComponent<MeshColliderComponent>(); // convex hull of the mesh
     }
 
-    // A Lua-scripted cube that orbits and colour-cycles while playing.
+    // A Lua-scripted cube that orbits and colour-cycles while playing: two scripts on
+    // one entity, each with its own OnUpdate.
     {
         auto e = m_Scene->CreateEntity("Scripted Cube");
         auto& c = e.AddComponent<CubeComponent>();
         c.material.diffuse = glm::vec3(0.8f, 0.3f, 0.2f);
         e.GetComponent<TransformComponent>().Translation = { -2.0f, 1.0f, 3.0f };
-        auto& script = e.AddComponent<LuaScriptComponent>();
-        script.source =
+        auto& scripts = e.AddComponent<LuaScriptComponent>("Orbit",
             "local t = 0.0\n"
             "function OnUpdate(dt)\n"
             "    t = t + dt\n"
             "    SetTranslation(-2.0 + math.sin(t) * 2.0, 1.0 + 0.5 * math.sin(t * 2.0), 3.0)\n"
+            "end\n");
+        scripts.Add("Color Cycle",
+            "local t = 0.0\n"
+            "function OnUpdate(dt)\n"
+            "    t = t + dt\n"
             "    SetColor(0.5 + 0.5 * math.sin(t), 0.5 + 0.5 * math.sin(t + 2.0), 0.5 + 0.5 * math.sin(t + 4.0))\n"
-            "end\n";
+            "end\n");
     }
 
     // A glowing cube that drops when you press Run (physics + bloom).
@@ -392,7 +397,8 @@ void MainLayer::BuildRobotShowcase() {
         //   Up/Down = walk fwd/back, Left/Right = turn, Shift = run, Space = jump.
         // Crossfades between the idle / walk / run / jump clips when present, and falls
         // back to clip 0 (the embedded walk) for any clip you haven't added yet.
-        auto& script = robot.AddComponent<LuaScriptComponent>();
+        auto& script = robot.AddComponent<LuaScriptComponent>().scripts[0];
+        script.name = "Controller";
         script.source =
             "local WALK = 0           -- robot.fbx's embedded walk is clip 0\n"
             "local turn = 2.0         -- rad/sec\n"
@@ -692,11 +698,11 @@ void MainLayer::BuildPhysicsShowcase() {
         auto& rb = paddle.AddComponent<RigidBodyComponent>();
         rb.type = RigidBodyComponent::Type::Kinematic;
         paddle.AddComponent<BoxColliderComponent>();
-        paddle.AddComponent<LuaScriptComponent>().source =
+        paddle.AddComponent<LuaScriptComponent>("Spin",
             "-- Kinematic body: the entity transform drives the physics body.\n"
             "function OnUpdate(dt)\n"
             "    Rotate(0, 1.5 * dt, 0)\n"
-            "end\n";
+            "end\n");
     }
     for (int i = 0; i < 6; i++){
         float a = glm::radians(60.0f * i);
@@ -756,13 +762,13 @@ void MainLayer::BuildPhysicsShowcase() {
         rb.density = 6000.0f;
         rb.continuousCollision = true; // fast mover: don't tunnel through the wall
         ballE.AddComponent<SphereColliderComponent>();
-        ballE.AddComponent<LuaScriptComponent>().source =
+        ballE.AddComponent<LuaScriptComponent>("Fire",
             "-- Press SPACE to fire the cannonball at the crate wall.\n"
             "function OnUpdate(dt)\n"
             "    if IsKeyPressed(Key.Space) then\n"
             "        SetVelocity(0, 3, -26)\n"
             "    end\n"
-            "end\n";
+            "end\n");
     }
     {
         auto gate = m_Scene->CreateEntity("Sensor Gate");
@@ -777,14 +783,14 @@ void MainLayer::BuildPhysicsShowcase() {
         rb.type = RigidBodyComponent::Type::Static;
         rb.isSensor = true; // trigger volume: detects, never blocks
         gate.AddComponent<BoxColliderComponent>();
-        gate.AddComponent<LuaScriptComponent>().source =
+        gate.AddComponent<LuaScriptComponent>("Flash",
             "-- Sensor gate: flashes green while something is inside it.\n"
             "function OnCollisionEnter(other)\n"
             "    SetEmissive(0.1, 1.0, 0.4, 6.0)\n"
             "end\n"
             "function OnCollisionExit(other)\n"
             "    SetEmissive(0.0, 0.8, 1.0, 1.0)\n"
-            "end\n";
+            "end\n");
     }
     {
         // Crate wall target.
@@ -1023,7 +1029,7 @@ void MainLayer::BuildDefaultLayout(ImGuiID dockspaceID) {
     ImGuiID center = dockspaceID;
     ImGuiID left = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, 0.30f, nullptr, &center);
     ImGuiID leftBottom = ImGui::DockBuilderSplitNode(left, ImGuiDir_Down, 0.55f, nullptr, &left);
-    ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.30f, nullptr, &center);
+    ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.40f, nullptr, &center);
 
     for (const char* name : { "Scene", "Settings", "Textures", "Profiler", "Shader Library" })
         ImGui::DockBuilderDockWindow(name, left);
@@ -1071,12 +1077,24 @@ void MainLayer::StartRuntime() {
 }
 
 void MainLayer::StopRuntime() {
+    // Script edits made while playing (hot reloads) are code, not simulation state:
+    // keep them across the restore below.
+    std::unordered_map<entt::entity, LuaScriptComponent> editedScripts;
+    for (auto entity : m_Scene->GetAllEntitiesWith<LuaScriptComponent>())
+        editedScripts.emplace(entity, Entity{ entity, m_Scene.get() }.GetComponent<LuaScriptComponent>());
+
     m_Scene->OnRuntimeStop();
     // Undo everything the simulation and scripts changed (transforms, colours,
     // spawned/destroyed entities) so Stop returns to the edit-time scene.
     if (!m_RuntimeSnapshot.empty())
         RestoreScene(m_RuntimeSnapshot);
     m_RuntimeSnapshot.clear();
+
+    for (auto entity : m_Scene->GetAllEntitiesWith<LuaScriptComponent>()){
+        auto it = editedScripts.find(entity);
+        if (it != editedScripts.end())
+            Entity{ entity, m_Scene.get() }.GetComponent<LuaScriptComponent>() = std::move(it->second);
+    }
 }
 
 void MainLayer::Undo() {

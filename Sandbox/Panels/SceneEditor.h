@@ -2,6 +2,7 @@
 #include <Phoenix/core/base.h>
 #include <Phoenix/Scene/Scene.h>
 #include <Phoenix/Scene/Entity.h>
+#include "ScriptEditorPanel.h"
 #include <glm/glm.hpp>
 #include <vector>
 #include <string>
@@ -9,11 +10,11 @@
 namespace Phoenix{
     class SceneEditor{
     public:
-        SceneEditor(Ref<Scene> scene): m_ActiveScene(scene) {}
+        SceneEditor(Ref<Scene> scene): m_ActiveScene(scene) { m_ScriptPanel.SetContext(scene); }
         ~SceneEditor() = default;
 
         // Point the panels at another scene (the selection belonged to the old one).
-        void SetContext(const Ref<Scene>& scene) { m_ActiveScene = scene; m_SelectedEntity = {}; }
+        void SetContext(const Ref<Scene>& scene) { m_ActiveScene = scene; m_SelectedEntity = {}; m_ScriptPanel.SetContext(scene); }
 
         void OnImGuiRender(){
             // Drop the selection if its entity no longer exists (e.g. after an
@@ -45,6 +46,7 @@ namespace Phoenix{
         Ref<Scene> m_ActiveScene;
         Entity m_SelectedEntity;
         bool m_ShowScriptEditor = true;
+        Phoenix::ScriptEditorPanel m_ScriptPanel;
         bool m_ShowTimeline = true;
         bool m_ShowTextures = true;
 

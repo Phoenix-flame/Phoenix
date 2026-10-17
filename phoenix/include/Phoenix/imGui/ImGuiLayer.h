@@ -2,6 +2,8 @@
 
 #include <Phoenix/core/layer.h>
 
+struct ImFont;
+
 namespace Phoenix{
     class ImGuiLayer : public Layer{
 	public:
@@ -18,7 +20,12 @@ namespace Phoenix{
 		void BlockEvents(bool block) { _blockEvents = block; }
 		
 		void SetDarkThemeColors();
+
+		// Monospace font for code (a system mono font when one is found, else
+		// ImGui's built-in ProggyClean). Valid after OnAttach.
+		static ImFont* GetMonospaceFont() { return s_MonospaceFont; }
 	private:
+		static inline ImFont* s_MonospaceFont = nullptr;
 		bool _blockEvents = true;
 	};
 }

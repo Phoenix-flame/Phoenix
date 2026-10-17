@@ -7,6 +7,7 @@
 #include <Phoenix/core/keyCodes.h>
 #include <algorithm>
 #include <cmath>
+#include <cctype>
 
 extern "C" {
 #include <lua.h>
@@ -278,6 +279,138 @@ namespace Phoenix{
         return 0;
     }
 
+    // print(...) -> the scene's script console (tab-separated, like Lua's own print).
+    static int l_print(lua_State* L){
+        std::string text;
+        int n = lua_gettop(L);
+        for (int i = 1; i <= n; i++){
+            size_t len = 0;
+            const char* s = luaL_tolstring(L, i, &len); // pushes the converted value
+            if (i > 1) { text += '\t'; }
+            text.append(s, len);
+            lua_pop(L, 1);
+        }
+        LuaScript* self = ScriptSelf(L);
+        Entity e = self->GetEntity();
+        if (Scene* scene = e.GetScene())
+            scene->LogScript(e, self->GetIndex(), self->GetName(), false, text);
+        return 0;
+    }
+
+    // Every bound function with its documentation. Registration and the editor's API
+    // help both come from this table, so they can't drift apart.
+    struct LuaBinding{
+        const char* name;
+        lua_CFunction fn; // null: a callback the script defines, not a binding
+        const char* category;
+        const char* signature;
+        const char* doc;
+    };
+    static const LuaBinding s_Bindings[] = {
+        { "OnUpdate",         nullptr, "Callbacks", "function OnUpdate(dt)", "Called every frame while playing; dt is the frame time in seconds." },
+        { "OnCollisionEnter", nullptr, "Callbacks", "function OnCollisionEnter(otherTag)", "Called when this entity's body starts touching another (needs a Rigid Body)." },
+        { "OnCollisionExit",  nullptr, "Callbacks", "function OnCollisionExit(otherTag)", "Called when this entity's body stops touching another." },
+        { "OnAnimationEvent", nullptr, "Callbacks", "function OnAnimationEvent(name)", "Called when the playing clip crosses an animation event (Timeline panel)." },
+
+        { "GetTranslation", l_GetTranslation, "Transform", "GetTranslation() -> x, y, z", "World position of this entity." },
+        { "SetTranslation", l_SetTranslation, "Transform", "SetTranslation(x, y, z)", "Moves this entity to a position." },
+        { "GetRotation",    l_GetRotation,    "Transform", "GetRotation() -> x, y, z", "Euler rotation in radians." },
+        { "SetRotation",    l_SetRotation,    "Transform", "SetRotation(x, y, z)", "Sets the Euler rotation (radians)." },
+        { "SetScale",       l_SetScale,       "Transform", "SetScale(x, y, z)", "Sets the scale." },
+        { "Translate",      l_Translate,      "Transform", "Translate(dx, dy, dz)", "Adds an offset to the position." },
+        { "Rotate",         l_Rotate,         "Transform", "Rotate(dx, dy, dz)", "Adds to the Euler rotation (radians)." },
+        { "MoveForward",    l_MoveForward,    "Transform", "MoveForward(distance)", "Moves along the entity's facing (local -Z turned by its yaw)." },
+
+        { "SetColor",    l_SetColor,    "Material", "SetColor(r, g, b)", "Sets the diffuse colour of the cube/mesh material (0..1)." },
+        { "SetEmissive", l_SetEmissive, "Material", "SetEmissive(r, g, b [, strength])", "Makes the material glow; strength defaults to 1." },
+
+        { "PlayAnimation",        l_PlayAnimation,        "Animation", "PlayAnimation(clip)", "Plays a clip by index or name." },
+        { "CrossFade",            l_CrossFade,            "Animation", "CrossFade(clip [, seconds])", "Blends from the current clip to another." },
+        { "PauseAnimation",       l_PauseAnimation,       "Animation", "PauseAnimation()", "Pauses playback." },
+        { "ResumeAnimation",      l_ResumeAnimation,      "Animation", "ResumeAnimation()", "Resumes playback." },
+        { "StopAnimation",        l_StopAnimation,        "Animation", "StopAnimation()", "Stops and rewinds to the start." },
+        { "SetAnimationTime",     l_SetAnimationTime,     "Animation", "SetAnimationTime(seconds)", "Seeks the current clip." },
+        { "GetAnimationTime",     l_GetAnimationTime,     "Animation", "GetAnimationTime() -> seconds", "Playback position of the current clip." },
+        { "GetAnimationDuration", l_GetAnimationDuration, "Animation", "GetAnimationDuration() -> seconds", "Length of the current clip." },
+        { "SetAnimationSpeed",    l_SetAnimationSpeed,    "Animation", "SetAnimationSpeed(speed)", "Playback rate (1 = normal, negative = reverse)." },
+        { "SetAnimationLoop",     l_SetAnimationLoop,     "Animation", "SetAnimationLoop(mode)", "0 = loop, 1 = once, 2 = ping-pong." },
+        { "IsAnimationPlaying",   l_IsAnimationPlaying,   "Animation", "IsAnimationPlaying() -> bool", "True while a clip is playing." },
+        { "IsAnimationFinished",  l_IsAnimationFinished,  "Animation", "IsAnimationFinished() -> bool", "True once a non-looping clip has ended." },
+        { "GetAnimationName",     l_GetAnimationName,     "Animation", "GetAnimationName() -> name", "Name of the current clip." },
+        { "HasAnimation",         l_HasAnimation,         "Animation", "HasAnimation(clip) -> bool", "Whether the model has a clip with this index or name." },
+
+        { "ApplyImpulse",       l_ApplyImpulse,       "Physics", "ApplyImpulse(x, y, z)", "Instant change of momentum (needs a Rigid Body, while playing)." },
+        { "ApplyForce",         l_ApplyForce,         "Physics", "ApplyForce(x, y, z)", "Continuous force for this step." },
+        { "SetVelocity",        l_SetVelocity,        "Physics", "SetVelocity(x, y, z)", "Sets the linear velocity." },
+        { "GetVelocity",        l_GetVelocity,        "Physics", "GetVelocity() -> x, y, z", "Current linear velocity." },
+        { "SetAngularVelocity", l_SetAngularVelocity, "Physics", "SetAngularVelocity(x, y, z)", "Sets the spin (radians/second)." },
+        { "RayCast",            l_RayCast,            "Physics", "RayCast(ox, oy, oz, dx, dy, dz, maxDist) -> tag, hx, hy, hz", "Casts a ray; returns the hit entity's tag and point, or nil." },
+
+        { "IsKeyDown",    l_IsKeyDown,    "Input", "IsKeyDown(key) -> bool", "True while the key is held, e.g. IsKeyDown(Key.W)." },
+        { "IsKeyPressed", l_IsKeyPressed, "Input", "IsKeyPressed(key) -> bool", "True only on the frame the key goes down." },
+
+        { "print", l_print, "Debug", "print(...)", "Writes its arguments to the Script Editor console." },
+    };
+
+    // Names exposed in the global `Key` table (Key.Up, Key.Space, Key.W, Key.0 ...).
+    struct LuaKey { const char* name; int code; };
+    static std::vector<LuaKey> ScriptKeys(){
+        std::vector<LuaKey> keys = {
+            { "Up", Key::Up }, { "Down", Key::Down }, { "Left", Key::Left }, { "Right", Key::Right },
+            { "Space", Key::Space }, { "Enter", Key::Enter }, { "Escape", Key::Escape }, { "Tab", Key::Tab },
+            { "LeftShift", Key::LeftShift }, { "RightShift", Key::RightShift },
+            { "LeftControl", Key::LeftControl }, { "RightControl", Key::RightControl },
+            { "W", Key::W }, { "A", Key::A }, { "S", Key::S }, { "D", Key::D },
+            { "Q", Key::Q }, { "E", Key::E }, { "R", Key::R }, { "F", Key::F },
+        };
+        static const char* digits[] = { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9" };
+        for (int i = 0; i <= 9; i++) { keys.push_back({ digits[i], Key::D0 + i }); }
+        return keys;
+    }
+
+    const std::vector<LuaApiDoc>& LuaScript::GetApiDocs(){
+        static const std::vector<LuaApiDoc> docs = []{
+            std::vector<LuaApiDoc> out;
+            for (const LuaBinding& b : s_Bindings)
+                out.push_back({ b.name, b.signature, b.doc, b.category });
+            for (const LuaKey& k : ScriptKeys()){
+                std::string name = std::string("Key.") + k.name;
+                out.push_back({ name, name, "Key code for IsKeyDown / IsKeyPressed.", "Keys" });
+            }
+            return out;
+        }();
+        return docs;
+    }
+
+    int LuaScript::ParseErrorLine(const std::string& error, std::string* outMessage){
+        // Lua formats errors as "<chunk>:<line>: <message>"; find the first ":<digits>:".
+        for (std::size_t i = error.find(':'); i != std::string::npos; i = error.find(':', i + 1)){
+            std::size_t j = i + 1;
+            while (j < error.size() && std::isdigit((unsigned char)error[j])) { j++; }
+            if (j > i + 1 && j < error.size() && error[j] == ':'){
+                if (outMessage){
+                    std::size_t start = j + 1;
+                    while (start < error.size() && error[start] == ' ') { start++; }
+                    *outMessage = error.substr(start);
+                }
+                return std::stoi(error.substr(i + 1, j - i - 1));
+            }
+        }
+        if (outMessage) { *outMessage = error; }
+        return -1;
+    }
+
+    bool LuaScript::CheckSyntax(const std::string& source, std::string& outError, int& outLine){
+        lua_State* L = luaL_newstate();
+        bool ok = luaL_loadbuffer(L, source.data(), source.size(), "=script") == LUA_OK;
+        if (!ok){
+            const char* msg = lua_tostring(L, -1);
+            outLine = ParseErrorLine(msg ? msg : "", &outError);
+        }
+        lua_close(L);
+        return ok;
+    }
+
     // The count hook fires every HOOK_INTERVAL VM instructions; a single call may run
     // MAX_HOOK_TICKS * HOOK_INTERVAL (~100M) instructions, far beyond any per-frame
     // script but short enough (well under a second) to recover from a runaway loop.
@@ -293,15 +426,25 @@ namespace Phoenix{
     bool LuaScript::ProtectedCall(int nargs, const char* what){
         m_HookTicks = 0;
         if (lua_pcall(m_L, nargs, 0, 0) != LUA_OK){
-            PHX_CORE_ERROR("Lua {0} error: {1}", what, lua_tostring(m_L, -1));
+            const char* msg = lua_tostring(m_L, -1);
+            std::string error = msg ? msg : "unknown error";
             lua_pop(m_L, 1);
-            m_Valid = false; // stop running a broken script
+            Fail(what, error);
             return false;
         }
         return true;
     }
 
-    LuaScript::LuaScript(const std::string& source, Entity entity) : m_Entity(entity){
+    void LuaScript::Fail(const char* what, const std::string& error){
+        PHX_CORE_ERROR("Lua {0} error in '{1}': {2}", what, m_Name, error);
+        m_Valid = false; // stop running a broken script
+        m_ErrorLine = ParseErrorLine(error, &m_Error);
+        if (Scene* scene = m_Entity.GetScene())
+            scene->LogScript(m_Entity, m_Index, m_Name, true, std::string(what) + ": " + m_Error, m_ErrorLine);
+    }
+
+    LuaScript::LuaScript(const std::string& source, Entity entity, int index, const std::string& name)
+        : m_Entity(entity), m_Index(index), m_Name(name){
         m_L = luaL_newstate();
         *static_cast<LuaScript**>(lua_getextraspace(m_L)) = this;
 
@@ -326,63 +469,23 @@ namespace Phoenix{
         }
         lua_sethook(m_L, &LuaScript::InstructionHook, LUA_MASKCOUNT, HOOK_INTERVAL);
 
-        lua_register(m_L, "GetTranslation", l_GetTranslation);
-        lua_register(m_L, "SetTranslation", l_SetTranslation);
-        lua_register(m_L, "GetRotation",    l_GetRotation);
-        lua_register(m_L, "SetRotation",    l_SetRotation);
-        lua_register(m_L, "SetScale",       l_SetScale);
-        lua_register(m_L, "SetColor",       l_SetColor);
-        lua_register(m_L, "SetEmissive",    l_SetEmissive);
-
-        // Animation control
-        lua_register(m_L, "PlayAnimation",      l_PlayAnimation);
-        lua_register(m_L, "CrossFade",          l_CrossFade);
-        lua_register(m_L, "PauseAnimation",     l_PauseAnimation);
-        lua_register(m_L, "ResumeAnimation",    l_ResumeAnimation);
-        lua_register(m_L, "StopAnimation",      l_StopAnimation);
-        lua_register(m_L, "SetAnimationTime",   l_SetAnimationTime);
-        lua_register(m_L, "GetAnimationTime",   l_GetAnimationTime);
-        lua_register(m_L, "GetAnimationDuration", l_GetAnimationDuration);
-        lua_register(m_L, "SetAnimationSpeed",  l_SetAnimationSpeed);
-        lua_register(m_L, "SetAnimationLoop",   l_SetAnimationLoop);
-        lua_register(m_L, "IsAnimationPlaying", l_IsAnimationPlaying);
-        lua_register(m_L, "IsAnimationFinished",l_IsAnimationFinished);
-        lua_register(m_L, "GetAnimationName",   l_GetAnimationName);
-        lua_register(m_L, "HasAnimation",       l_HasAnimation);
-
-        // Physics
-        lua_register(m_L, "ApplyImpulse",       l_ApplyImpulse);
-        lua_register(m_L, "ApplyForce",         l_ApplyForce);
-        lua_register(m_L, "SetVelocity",        l_SetVelocity);
-        lua_register(m_L, "GetVelocity",        l_GetVelocity);
-        lua_register(m_L, "SetAngularVelocity", l_SetAngularVelocity);
-        lua_register(m_L, "RayCast",            l_RayCast);
-
-        // Input + movement helpers
-        lua_register(m_L, "IsKeyDown",    l_IsKeyDown);
-        lua_register(m_L, "IsKeyPressed", l_IsKeyPressed);
-        lua_register(m_L, "Translate",    l_Translate);
-        lua_register(m_L, "Rotate",       l_Rotate);
-        lua_register(m_L, "MoveForward",  l_MoveForward);
+        for (const LuaBinding& b : s_Bindings)
+            if (b.fn) { lua_register(m_L, b.name, b.fn); }
 
         // A global `Key` table of keycodes, so scripts write Key.Up / Key.Space / Key.W.
         lua_newtable(m_L);
-        auto setKey = [&](const char* name, int code){
-            lua_pushinteger(m_L, code); lua_setfield(m_L, -2, name);
-        };
-        setKey("Up", Key::Up); setKey("Down", Key::Down); setKey("Left", Key::Left); setKey("Right", Key::Right);
-        setKey("Space", Key::Space); setKey("Enter", Key::Enter); setKey("Escape", Key::Escape); setKey("Tab", Key::Tab);
-        setKey("LeftShift", Key::LeftShift); setKey("RightShift", Key::RightShift);
-        setKey("LeftControl", Key::LeftControl); setKey("RightControl", Key::RightControl);
-        setKey("W", Key::W); setKey("A", Key::A); setKey("S", Key::S); setKey("D", Key::D);
-        setKey("Q", Key::Q); setKey("E", Key::E); setKey("R", Key::R); setKey("F", Key::F);
-        for (int i = 0; i <= 9; i++){ char n[2] = { (char)('0' + i), 0 }; setKey(n, Key::D0 + i); }
+        for (const LuaKey& k : ScriptKeys()){
+            lua_pushinteger(m_L, k.code);
+            lua_setfield(m_L, -2, k.name);
+        }
         lua_setglobal(m_L, "Key");
 
-        if (luaL_loadstring(m_L, source.c_str()) != LUA_OK){
-            PHX_CORE_ERROR("Lua load error: {0}", lua_tostring(m_L, -1));
+        std::string chunkName = "=" + m_Name;
+        if (luaL_loadbuffer(m_L, source.data(), source.size(), chunkName.c_str()) != LUA_OK){
+            const char* msg = lua_tostring(m_L, -1);
+            std::string error = msg ? msg : "unknown error";
             lua_pop(m_L, 1);
-            m_Valid = false;
+            Fail("load", error);
         }
         else{
             m_Valid = true;
