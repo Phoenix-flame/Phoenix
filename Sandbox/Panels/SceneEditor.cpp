@@ -2,6 +2,7 @@
 #include <Phoenix/imGui/imgui.h>
 #include <Phoenix/imGui/imgui_internal.h>
 #include <Phoenix/Scene/Component.h>
+#include <Phoenix/Physics/Physics.h>
 #include <glm/gtc/type_ptr.hpp>
 #include <cstring>
 #include <cctype>
@@ -25,6 +26,11 @@ namespace Phoenix{
         "HasAnimation", "OnAnimationEvent",
         "ApplyImpulse", "ApplyForce", "SetVelocity", "GetVelocity", "SetAngularVelocity",
         "RayCast", "OnCollisionEnter", "OnCollisionExit",
+        "ApplyImpulseAtPoint", "ApplyAngularImpulse", "ApplyForceAtPoint", "ApplyTorque",
+        "GetAngularVelocity", "GetMass", "SetGravityFactor", "SetFriction", "SetRestitution",
+        "WakeUp", "IsSleeping", "Teleport", "SphereCast", "OverlapSphere", "OverlapBox",
+        "Move", "Jump", "IsGrounded", "SetMotor", "SetMotorTarget", "GetJointValue",
+        "BreakJoint", "IsJointBroken", "OnTriggerEnter", "OnTriggerExit", "OnJointBreak",
         "IsKeyDown", "IsKeyPressed", "Translate", "Rotate", "MoveForward",
         "Key.Up", "Key.Down", "Key.Left", "Key.Right", "Key.Space", "Key.LeftShift",
         "function", "local", "return", "then", "else", "elseif", "while", "for",
@@ -269,6 +275,8 @@ namespace Phoenix{
 				m_SelectedEntity = m_ActiveScene->CreateEntity("Water");
 				m_SelectedEntity.AddComponent<WaterComponent>();
 			}
+
+			CreatePhysicsObjectMenu();
 
 			if (ImGui::BeginMenu("Create Shape")){
 				struct ShapeDef { const char* label; const char* name; PrimitiveComponent::Type type; };
@@ -633,6 +641,32 @@ namespace Phoenix{
 
 
 
+    // Euler angles stored in radians, edited in degrees.
+    static void DragAngles(const char* label, glm::vec3& radians){
+        glm::vec3 degrees = glm::degrees(radians);
+        if (ImGui::DragFloat3(label, glm::value_ptr(degrees), 0.5f, -360.0f, 360.0f, "%.1f deg"))
+            radians = glm::radians(degrees);
+    }
+
+    // Local-space bounds of what the entity draws (model, primitive or cube), for the
+    // collider "Fit to Shape" buttons. Primitives/cubes are built in the unit cube;
+    // the plane is flat, so give it a thin slab.
+    static bool GetEntityLocalBounds(Entity entity, glm::vec3& lo, glm::vec3& hi){
+        if (entity.HasComponent<MeshComponent>()){
+            auto& mesh = entity.GetComponent<MeshComponent>();
+            return mesh.model && mesh.model->GetLocalBounds(lo, hi);
+        }
+        if (entity.HasComponent<PrimitiveComponent>() || entity.HasComponent<CubeComponent>()){
+            lo = glm::vec3(-0.5f); hi = glm::vec3(0.5f);
+            if (entity.HasComponent<PrimitiveComponent>()
+                && entity.GetComponent<PrimitiveComponent>().type == PrimitiveComponent::Type::Plane){
+                lo.y = -0.01f; hi.y = 0.01f;
+            }
+            return true;
+        }
+        return false;
+    }
+
     void SceneEditor::DrawComponents(Entity entity){
 		{
 			int total_w = ImGui::GetContentRegionAvail().x;
@@ -713,6 +747,16 @@ namespace Phoenix{
             if (ImGui::MenuItem("Joint")){
                 if (!m_SelectedEntity.HasComponent<JointComponent>())
                     m_SelectedEntity.AddComponent<JointComponent>();
+                ImGui::CloseCurrentPopup();
+            }
+            if (ImGui::MenuItem("Character Controller")){
+                if (!m_SelectedEntity.HasComponent<CharacterControllerComponent>())
+                    m_SelectedEntity.AddComponent<CharacterControllerComponent>();
+                ImGui::CloseCurrentPopup();
+            }
+            if (ImGui::MenuItem("Force Field")){
+                if (!m_SelectedEntity.HasComponent<ForceFieldComponent>())
+                    m_SelectedEntity.AddComponent<ForceFieldComponent>();
                 ImGui::CloseCurrentPopup();
             }
             if (ImGui::MenuItem("Wireframe")){
@@ -984,103 +1028,199 @@ namespace Phoenix{
 			ImGui::TextDisabled("Set the camera Primary to view through it.");
 		});
 
-		DrawComponent<RigidBodyComponent>("Rigid Body", entity, [](auto& component){
+		DrawComponent<RigidBodyComponent>("Rigid Body", entity, [this, entity](RigidBodyComponent& component) mutable {
 			const char* typeStrings[] = { "Static", "Dynamic", "Kinematic" };
-			const char* currentType = typeStrings[(int)component.type];
-			if (ImGui::BeginCombo("Body Type", currentType)){
-				for (int i = 0; i < 3; i++){
-					bool isSelected = currentType == typeStrings[i];
-					if (ImGui::Selectable(typeStrings[i], isSelected))
-						component.type = (RigidBodyComponent::Type)i;
-					if (isSelected)
-						ImGui::SetItemDefaultFocus();
+			int type = (int)component.type;
+			if (ImGui::Combo("Body Type", &type, typeStrings, 3)) { component.type = (RigidBodyComponent::Type)type; }
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Static: never moves. Dynamic: simulated.\nKinematic: follows its Transform (scripts/animation) and pushes dynamic bodies.");
+
+			// Material presets: friction / restitution / density in one click.
+			struct Preset { const char* name; float friction, restitution, density; };
+			static const Preset presets[] = {
+				{ "Default", 0.5f, 0.0f, 1000.0f }, { "Wood", 0.6f, 0.3f, 700.0f }, { "Metal", 0.4f, 0.15f, 7800.0f },
+				{ "Stone", 0.8f, 0.1f, 2500.0f }, { "Ice", 0.02f, 0.05f, 917.0f }, { "Rubber", 1.2f, 0.8f, 1100.0f },
+				{ "Bouncy Ball", 0.4f, 0.95f, 300.0f }, { "Foam", 0.7f, 0.1f, 50.0f },
+			};
+			if (ImGui::BeginCombo("Material Preset", "Apply...")){
+				for (const auto& preset : presets){
+					if (ImGui::Selectable(preset.name)){
+						component.friction = preset.friction;
+						component.restitution = preset.restitution;
+						component.density = preset.density;
+					}
 				}
 				ImGui::EndCombo();
 			}
 			ImGui::SliderFloat("Friction", &component.friction, 0.0f, 1.5f);
 			ImGui::SliderFloat("Restitution", &component.restitution, 0.0f, 1.0f);
-			ImGui::DragFloat("Density", &component.density, 10.0f, 1.0f, 30000.0f, "%.0f kg/m3");
-			ImGui::SliderFloat("Linear Damping", &component.linearDamping, 0.0f, 2.0f);
-			ImGui::SliderFloat("Angular Damping", &component.angularDamping, 0.0f, 2.0f);
-			ImGui::SliderFloat("Gravity Factor", &component.gravityFactor, 0.0f, 4.0f);
-			float vel[] = { component.initialVelocity.x, component.initialVelocity.y, component.initialVelocity.z };
-			if (ImGui::DragFloat3("Initial Velocity", vel, 0.1f)){
-				component.initialVelocity = { vel[0], vel[1], vel[2] };
+
+			if (component.type == RigidBodyComponent::Type::Dynamic){
+				ImGui::DragFloat("Density", &component.density, 10.0f, 1.0f, 30000.0f, "%.0f kg/m3");
+				ImGui::DragFloat("Mass Override", &component.mass, 0.5f, 0.0f, 100000.0f, component.mass > 0.0f ? "%.1f kg" : "off (from density)");
+				if (ImGui::IsItemHovered()) ImGui::SetTooltip("> 0 sets the mass directly instead of density x volume.");
+				ImGui::DragFloat3("Center of Mass", glm::value_ptr(component.centerOfMassOffset), 0.01f);
+				if (ImGui::IsItemHovered()) ImGui::SetTooltip("Local offset. A low center of mass makes objects hard to tip (weebles, cars).");
+				ImGui::SliderFloat("Linear Damping", &component.linearDamping, 0.0f, 2.0f);
+				ImGui::SliderFloat("Angular Damping", &component.angularDamping, 0.0f, 2.0f);
+				ImGui::SliderFloat("Gravity Factor", &component.gravityFactor, -2.0f, 4.0f);
+				ImGui::DragFloat3("Initial Velocity", glm::value_ptr(component.initialVelocity), 0.1f);
+				ImGui::DragFloat3("Initial Spin", glm::value_ptr(component.initialAngularVelocity), 0.1f);
+				if (ImGui::IsItemHovered()) ImGui::SetTooltip("Initial angular velocity (rad/s) around world X/Y/Z.");
+
+				ImGui::TextUnformatted("Lock Position");
+				ImGui::SameLine(120); ImGui::Checkbox("X##lp", &component.lockPosition[0]);
+				ImGui::SameLine(); ImGui::Checkbox("Y##lp", &component.lockPosition[1]);
+				ImGui::SameLine(); ImGui::Checkbox("Z##lp", &component.lockPosition[2]);
+				ImGui::TextUnformatted("Lock Rotation");
+				ImGui::SameLine(120); ImGui::Checkbox("X##lr", &component.lockRotation[0]);
+				ImGui::SameLine(); ImGui::Checkbox("Y##lr", &component.lockRotation[1]);
+				ImGui::SameLine(); ImGui::Checkbox("Z##lr", &component.lockRotation[2]);
+				if (ImGui::Button("2D (XY plane)")){
+					component.lockPosition[0] = component.lockPosition[1] = false; component.lockPosition[2] = true;
+					component.lockRotation[0] = component.lockRotation[1] = true; component.lockRotation[2] = false;
+				}
+				ImGui::SameLine();
+				if (ImGui::Button("Upright")){
+					component.lockRotation[0] = component.lockRotation[2] = true;
+				}
+				if (ImGui::IsItemHovered()) ImGui::SetTooltip("Lock X/Z rotation so it never tips over (characters made of rigid bodies).");
+
+				ImGui::Checkbox("Continuous Collision", &component.continuousCollision);
+				if (ImGui::IsItemHovered()) ImGui::SetTooltip("For fast movers (bullets) so they don't tunnel through walls.");
+				ImGui::Checkbox("Allow Sleeping", &component.allowSleeping);
+				if (ImGui::IsItemHovered()) ImGui::SetTooltip("Resting bodies stop simulating (cheaper) until something touches them.");
 			}
-			ImGui::Checkbox("Continuous Collision", &component.continuousCollision);
-			if (ImGui::IsItemHovered()) ImGui::SetTooltip("For fast movers (bullets) so they don't tunnel through walls.");
 			ImGui::Checkbox("Sensor (Trigger)", &component.isSensor);
-			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Detects contacts (Lua OnCollisionEnter/Exit) without colliding.");
-			ImGui::TextDisabled("Applied on Run");
-		});
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Detects overlaps (Lua OnTriggerEnter/Exit) without colliding.");
 
-		DrawComponent<BoxColliderComponent>("Box Collider", entity, [](auto& component){
-			float extents[] = { component.halfExtents.x, component.halfExtents.y, component.halfExtents.z };
-			if (ImGui::DragFloat3("Half Extents", extents, 0.05f, 0.0f, 0.0f, "%.2f")){
-				component.halfExtents.x = extents[0];
-				component.halfExtents.y = extents[1];
-				component.halfExtents.z = extents[2];
-			}
-			ImGui::TextDisabled("Scaled by Transform on Run");
-		});
-
-		DrawComponent<SphereColliderComponent>("Sphere Collider", entity, [](SphereColliderComponent& component){
-			ImGui::DragFloat("Radius", &component.radius, 0.05f, 0.01f, 100.0f, "%.2f");
-			ImGui::TextDisabled("Scaled by the largest Transform scale axis on Run");
-		});
-
-		DrawComponent<CapsuleColliderComponent>("Capsule Collider", entity, [](CapsuleColliderComponent& component){
-			ImGui::DragFloat("Radius", &component.radius, 0.05f, 0.01f, 100.0f, "%.2f");
-			ImGui::DragFloat("Half Height", &component.halfHeight, 0.05f, 0.01f, 100.0f, "%.2f");
-			ImGui::TextDisabled("Vertical (Y). Total height = 2 x (half height + radius).");
-		});
-
-		DrawComponent<CylinderColliderComponent>("Cylinder Collider", entity, [](CylinderColliderComponent& component){
-			ImGui::DragFloat("Radius", &component.radius, 0.05f, 0.01f, 100.0f, "%.2f");
-			ImGui::DragFloat("Half Height", &component.halfHeight, 0.05f, 0.01f, 100.0f, "%.2f");
-			ImGui::TextDisabled("Vertical (Y) cylinder.");
-		});
-
-		DrawComponent<JointComponent>("Joint", entity, [](JointComponent& component){
-			const char* typeStrings[] = { "Point (ball-socket)", "Distance", "Hinge" };
-			const char* currentType = typeStrings[(int)component.type];
-			if (ImGui::BeginCombo("Joint Type", currentType)){
-				for (int i = 0; i < 3; i++){
-					bool isSelected = currentType == typeStrings[i];
-					if (ImGui::Selectable(typeStrings[i], isSelected))
-						component.type = (JointComponent::Type)i;
-					if (isSelected)
-						ImGui::SetItemDefaultFocus();
+			const auto& physics = m_ActiveScene->PhysicsSettings();
+			if (ImGui::BeginCombo("Layer", physics.layerNames[component.layer].c_str())){
+				for (int i = 0; i < ScenePhysicsSettings::MaxLayers; i++){
+					ImGui::PushID(i);
+					if (ImGui::Selectable(physics.layerNames[i].c_str(), component.layer == i)) { component.layer = i; }
+					ImGui::PopID();
 				}
 				ImGui::EndCombo();
 			}
+
+			// Live state while playing.
+			PhysicsWorld* world = m_ActiveScene->GetPhysicsWorld();
+			if (world && component.runtimeBodyID != PhysicsWorld::InvalidBody){
+				ImGui::Separator();
+				glm::vec3 v = world->GetLinearVelocity(component.runtimeBodyID);
+				ImGui::Text("Mass %.2f kg | speed %.2f m/s | %s", world->GetMass(component.runtimeBodyID),
+					glm::length(v), world->IsAwake(component.runtimeBodyID) ? "awake" : "sleeping");
+			}
+			else if (!world){
+				ImGui::TextDisabled("Applied on Run. Shape = all collider components.");
+			}
+			if (!entity.HasComponent<BoxColliderComponent>() && !entity.HasComponent<SphereColliderComponent>()
+				&& !entity.HasComponent<CapsuleColliderComponent>() && !entity.HasComponent<CylinderColliderComponent>()
+				&& !entity.HasComponent<MeshColliderComponent>())
+				ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "No collider: add a Box/Sphere/Capsule/Cylinder/Mesh Collider.");
+		});
+
+		DrawComponent<BoxColliderComponent>("Box Collider", entity, [entity](BoxColliderComponent& component) mutable {
+			ImGui::DragFloat3("Half Extents", glm::value_ptr(component.halfExtents), 0.02f, 0.01f, 1000.0f, "%.2f");
+			ImGui::DragFloat3("Offset", glm::value_ptr(component.offset), 0.02f, 0.0f, 0.0f, "%.2f");
+			DragAngles("Rotation", component.rotation);
+			glm::vec3 lo, hi;
+			if (ImGui::Button("Fit to Shape") && GetEntityLocalBounds(entity, lo, hi)){
+				component.halfExtents = glm::max((hi - lo) * 0.5f, glm::vec3(0.01f));
+				component.offset = (hi + lo) * 0.5f;
+				component.rotation = glm::vec3(0.0f);
+			}
+			ImGui::TextDisabled("Local units, scaled by Transform on Run");
+		});
+
+		DrawComponent<SphereColliderComponent>("Sphere Collider", entity, [entity](SphereColliderComponent& component) mutable {
+			ImGui::DragFloat("Radius", &component.radius, 0.02f, 0.01f, 100.0f, "%.2f");
+			ImGui::DragFloat3("Offset", glm::value_ptr(component.offset), 0.02f, 0.0f, 0.0f, "%.2f");
+			glm::vec3 lo, hi;
+			if (ImGui::Button("Fit to Shape") && GetEntityLocalBounds(entity, lo, hi)){
+				glm::vec3 half = (hi - lo) * 0.5f;
+				component.radius = std::max(0.01f, std::max(half.x, std::max(half.y, half.z)));
+				component.offset = (hi + lo) * 0.5f;
+			}
+			ImGui::TextDisabled("Scaled by the largest Transform scale axis on Run");
+		});
+
+		DrawComponent<CapsuleColliderComponent>("Capsule Collider", entity, [entity](CapsuleColliderComponent& component) mutable {
+			ImGui::DragFloat("Radius", &component.radius, 0.02f, 0.01f, 100.0f, "%.2f");
+			ImGui::DragFloat("Half Height", &component.halfHeight, 0.02f, 0.0f, 100.0f, "%.2f");
+			ImGui::DragFloat3("Offset", glm::value_ptr(component.offset), 0.02f, 0.0f, 0.0f, "%.2f");
+			DragAngles("Rotation", component.rotation);
+			glm::vec3 lo, hi;
+			if (ImGui::Button("Fit to Shape") && GetEntityLocalBounds(entity, lo, hi)){
+				glm::vec3 half = (hi - lo) * 0.5f;
+				component.radius = std::max(0.01f, std::max(half.x, half.z));
+				component.halfHeight = std::max(0.0f, half.y - component.radius);
+				component.offset = (hi + lo) * 0.5f;
+				component.rotation = glm::vec3(0.0f);
+			}
+			ImGui::TextDisabled("Along local Y. Total height = 2 x (half height + radius).");
+		});
+
+		DrawComponent<CylinderColliderComponent>("Cylinder Collider", entity, [entity](CylinderColliderComponent& component) mutable {
+			ImGui::DragFloat("Radius", &component.radius, 0.02f, 0.01f, 100.0f, "%.2f");
+			ImGui::DragFloat("Half Height", &component.halfHeight, 0.02f, 0.01f, 100.0f, "%.2f");
+			ImGui::DragFloat3("Offset", glm::value_ptr(component.offset), 0.02f, 0.0f, 0.0f, "%.2f");
+			DragAngles("Rotation", component.rotation);
+			glm::vec3 lo, hi;
+			if (ImGui::Button("Fit to Shape") && GetEntityLocalBounds(entity, lo, hi)){
+				glm::vec3 half = (hi - lo) * 0.5f;
+				component.radius = std::max(0.01f, std::max(half.x, half.z));
+				component.halfHeight = std::max(0.01f, half.y);
+				component.offset = (hi + lo) * 0.5f;
+				component.rotation = glm::vec3(0.0f);
+			}
+			ImGui::TextDisabled("Along local Y.");
+		});
+
+		DrawComponent<JointComponent>("Joint", entity, [this, entity](JointComponent& component) mutable {
+			const char* typeStrings[] = { "Point (ball-socket)", "Distance / Spring", "Hinge", "Fixed (weld)", "Slider", "Cone" };
+			int type = (int)component.type;
+			if (ImGui::Combo("Joint Type", &type, typeStrings, 6)) { component.type = (JointComponent::Type)type; }
+
 			char buf[128];
 			std::strncpy(buf, component.connectedTag.c_str(), sizeof(buf) - 1);
 			buf[sizeof(buf) - 1] = 0;
 			if (ImGui::InputText("Connected Body (Tag)", buf, sizeof(buf))) { component.connectedTag = buf; }
-			ImGui::TextDisabled("Empty tag = anchored to the world.");
+			if (!component.connectedTag.empty() && !m_ActiveScene->FindEntityByTag(component.connectedTag))
+				ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "No entity with this tag.");
+			else
+				ImGui::TextDisabled("Empty tag = anchored to the world.");
 
-			if (component.type != JointComponent::Type::Distance){
-				float pivot[] = { component.pivot.x, component.pivot.y, component.pivot.z };
-				if (ImGui::DragFloat3("Pivot (world)", pivot, 0.1f)){
-					component.pivot = { pivot[0], pivot[1], pivot[2] };
-				}
+			const bool distance = component.type == JointComponent::Type::Distance;
+			ImGui::DragFloat3(distance ? "World Anchor" : "Pivot (world)", glm::value_ptr(component.pivot), 0.05f);
+			if (ImGui::Button("Pivot = Entity Position"))
+				component.pivot = entity.GetComponent<TransformComponent>().Translation;
+			if (!distance){
+				ImGui::SameLine();
+				Entity other = component.connectedTag.empty() ? Entity{} : m_ActiveScene->FindEntityByTag(component.connectedTag);
+				if (ImGui::Button("Midpoint") && other)
+					component.pivot = 0.5f * (entity.GetComponent<TransformComponent>().Translation
+						+ other.GetComponent<TransformComponent>().Translation);
 			}
-			if (component.type == JointComponent::Type::Distance){
-				float pivot[] = { component.pivot.x, component.pivot.y, component.pivot.z };
-				if (ImGui::DragFloat3("World Anchor", pivot, 0.1f)){
-					component.pivot = { pivot[0], pivot[1], pivot[2] };
-				}
-				ImGui::TextDisabled("Used when no connected body; else the other body's center.");
+
+			if (distance){
+				ImGui::TextDisabled("Anchor is used when world-anchored; else the other body's center.");
 				ImGui::DragFloat("Min Distance", &component.minDistance, 0.05f, -1.0f, 100.0f, "%.2f");
 				ImGui::DragFloat("Max Distance", &component.maxDistance, 0.05f, -1.0f, 100.0f, "%.2f");
-				ImGui::TextDisabled("-1 keeps the starting distance.");
+				ImGui::TextDisabled("-1 keeps the starting distance. Min 0 = slack rope.");
+				ImGui::DragFloat("Spring Frequency", &component.springFrequency, 0.05f, 0.0f, 30.0f, component.springFrequency > 0.0f ? "%.2f Hz" : "rigid");
+				if (component.springFrequency > 0.0f)
+					ImGui::SliderFloat("Spring Damping", &component.springDamping, 0.0f, 1.0f);
+			}
+			if (component.type == JointComponent::Type::Hinge || component.type == JointComponent::Type::Slider
+				|| component.type == JointComponent::Type::Cone){
+				ImGui::DragFloat3("Axis (world)", glm::value_ptr(component.axis), 0.05f);
+				ImGui::SameLine();
+				if (ImGui::SmallButton("X")) { component.axis = { 1, 0, 0 }; } ImGui::SameLine();
+				if (ImGui::SmallButton("Y")) { component.axis = { 0, 1, 0 }; } ImGui::SameLine();
+				if (ImGui::SmallButton("Z")) { component.axis = { 0, 0, 1 }; }
 			}
 			if (component.type == JointComponent::Type::Hinge){
-				float axis[] = { component.axis.x, component.axis.y, component.axis.z };
-				if (ImGui::DragFloat3("Axis (world)", axis, 0.05f)){
-					component.axis = { axis[0], axis[1], axis[2] };
-				}
 				ImGui::Checkbox("Limit Angles", &component.limitAngles);
 				if (component.limitAngles){
 					float minDeg = glm::degrees(component.minAngle);
@@ -1091,7 +1231,96 @@ namespace Phoenix{
 						component.maxAngle = glm::radians(maxDeg);
 				}
 			}
-			ImGui::TextDisabled("Connected on Run; needs a Rigid Body + collider.");
+			if (component.type == JointComponent::Type::Slider){
+				ImGui::Checkbox("Limit Travel", &component.limitSlide);
+				if (component.limitSlide){
+					ImGui::DragFloat("Min", &component.minSlide, 0.05f, -100.0f, 0.0f, "%.2f m");
+					ImGui::DragFloat("Max", &component.maxSlide, 0.05f, 0.0f, 100.0f, "%.2f m");
+				}
+			}
+			if (component.type == JointComponent::Type::Cone){
+				float deg = glm::degrees(component.coneAngle);
+				if (ImGui::SliderFloat("Cone Half Angle", &deg, 0.0f, 180.0f, "%.0f deg")) { component.coneAngle = glm::radians(deg); }
+			}
+			if (component.type == JointComponent::Type::Hinge || component.type == JointComponent::Type::Slider){
+				const bool hinge = component.type == JointComponent::Type::Hinge;
+				const char* motorStrings[] = { "Off", "Velocity", "Position" };
+				int motor = (int)component.motor;
+				if (ImGui::Combo("Motor", &motor, motorStrings, 3)) { component.motor = (JointComponent::Motor)motor; }
+				if (component.motor == JointComponent::Motor::Velocity)
+					ImGui::DragFloat("Target Speed", &component.motorTarget, 0.05f, 0.0f, 0.0f, hinge ? "%.2f rad/s" : "%.2f m/s");
+				else if (component.motor == JointComponent::Motor::Position){
+					if (hinge){
+						float deg = glm::degrees(component.motorTarget);
+						if (ImGui::DragFloat("Target Angle", &deg, 1.0f, -180.0f, 180.0f, "%.0f deg")) { component.motorTarget = glm::radians(deg); }
+					}
+					else ImGui::DragFloat("Target Position", &component.motorTarget, 0.02f, 0.0f, 0.0f, "%.2f m");
+				}
+				if (component.motor != JointComponent::Motor::Off)
+					ImGui::DragFloat(hinge ? "Max Torque" : "Max Force", &component.motorMaxForce, 1.0f, 0.0f, 1e7f,
+						component.motorMaxForce > 0.0f ? "%.0f" : "unlimited");
+				ImGui::DragFloat("Friction", &component.friction, 0.5f, 0.0f, 1e6f, hinge ? "%.1f N.m" : "%.1f N");
+			}
+			ImGui::DragFloat("Break Force", &component.breakForce, 10.0f, 0.0f, 1e8f, component.breakForce > 0.0f ? "%.0f N" : "unbreakable");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("The joint snaps when it has to hold more than this force (Lua OnJointBreak).");
+			ImGui::Checkbox("Collide Connected", &component.collideConnected);
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Let the two jointed bodies collide with each other.");
+
+			PhysicsWorld* world = m_ActiveScene->GetPhysicsWorld();
+			if (world){
+				if (world->IsJointAlive(component.runtimeJointID)) ImGui::Text("Value: %.3f", world->GetJointValue(component.runtimeJointID));
+				else ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f), "Broken / not connected");
+			}
+			else ImGui::TextDisabled("Connected on Run; needs a Rigid Body + collider.");
+		});
+
+		DrawComponent<CharacterControllerComponent>("Character Controller", entity, [this](CharacterControllerComponent& component){
+			ImGui::DragFloat("Radius", &component.radius, 0.01f, 0.05f, 10.0f, "%.2f");
+			ImGui::DragFloat("Half Height", &component.halfHeight, 0.01f, 0.0f, 10.0f, "%.2f");
+			float slope = glm::degrees(component.maxSlopeAngle);
+			if (ImGui::SliderFloat("Max Slope", &slope, 0.0f, 89.0f, "%.0f deg")) { component.maxSlopeAngle = glm::radians(slope); }
+			ImGui::DragFloat("Step Height", &component.stepHeight, 0.01f, 0.0f, 2.0f, "%.2f m");
+			ImGui::DragFloat("Move Speed", &component.moveSpeed, 0.05f, 0.0f, 50.0f, "%.1f m/s");
+			ImGui::DragFloat("Jump Speed", &component.jumpSpeed, 0.05f, 0.0f, 50.0f, "%.1f m/s");
+			ImGui::SliderFloat("Gravity Factor", &component.gravityFactor, 0.0f, 4.0f);
+			ImGui::SliderFloat("Air Control", &component.airControl, 0.0f, 1.0f);
+			ImGui::DragFloat("Mass", &component.mass, 1.0f, 1.0f, 10000.0f, "%.0f kg");
+			ImGui::DragFloat("Max Push Force", &component.maxPushForce, 5.0f, 0.0f, 100000.0f, "%.0f N");
+			const auto& physics = m_ActiveScene->PhysicsSettings();
+			if (ImGui::BeginCombo("Layer", physics.layerNames[component.layer].c_str())){
+				for (int i = 0; i < ScenePhysicsSettings::MaxLayers; i++){
+					ImGui::PushID(i);
+					if (ImGui::Selectable(physics.layerNames[i].c_str(), component.layer == i)) { component.layer = i; }
+					ImGui::PopID();
+				}
+				ImGui::EndCombo();
+			}
+			ImGui::Checkbox("Keyboard Control", &component.keyboardControl);
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("WASD / arrows move relative to the camera, Shift runs, Space jumps.\nOff: drive it from Lua with Move(vx, vz) / Jump().");
+			ImGui::Checkbox("Face Movement", &component.faceMovement);
+			if (m_ActiveScene->IsRunning())
+				ImGui::Text("%s | speed %.2f m/s", component.grounded ? "grounded" : "airborne",
+					glm::length(glm::vec2(component.velocity.x, component.velocity.z)));
+			else
+				ImGui::TextDisabled("Capsule centered on the entity; scaled by Transform.");
+		});
+
+		DrawComponent<ForceFieldComponent>("Force Field", entity, [](ForceFieldComponent& component){
+			const char* shapes[] = { "Box", "Sphere" };
+			const char* modes[] = { "Directional (wind / lift)", "Radial (attract / repel)" };
+			int shape = (int)component.shape, mode = (int)component.mode;
+			if (ImGui::Combo("Shape", &shape, shapes, 2)) { component.shape = (ForceFieldComponent::Shape)shape; }
+			if (ImGui::Combo("Mode", &mode, modes, 2)) { component.mode = (ForceFieldComponent::Mode)mode; }
+			if (component.shape == ForceFieldComponent::Shape::Box)
+				ImGui::DragFloat3("Half Extents", glm::value_ptr(component.halfExtents), 0.05f, 0.05f, 1000.0f, "%.2f");
+			else
+				ImGui::DragFloat("Radius", &component.halfExtents.x, 0.05f, 0.05f, 1000.0f, "%.2f");
+			if (component.mode == ForceFieldComponent::Mode::Directional)
+				ImGui::DragFloat3("Direction (local)", glm::value_ptr(component.direction), 0.05f);
+			ImGui::DragFloat("Strength", &component.strength, 0.1f, -500.0f, 500.0f, "%.1f m/s2");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Acceleration. ~10 along +Y cancels gravity. Radial: > 0 attracts, < 0 repels.");
+			ImGui::DragFloat("Drag", &component.drag, 0.01f, 0.0f, 20.0f, "%.2f");
+			ImGui::TextDisabled("Affects dynamic bodies inside; needs no Rigid Body.");
 		});
 
 		DrawComponent<TerrainComponent>("Terrain", entity, [](TerrainComponent& component){

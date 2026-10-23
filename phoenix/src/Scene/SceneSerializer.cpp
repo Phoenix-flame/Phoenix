@@ -1,11 +1,13 @@
 #include <Phoenix/Scene/SceneSerializer.h>
 #include <Phoenix/Scene/Entity.h>
+#include <Phoenix/Scene/Scene.h>
 #include <Phoenix/Scene/Component.h>
 #include <Phoenix/renderer/Mesh.h>
 #include <Phoenix/core/log.h>
 
 #include <yaml-cpp/yaml.h>
 #include <fstream>
+#include <algorithm>
 #include <unordered_set>
 #include <vector>
 
@@ -21,6 +23,51 @@ namespace Phoenix{
     static glm::vec3 ReadVec3(const YAML::Node& node, const glm::vec3& fallback = glm::vec3(0.0f)){
         if (!node || !node.IsSequence() || node.size() < 3) { return fallback; }
         return { node[0].as<float>(fallback.x), node[1].as<float>(fallback.y), node[2].as<float>(fallback.z) };
+    }
+
+    static void WriteBool3(YAML::Emitter& out, const bool v[3]){
+        out << YAML::Flow << YAML::BeginSeq << v[0] << v[1] << v[2] << YAML::EndSeq;
+    }
+
+    // Missing/malformed -> all false.
+    static void ReadBool3(const YAML::Node& node, bool out[3]){
+        for (int i = 0; i < 3; i++)
+            out[i] = (node && node.IsSequence() && node.size() == 3) ? node[i].as<bool>(false) : false;
+    }
+
+    // Scene-level physics settings (gravity, solver, collision layers).
+    static void SerializePhysicsSettings(YAML::Emitter& out, const ScenePhysicsSettings& p){
+        out << YAML::Key << "Physics" << YAML::Value << YAML::BeginMap;
+        out << YAML::Key << "Gravity" << YAML::Value << p.gravity;
+        out << YAML::Key << "VelocitySteps" << YAML::Value << p.velocitySteps;
+        out << YAML::Key << "PositionSteps" << YAML::Value << p.positionSteps;
+        out << YAML::Key << "SubstepRate" << YAML::Value << p.substepRate;
+        out << YAML::Key << "Layers" << YAML::Value << YAML::BeginSeq;
+        for (int i = 0; i < ScenePhysicsSettings::MaxLayers; i++){
+            out << YAML::BeginMap;
+            out << YAML::Key << "Name" << YAML::Value << p.layerNames[i];
+            out << YAML::Key << "Mask" << YAML::Value << (unsigned)p.layerMasks[i];
+            out << YAML::EndMap;
+        }
+        out << YAML::EndSeq;
+        out << YAML::EndMap;
+    }
+
+    static void ReadPhysicsSettings(const YAML::Node& node, ScenePhysicsSettings& p){
+        const ScenePhysicsSettings def;
+        p = def; // a scene without the key gets the defaults, not the previous scene's
+        if (!node) { return; }
+        p.gravity = ReadVec3(node["Gravity"], def.gravity);
+        p.velocitySteps = node["VelocitySteps"].as<int>(def.velocitySteps);
+        p.positionSteps = node["PositionSteps"].as<int>(def.positionSteps);
+        p.substepRate = node["SubstepRate"].as<float>(def.substepRate);
+        const YAML::Node layers = node["Layers"];
+        if (layers && layers.IsSequence()){
+            for (std::size_t i = 0; i < layers.size() && i < (std::size_t)ScenePhysicsSettings::MaxLayers; i++){
+                p.layerNames[i] = layers[i]["Name"].as<std::string>(def.layerNames[i]);
+                p.layerMasks[i] = (uint16_t)layers[i]["Mask"].as<unsigned>(def.layerMasks[i]);
+            }
+        }
     }
 
     static void SerializeMaterial(YAML::Emitter& out, const Material& material){
@@ -146,12 +193,21 @@ namespace Phoenix{
             out << YAML::Key << "Friction" << YAML::Value << rb.friction;
             out << YAML::Key << "Restitution" << YAML::Value << rb.restitution;
             out << YAML::Key << "Density" << YAML::Value << rb.density;
+            out << YAML::Key << "Mass" << YAML::Value << rb.mass;
+            out << YAML::Key << "CenterOfMassOffset" << YAML::Value << rb.centerOfMassOffset;
             out << YAML::Key << "LinearDamping" << YAML::Value << rb.linearDamping;
             out << YAML::Key << "AngularDamping" << YAML::Value << rb.angularDamping;
             out << YAML::Key << "GravityFactor" << YAML::Value << rb.gravityFactor;
             out << YAML::Key << "ContinuousCollision" << YAML::Value << rb.continuousCollision;
             out << YAML::Key << "IsSensor" << YAML::Value << rb.isSensor;
+            out << YAML::Key << "AllowSleeping" << YAML::Value << rb.allowSleeping;
+            out << YAML::Key << "LockPosition" << YAML::Value;
+            WriteBool3(out, rb.lockPosition);
+            out << YAML::Key << "LockRotation" << YAML::Value;
+            WriteBool3(out, rb.lockRotation);
+            out << YAML::Key << "Layer" << YAML::Value << rb.layer;
             out << YAML::Key << "InitialVelocity" << YAML::Value << rb.initialVelocity;
+            out << YAML::Key << "InitialAngularVelocity" << YAML::Value << rb.initialAngularVelocity;
             out << YAML::EndMap;
         }
 
@@ -159,12 +215,16 @@ namespace Phoenix{
             auto& bc = entity.GetComponent<BoxColliderComponent>();
             out << YAML::Key << "BoxColliderComponent" << YAML::Value << YAML::BeginMap;
             out << YAML::Key << "HalfExtents" << YAML::Value << bc.halfExtents;
+            out << YAML::Key << "Offset" << YAML::Value << bc.offset;
+            out << YAML::Key << "Rotation" << YAML::Value << bc.rotation;
             out << YAML::EndMap;
         }
 
         if (entity.HasComponent<SphereColliderComponent>()){
+            auto& sc = entity.GetComponent<SphereColliderComponent>();
             out << YAML::Key << "SphereColliderComponent" << YAML::Value << YAML::BeginMap;
-            out << YAML::Key << "Radius" << YAML::Value << entity.GetComponent<SphereColliderComponent>().radius;
+            out << YAML::Key << "Radius" << YAML::Value << sc.radius;
+            out << YAML::Key << "Offset" << YAML::Value << sc.offset;
             out << YAML::EndMap;
         }
 
@@ -173,6 +233,8 @@ namespace Phoenix{
             out << YAML::Key << "CapsuleColliderComponent" << YAML::Value << YAML::BeginMap;
             out << YAML::Key << "Radius" << YAML::Value << cc.radius;
             out << YAML::Key << "HalfHeight" << YAML::Value << cc.halfHeight;
+            out << YAML::Key << "Offset" << YAML::Value << cc.offset;
+            out << YAML::Key << "Rotation" << YAML::Value << cc.rotation;
             out << YAML::EndMap;
         }
 
@@ -181,6 +243,8 @@ namespace Phoenix{
             out << YAML::Key << "CylinderColliderComponent" << YAML::Value << YAML::BeginMap;
             out << YAML::Key << "Radius" << YAML::Value << cc.radius;
             out << YAML::Key << "HalfHeight" << YAML::Value << cc.halfHeight;
+            out << YAML::Key << "Offset" << YAML::Value << cc.offset;
+            out << YAML::Key << "Rotation" << YAML::Value << cc.rotation;
             out << YAML::EndMap;
         }
 
@@ -199,9 +263,52 @@ namespace Phoenix{
             out << YAML::Key << "Axis" << YAML::Value << j.axis;
             out << YAML::Key << "MinDistance" << YAML::Value << j.minDistance;
             out << YAML::Key << "MaxDistance" << YAML::Value << j.maxDistance;
+            out << YAML::Key << "SpringFrequency" << YAML::Value << j.springFrequency;
+            out << YAML::Key << "SpringDamping" << YAML::Value << j.springDamping;
             out << YAML::Key << "LimitAngles" << YAML::Value << j.limitAngles;
             out << YAML::Key << "MinAngle" << YAML::Value << j.minAngle;
             out << YAML::Key << "MaxAngle" << YAML::Value << j.maxAngle;
+            out << YAML::Key << "LimitSlide" << YAML::Value << j.limitSlide;
+            out << YAML::Key << "MinSlide" << YAML::Value << j.minSlide;
+            out << YAML::Key << "MaxSlide" << YAML::Value << j.maxSlide;
+            out << YAML::Key << "ConeAngle" << YAML::Value << j.coneAngle;
+            out << YAML::Key << "Motor" << YAML::Value << (int)j.motor;
+            out << YAML::Key << "MotorTarget" << YAML::Value << j.motorTarget;
+            out << YAML::Key << "MotorMaxForce" << YAML::Value << j.motorMaxForce;
+            out << YAML::Key << "Friction" << YAML::Value << j.friction;
+            out << YAML::Key << "BreakForce" << YAML::Value << j.breakForce;
+            out << YAML::Key << "CollideConnected" << YAML::Value << j.collideConnected;
+            out << YAML::EndMap;
+        }
+
+        if (entity.HasComponent<CharacterControllerComponent>()){
+            auto& cc = entity.GetComponent<CharacterControllerComponent>();
+            out << YAML::Key << "CharacterControllerComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "Radius" << YAML::Value << cc.radius;
+            out << YAML::Key << "HalfHeight" << YAML::Value << cc.halfHeight;
+            out << YAML::Key << "MaxSlopeAngle" << YAML::Value << cc.maxSlopeAngle;
+            out << YAML::Key << "StepHeight" << YAML::Value << cc.stepHeight;
+            out << YAML::Key << "MoveSpeed" << YAML::Value << cc.moveSpeed;
+            out << YAML::Key << "JumpSpeed" << YAML::Value << cc.jumpSpeed;
+            out << YAML::Key << "GravityFactor" << YAML::Value << cc.gravityFactor;
+            out << YAML::Key << "AirControl" << YAML::Value << cc.airControl;
+            out << YAML::Key << "Mass" << YAML::Value << cc.mass;
+            out << YAML::Key << "MaxPushForce" << YAML::Value << cc.maxPushForce;
+            out << YAML::Key << "Layer" << YAML::Value << cc.layer;
+            out << YAML::Key << "KeyboardControl" << YAML::Value << cc.keyboardControl;
+            out << YAML::Key << "FaceMovement" << YAML::Value << cc.faceMovement;
+            out << YAML::EndMap;
+        }
+
+        if (entity.HasComponent<ForceFieldComponent>()){
+            auto& f = entity.GetComponent<ForceFieldComponent>();
+            out << YAML::Key << "ForceFieldComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "Shape" << YAML::Value << (int)f.shape;
+            out << YAML::Key << "Mode" << YAML::Value << (int)f.mode;
+            out << YAML::Key << "HalfExtents" << YAML::Value << f.halfExtents;
+            out << YAML::Key << "Direction" << YAML::Value << f.direction;
+            out << YAML::Key << "Strength" << YAML::Value << f.strength;
+            out << YAML::Key << "Drag" << YAML::Value << f.drag;
             out << YAML::EndMap;
         }
 
@@ -287,6 +394,7 @@ namespace Phoenix{
         out << YAML::BeginMap;
         out << YAML::Key << "Scene" << YAML::Value << "Untitled";
         out << YAML::Key << "Ambient" << YAML::Value << m_Scene->AmbientColor();
+        SerializePhysicsSettings(out, m_Scene->PhysicsSettings());
         out << YAML::Key << "Entities" << YAML::Value << YAML::BeginSeq;
 
         for (auto entityID : m_Scene->m_Registry.storage<entt::entity>()){
@@ -416,19 +524,26 @@ namespace Phoenix{
 
         if (auto n = node["RigidBodyComponent"]){
             auto& rb = entity.HasComponent<RigidBodyComponent>() ? entity.GetComponent<RigidBodyComponent>() : entity.AddComponent<RigidBodyComponent>();
-            const RigidBodyComponent def{}; // fallbacks for keys missing from the file
-            rb.type = (RigidBodyComponent::Type)n["Type"].as<int>((int)def.type);
             // Assign every field (with its default when absent): the component may be
             // reused from the live scene, so stale values must not survive.
-            rb.friction = n["Friction"] ? n["Friction"].as<float>() : 0.5f;
-            rb.restitution = n["Restitution"] ? n["Restitution"].as<float>() : 0.0f;
-            rb.density = n["Density"] ? n["Density"].as<float>() : 1000.0f;
-            rb.linearDamping = n["LinearDamping"] ? n["LinearDamping"].as<float>() : 0.05f;
-            rb.angularDamping = n["AngularDamping"] ? n["AngularDamping"].as<float>() : 0.05f;
-            rb.gravityFactor = n["GravityFactor"] ? n["GravityFactor"].as<float>() : 1.0f;
-            rb.continuousCollision = n["ContinuousCollision"] ? n["ContinuousCollision"].as<bool>() : false;
-            rb.isSensor = n["IsSensor"] ? n["IsSensor"].as<bool>() : false;
-            rb.initialVelocity = n["InitialVelocity"] ? ReadVec3(n["InitialVelocity"]) : glm::vec3(0.0f);
+            const RigidBodyComponent def{}; // fallbacks for keys missing from the file
+            rb.type = (RigidBodyComponent::Type)n["Type"].as<int>((int)def.type);
+            rb.friction = n["Friction"].as<float>(def.friction);
+            rb.restitution = n["Restitution"].as<float>(def.restitution);
+            rb.density = n["Density"].as<float>(def.density);
+            rb.mass = n["Mass"].as<float>(def.mass);
+            rb.centerOfMassOffset = ReadVec3(n["CenterOfMassOffset"], def.centerOfMassOffset);
+            rb.linearDamping = n["LinearDamping"].as<float>(def.linearDamping);
+            rb.angularDamping = n["AngularDamping"].as<float>(def.angularDamping);
+            rb.gravityFactor = n["GravityFactor"].as<float>(def.gravityFactor);
+            rb.continuousCollision = n["ContinuousCollision"].as<bool>(def.continuousCollision);
+            rb.isSensor = n["IsSensor"].as<bool>(def.isSensor);
+            rb.allowSleeping = n["AllowSleeping"].as<bool>(def.allowSleeping);
+            ReadBool3(n["LockPosition"], rb.lockPosition);
+            ReadBool3(n["LockRotation"], rb.lockRotation);
+            rb.layer = std::clamp(n["Layer"].as<int>(def.layer), 0, ScenePhysicsSettings::MaxLayers - 1);
+            rb.initialVelocity = ReadVec3(n["InitialVelocity"], def.initialVelocity);
+            rb.initialAngularVelocity = ReadVec3(n["InitialAngularVelocity"], def.initialAngularVelocity);
         }
         else if (entity.HasComponent<RigidBodyComponent>()) entity.RemoveComponent<RigidBodyComponent>();
 
@@ -436,6 +551,7 @@ namespace Phoenix{
             auto& sc = entity.HasComponent<SphereColliderComponent>() ? entity.GetComponent<SphereColliderComponent>() : entity.AddComponent<SphereColliderComponent>();
             const SphereColliderComponent def{}; // fallbacks for keys missing from the file
             sc.radius = n["Radius"].as<float>(def.radius);
+            sc.offset = ReadVec3(n["Offset"], def.offset);
         }
         else if (entity.HasComponent<SphereColliderComponent>()) entity.RemoveComponent<SphereColliderComponent>();
 
@@ -444,6 +560,8 @@ namespace Phoenix{
             const CapsuleColliderComponent def{}; // fallbacks for keys missing from the file
             cc.radius = n["Radius"].as<float>(def.radius);
             cc.halfHeight = n["HalfHeight"].as<float>(def.halfHeight);
+            cc.offset = ReadVec3(n["Offset"], def.offset);
+            cc.rotation = ReadVec3(n["Rotation"], def.rotation);
         }
         else if (entity.HasComponent<CapsuleColliderComponent>()) entity.RemoveComponent<CapsuleColliderComponent>();
 
@@ -452,28 +570,75 @@ namespace Phoenix{
             const CylinderColliderComponent def{}; // fallbacks for keys missing from the file
             cc.radius = n["Radius"].as<float>(def.radius);
             cc.halfHeight = n["HalfHeight"].as<float>(def.halfHeight);
+            cc.offset = ReadVec3(n["Offset"], def.offset);
+            cc.rotation = ReadVec3(n["Rotation"], def.rotation);
         }
         else if (entity.HasComponent<CylinderColliderComponent>()) entity.RemoveComponent<CylinderColliderComponent>();
 
         if (auto n = node["JointComponent"]){
             auto& j = entity.HasComponent<JointComponent>() ? entity.GetComponent<JointComponent>() : entity.AddComponent<JointComponent>();
             const JointComponent def{}; // fallbacks for keys missing from the file
-            j.type = (JointComponent::Type)n["Type"].as<int>((int)def.type);
-            j.connectedTag = n["ConnectedTag"] ? n["ConnectedTag"].as<std::string>() : std::string();
-            j.pivot = n["Pivot"] ? ReadVec3(n["Pivot"]) : glm::vec3(0.0f);
-            j.axis = n["Axis"] ? ReadVec3(n["Axis"]) : glm::vec3(0.0f, 0.0f, 1.0f);
-            j.minDistance = n["MinDistance"] ? n["MinDistance"].as<float>() : -1.0f;
-            j.maxDistance = n["MaxDistance"] ? n["MaxDistance"].as<float>() : -1.0f;
-            j.limitAngles = n["LimitAngles"] ? n["LimitAngles"].as<bool>() : false;
-            j.minAngle = n["MinAngle"] ? n["MinAngle"].as<float>() : -1.5708f;
-            j.maxAngle = n["MaxAngle"] ? n["MaxAngle"].as<float>() : 1.5708f;
+            j.type = (JointComponent::Type)std::clamp(n["Type"].as<int>((int)def.type), 0, 5);
+            j.connectedTag = n["ConnectedTag"].as<std::string>(def.connectedTag);
+            j.pivot = ReadVec3(n["Pivot"], def.pivot);
+            j.axis = ReadVec3(n["Axis"], def.axis);
+            j.minDistance = n["MinDistance"].as<float>(def.minDistance);
+            j.maxDistance = n["MaxDistance"].as<float>(def.maxDistance);
+            j.springFrequency = n["SpringFrequency"].as<float>(def.springFrequency);
+            j.springDamping = n["SpringDamping"].as<float>(def.springDamping);
+            j.limitAngles = n["LimitAngles"].as<bool>(def.limitAngles);
+            j.minAngle = n["MinAngle"].as<float>(def.minAngle);
+            j.maxAngle = n["MaxAngle"].as<float>(def.maxAngle);
+            j.limitSlide = n["LimitSlide"].as<bool>(def.limitSlide);
+            j.minSlide = n["MinSlide"].as<float>(def.minSlide);
+            j.maxSlide = n["MaxSlide"].as<float>(def.maxSlide);
+            j.coneAngle = n["ConeAngle"].as<float>(def.coneAngle);
+            j.motor = (JointComponent::Motor)std::clamp(n["Motor"].as<int>((int)def.motor), 0, 2);
+            j.motorTarget = n["MotorTarget"].as<float>(def.motorTarget);
+            j.motorMaxForce = n["MotorMaxForce"].as<float>(def.motorMaxForce);
+            j.friction = n["Friction"].as<float>(def.friction);
+            j.breakForce = n["BreakForce"].as<float>(def.breakForce);
+            j.collideConnected = n["CollideConnected"].as<bool>(def.collideConnected);
         }
         else if (entity.HasComponent<JointComponent>()) entity.RemoveComponent<JointComponent>();
+
+        if (auto n = node["CharacterControllerComponent"]){
+            auto& cc = entity.HasComponent<CharacterControllerComponent>() ? entity.GetComponent<CharacterControllerComponent>() : entity.AddComponent<CharacterControllerComponent>();
+            const CharacterControllerComponent def{}; // fallbacks for keys missing from the file
+            cc.radius = n["Radius"].as<float>(def.radius);
+            cc.halfHeight = n["HalfHeight"].as<float>(def.halfHeight);
+            cc.maxSlopeAngle = n["MaxSlopeAngle"].as<float>(def.maxSlopeAngle);
+            cc.stepHeight = n["StepHeight"].as<float>(def.stepHeight);
+            cc.moveSpeed = n["MoveSpeed"].as<float>(def.moveSpeed);
+            cc.jumpSpeed = n["JumpSpeed"].as<float>(def.jumpSpeed);
+            cc.gravityFactor = n["GravityFactor"].as<float>(def.gravityFactor);
+            cc.airControl = n["AirControl"].as<float>(def.airControl);
+            cc.mass = n["Mass"].as<float>(def.mass);
+            cc.maxPushForce = n["MaxPushForce"].as<float>(def.maxPushForce);
+            cc.layer = std::clamp(n["Layer"].as<int>(def.layer), 0, ScenePhysicsSettings::MaxLayers - 1);
+            cc.keyboardControl = n["KeyboardControl"].as<bool>(def.keyboardControl);
+            cc.faceMovement = n["FaceMovement"].as<bool>(def.faceMovement);
+        }
+        else if (entity.HasComponent<CharacterControllerComponent>()) entity.RemoveComponent<CharacterControllerComponent>();
+
+        if (auto n = node["ForceFieldComponent"]){
+            auto& f = entity.HasComponent<ForceFieldComponent>() ? entity.GetComponent<ForceFieldComponent>() : entity.AddComponent<ForceFieldComponent>();
+            const ForceFieldComponent def{}; // fallbacks for keys missing from the file
+            f.shape = (ForceFieldComponent::Shape)std::clamp(n["Shape"].as<int>((int)def.shape), 0, 1);
+            f.mode = (ForceFieldComponent::Mode)std::clamp(n["Mode"].as<int>((int)def.mode), 0, 1);
+            f.halfExtents = ReadVec3(n["HalfExtents"], def.halfExtents);
+            f.direction = ReadVec3(n["Direction"], def.direction);
+            f.strength = n["Strength"].as<float>(def.strength);
+            f.drag = n["Drag"].as<float>(def.drag);
+        }
+        else if (entity.HasComponent<ForceFieldComponent>()) entity.RemoveComponent<ForceFieldComponent>();
 
         if (auto n = node["BoxColliderComponent"]){
             auto& bc = entity.HasComponent<BoxColliderComponent>() ? entity.GetComponent<BoxColliderComponent>() : entity.AddComponent<BoxColliderComponent>();
             const BoxColliderComponent def{}; // fallbacks for keys missing from the file
             bc.halfExtents = ReadVec3(n["HalfExtents"], def.halfExtents);
+            bc.offset = ReadVec3(n["Offset"], def.offset);
+            bc.rotation = ReadVec3(n["Rotation"], def.rotation);
         }
         else if (entity.HasComponent<BoxColliderComponent>()) entity.RemoveComponent<BoxColliderComponent>();
 
@@ -588,6 +753,7 @@ namespace Phoenix{
         }
 
         if (data["Ambient"]) m_Scene->AmbientColor() = ReadVec3(data["Ambient"]);
+        ReadPhysicsSettings(data["Physics"], m_Scene->PhysicsSettings());
 
         for (auto entityNode : data["Entities"]){
             std::string name;
@@ -617,6 +783,7 @@ namespace Phoenix{
         }
 
         if (root["Ambient"]) m_Scene->AmbientColor() = ReadVec3(root["Ambient"]);
+        ReadPhysicsSettings(root["Physics"], m_Scene->PhysicsSettings());
 
         auto& registry = m_Scene->m_Registry;
         const YAML::Node entities = root["Entities"];

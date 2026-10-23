@@ -92,43 +92,61 @@ namespace Phoenix{
 
     // Physics. Type values match PhysicsWorld::BodyType. runtimeBodyID is filled in
     // when the scene's physics simulation starts (0xffffffff = no body / not running).
-    // The material/mass fields are applied to the Jolt body on Run.
+    // The material/mass fields are applied to the Jolt body on Run. The body's shape
+    // is made of EVERY collider component on the entity (box + sphere + ... combine
+    // into one compound shape); each collider has its own local offset/rotation.
     struct RigidBodyComponent{
         enum class Type { Static = 0, Dynamic = 1, Kinematic = 2 };
         Type type = Type::Dynamic;
 
         float friction = 0.5f;
         float restitution = 0.0f;      // bounciness (0 = dead, 1 = superball)
-        float density = 1000.0f;       // kg/m^3; mass follows from the collider volume
+        float density = 1000.0f;       // kg/m3; mass follows from the collider volume
+        float mass = 0.0f;             // kg; > 0 overrides the density-derived mass
+        glm::vec3 centerOfMassOffset = { 0.0f, 0.0f, 0.0f }; // local; low COM = hard to tip
         float linearDamping = 0.05f;
         float angularDamping = 0.05f;
         float gravityFactor = 1.0f;    // 0 = floats, 1 = normal gravity
         bool  continuousCollision = false; // for fast movers (bullets) so they don't tunnel
         bool  isSensor = false;        // trigger volume: detects contacts, no response
+        bool  allowSleeping = true;    // resting bodies stop simulating until disturbed
+        bool  lockPosition[3] = { false, false, false }; // freeze world X/Y/Z movement
+        bool  lockRotation[3] = { false, false, false }; // freeze world X/Y/Z rotation
+        int   layer = 0;               // collision layer (Scene physics settings matrix)
         glm::vec3 initialVelocity = { 0.0f, 0.0f, 0.0f };
+        glm::vec3 initialAngularVelocity = { 0.0f, 0.0f, 0.0f }; // rad/s
 
         uint32_t runtimeBodyID = 0xffffffff;
         RigidBodyComponent() = default;
         RigidBodyComponent(const RigidBodyComponent&) = default;
     };
 
+    // Colliders. Sizes are in the entity's local space and scaled by its Transform on
+    // Run; offset/rotation place the shape relative to the entity origin. Several
+    // different colliders on one entity form a compound body (e.g. a box handle with
+    // a sphere head = a hammer that lands head-first).
     struct BoxColliderComponent{
         glm::vec3 halfExtents = { 0.5f, 0.5f, 0.5f };
+        glm::vec3 offset = { 0.0f, 0.0f, 0.0f };
+        glm::vec3 rotation = { 0.0f, 0.0f, 0.0f }; // radians
         BoxColliderComponent() = default;
         BoxColliderComponent(const BoxColliderComponent&) = default;
     };
 
     struct SphereColliderComponent{
         float radius = 0.5f;
+        glm::vec3 offset = { 0.0f, 0.0f, 0.0f };
         SphereColliderComponent() = default;
         SphereColliderComponent(const SphereColliderComponent&) = default;
     };
 
-    // A vertical capsule (Y axis). Total height = 2 * (halfHeight + radius);
-    // halfHeight is the straight cylindrical section only.
+    // A capsule along local Y (rotate it for a horizontal one). Total height =
+    // 2 * (halfHeight + radius); halfHeight is the straight cylindrical section only.
     struct CapsuleColliderComponent{
         float radius = 0.3f;
         float halfHeight = 0.5f;
+        glm::vec3 offset = { 0.0f, 0.0f, 0.0f };
+        glm::vec3 rotation = { 0.0f, 0.0f, 0.0f }; // radians
         CapsuleColliderComponent() = default;
         CapsuleColliderComponent(const CapsuleColliderComponent&) = default;
     };
@@ -136,6 +154,8 @@ namespace Phoenix{
     struct CylinderColliderComponent{
         float radius = 0.5f;
         float halfHeight = 0.5f;
+        glm::vec3 offset = { 0.0f, 0.0f, 0.0f };
+        glm::vec3 rotation = { 0.0f, 0.0f, 0.0f }; // radians
         CylinderColliderComponent() = default;
         CylinderColliderComponent(const CylinderColliderComponent&) = default;
     };
@@ -151,24 +171,100 @@ namespace Phoenix{
     // Connects this entity's rigid body to another body (found by Tag; leave the tag
     // empty to anchor to the world) when the simulation starts. Anchor points/axes are
     // given in WORLD space of the edit-time layout.
+    //  - Fixed: welds the bodies together (breakable walls, glued parts).
     //  - Point: ball-and-socket at `pivot` (chains, ropes, wrecking balls).
     //  - Distance: keeps own center and the other body's center (or `pivot` when
-    //    world-anchored) between min/max distance (-1 = starting distance).
-    //  - Hinge: rotates around `axis` through `pivot`, optional angle limits
-    //    (doors, seesaws, pendulums).
+    //    world-anchored) between min/max distance (-1 = starting distance); a spring
+    //    frequency makes it a soft spring/bungee.
+    //  - Hinge: rotates around `axis` through `pivot`, optional angle limits and a
+    //    motor (doors, seesaws, wheels, windmills).
+    //  - Slider: moves along `axis` only, optional position limits and a motor
+    //    (pistons, elevators, drawers).
+    //  - Cone: ball-and-socket whose swing is limited to a cone around `axis`
+    //    (ragdoll shoulders, lamp arms).
     struct JointComponent{
-        enum class Type { Point = 0, Distance = 1, Hinge = 2 };
+        enum class Type { Point = 0, Distance = 1, Hinge = 2, Fixed = 3, Slider = 4, Cone = 5 };
+        enum class Motor { Off = 0, Velocity = 1, Position = 2 };
         Type type = Type::Point;
         std::string connectedTag;          // other rigid-body entity; empty = world
         glm::vec3 pivot = { 0.0f, 0.0f, 0.0f };
-        glm::vec3 axis = { 0.0f, 0.0f, 1.0f }; // hinge axis
+        glm::vec3 axis = { 0.0f, 0.0f, 1.0f }; // hinge / slider / cone axis
         float minDistance = -1.0f;         // distance joint; -1 = use starting distance
         float maxDistance = -1.0f;
+        float springFrequency = 0.0f;      // distance joint softness in Hz (0 = rigid)
+        float springDamping = 0.5f;
         bool  limitAngles = false;         // hinge limits (radians, about the rest pose)
         float minAngle = -1.5708f;
         float maxAngle =  1.5708f;
+        bool  limitSlide = false;          // slider limits (meters, about the rest pose)
+        float minSlide = -1.0f;
+        float maxSlide =  1.0f;
+        float coneAngle = 0.7854f;         // cone half angle (radians)
+        Motor motor = Motor::Off;          // hinge / slider motor
+        float motorTarget = 0.0f;          // rad/s or m/s (velocity), rad or m (position)
+        float motorMaxForce = 0.0f;        // N / N·m; 0 = unlimited
+        float friction = 0.0f;             // hinge / slider friction torque / force
+        float breakForce = 0.0f;           // N; snaps above this force (0 = unbreakable)
+        bool  collideConnected = false;    // let the two connected bodies collide
+        uint32_t runtimeJointID = 0xffffffff;
         JointComponent() = default;
         JointComponent(const JointComponent&) = default;
+    };
+
+    // A kinematic capsule character (player / NPC): walks, climbs steps, slides off
+    // too-steep slopes, stands on moving platforms and pushes dynamic bodies. The
+    // capsule is centered on the entity position. Drive it from Lua (Move / Jump) or
+    // tick keyboardControl for built-in WASD + Space movement relative to the camera
+    // (while ticked, keyboard input replaces Move from scripts).
+    // Don't add a RigidBodyComponent to the same entity.
+    struct CharacterControllerComponent{
+        float radius = 0.35f;
+        float halfHeight = 0.55f;     // cylindrical part; total height = 2*(halfHeight+radius)
+        float maxSlopeAngle = 0.873f; // radians (50 deg); steeper is a wall
+        float stepHeight = 0.35f;     // stair height it walks up (0 = off)
+        float moveSpeed = 5.0f;       // m/s (keyboard control)
+        float jumpSpeed = 6.0f;       // m/s upward
+        float gravityFactor = 1.0f;
+        float airControl = 0.3f;      // 0..1 steering while airborne
+        float mass = 70.0f;           // kg, for pushing bodies
+        float maxPushForce = 200.0f;  // N
+        int   layer = 0;
+        bool  keyboardControl = false; // WASD/arrows + Space, camera relative
+        bool  faceMovement = true;     // turn the entity (yaw) toward its movement
+
+        // Runtime (not serialized): the input for the next step and the last state.
+        glm::vec3 desiredVelocity = { 0.0f, 0.0f, 0.0f };
+        bool jumpRequested = false;
+        bool grounded = false;
+        glm::vec3 velocity = { 0.0f, 0.0f, 0.0f };
+        uint32_t runtimeCharacterID = 0xffffffff;
+        CharacterControllerComponent() = default;
+        CharacterControllerComponent(const CharacterControllerComponent& o)
+            : radius(o.radius), halfHeight(o.halfHeight), maxSlopeAngle(o.maxSlopeAngle),
+              stepHeight(o.stepHeight), moveSpeed(o.moveSpeed), jumpSpeed(o.jumpSpeed),
+              gravityFactor(o.gravityFactor), airControl(o.airControl), mass(o.mass),
+              maxPushForce(o.maxPushForce), layer(o.layer), keyboardControl(o.keyboardControl),
+              faceMovement(o.faceMovement) {}
+    };
+
+    // A force zone (needs no rigid body): every dynamic body inside the box/sphere
+    // volume (local half extents, scaled by the Transform) gets a force each step.
+    //  - Directional: constant acceleration along `direction` (wind, conveyor
+    //    updraft, anti-gravity lift).
+    //  - Radial: toward (strength > 0) or away from (< 0) the entity center
+    //    (black hole, explosion field), falling off linearly to the edge.
+    // Strength is an acceleration (m/s2), so heavy and light bodies react alike.
+    struct ForceFieldComponent{
+        enum class Shape { Box = 0, Sphere = 1 };
+        enum class Mode { Directional = 0, Radial = 1 };
+        Shape shape = Shape::Box;
+        Mode mode = Mode::Directional;
+        glm::vec3 halfExtents = { 2.0f, 2.0f, 2.0f }; // box; sphere uses halfExtents.x
+        glm::vec3 direction = { 0.0f, 1.0f, 0.0f };   // directional, in the entity's local space
+        float strength = 15.0f;                       // m/s2
+        float drag = 0.0f;                            // extra velocity damping inside (1/s)
+        ForceFieldComponent() = default;
+        ForceFieldComponent(const ForceFieldComponent&) = default;
     };
 
     // When present, the entity is drawn as a wireframe ("mesh network"). The bool

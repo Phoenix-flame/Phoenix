@@ -1,6 +1,7 @@
 #pragma once
 #include <Phoenix/core/base.h>
 #include <Phoenix/Scene/Entity.h>
+#include <glm/glm.hpp>
 #include <string>
 #include <unordered_set>
 
@@ -24,9 +25,17 @@ namespace Phoenix{
         // Calls the script's global OnAnimationEvent(name) if defined (fired by the Scene
         // when an animation event time is crossed).
         void OnAnimationEvent(const std::string& name);
-        // Calls the script's global OnCollisionEnter(otherTag) / OnCollisionExit(otherTag)
-        // if defined (fired by the Scene when this entity's body starts/stops touching).
-        void OnCollision(const std::string& otherTag, bool entered);
+        // Calls the script's global OnCollisionEnter(otherTag, px,py,pz, nx,ny,nz, speed)
+        // / OnCollisionExit(otherTag) if defined (fired by the Scene when this entity's
+        // body starts/stops touching another). The normal points from this entity
+        // towards the other one; speed is the impact speed along it (m/s).
+        void OnCollision(const std::string& otherTag, bool entered,
+                         const glm::vec3& point, const glm::vec3& normal, float speed);
+        // Calls OnTriggerEnter(otherTag) / OnTriggerExit(otherTag) when a sensor is
+        // involved (falls back to OnCollisionEnter/Exit(otherTag) for older scripts).
+        void OnTrigger(const std::string& otherTag, bool entered);
+        // Calls OnJointBreak(otherTag) when a breakable joint on/to this entity snaps.
+        void OnJointBreak(const std::string& otherTag);
 
         Entity GetEntity() const { return m_Entity; }
 
@@ -40,6 +49,8 @@ namespace Phoenix{
         // instruction budget. On error logs it (prefixed with `what`) and disables the
         // script. Returns false on error.
         bool ProtectedCall(int nargs, const char* what);
+        // Pushes the named global if it is a function (returns true), else pushes nothing.
+        bool PushCallback(const char* name);
         // Count hook: aborts a call that runs past the instruction budget, so an
         // infinite loop in a script can't freeze the editor.
         static void InstructionHook(lua_State* L, lua_Debug* ar);
