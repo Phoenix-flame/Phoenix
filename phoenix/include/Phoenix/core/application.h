@@ -16,6 +16,7 @@ namespace Phoenix{
     class Application{
     public:
         Application(const std::string name = "Phoenix_flame");
+        Application(const WindowProperties& props);
         virtual ~Application();
         void OnEvent(Event&);
         void PushLayer(Layer* layer);

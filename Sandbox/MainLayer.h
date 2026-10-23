@@ -36,7 +36,8 @@ private:
         m_ViewportSize.y = (float)e.GetHeight();
         return false;
     }
-    bool OnKeyPressed(KeyPressedEvent& e);
+    // Editor keyboard shortcuts (undo/redo, file, play, gizmo tools).
+    void HandleShortcuts();
 
     // Snapshot-based undo/redo. CommitHistory records a snapshot once an edit
     // settles (no active gizmo/widget); Undo/Redo restore snapshots.
@@ -48,11 +49,25 @@ private:
     // Dock the editor panels around the viewport (first run, or View > Reset Layout).
     void BuildDefaultLayout(ImGuiID dockspaceID);
 
+    // Editor chrome. The title bar holds the logo, menus, Play/Stop and (for the
+    // undecorated window) the window controls; it also drags the OS window.
+    void DrawTitleBar();
+    void DrawMenus();
+    void DrawStatusBar();
+    // Gizmo tools and play-state overlays drawn on top of the viewport image.
+    void DrawViewportOverlay(const ImVec2& imageMin, const ImVec2& imageSize);
+    void DrawSettingsPanel();
+    void DrawProfilerPanel();
+    void DrawShaderLibraryPanel();
+    void DrawHelpPopups();
+    // Resize the undecorated window from its edges (the OS draws no frame for it).
+    void UpdateWindowResize();
+
     // Make scene the edited scene: stops any running simulation on the old one,
     // retargets the editor panels and starts a fresh undo history.
     void SetActiveScene(const Ref<Scene>& scene);
     // SetActiveScene(new empty scene), then populate it with one of the Build* showcases.
-    void LoadShowcase(void (MainLayer::*build)());
+    void LoadShowcase(void (MainLayer::*build)(), const char* name);
 
     // World-space ray through the mouse cursor; false if the cursor is outside the
     // viewport image whose top-left screen position is imageMin.
@@ -61,6 +76,12 @@ private:
     // Run/Stop: Stop restores the edit-time scene captured when Run was pressed.
     void StartRuntime();
     void StopRuntime();
+    void TogglePlay();
+
+    // File menu actions (scenes are read/written at m_ScenePath).
+    void NewScene();
+    void ImportScene();
+    void ExportScene();
 
     // Populate m_Scene with the bloom/glow/shadow showcase.
     void BuildShowcaseScene();
@@ -100,6 +121,31 @@ private:
 
     // Active ImGuizmo operation: 0=translate, 1=rotate, 2=scale, -1=none.
     int m_GizmoType = 0;
+    bool m_GizmoWorld = false; // world- instead of local-space handles
+    bool m_GizmoSnap = false;  // snap to increments (Ctrl inverts while dragging)
+
+    // Shown in the title bar: the loaded showcase / file name.
+    std::string m_SceneName = "Untitled";
+    std::string m_ScenePath = "scene.phx";
+
+    // Panels owned by the main layer (the scene panels' flags live in SceneEditor).
+    bool m_ShowSettings = true;
+    bool m_ShowProfiler = true;
+    bool m_ShowShaderLibrary = true;
+    bool m_OpenImportShader = false;
+    bool m_OpenShortcuts = false;
+    bool m_OpenAbout = false;
+
+    // Custom title bar: dragging the window by the bar, resizing it by its edges.
+    bool m_TitleDragging = false;
+    bool m_TitleDragMoved = false;
+    glm::vec2 m_DragStartCursor = { 0.0f, 0.0f };
+    glm::vec2 m_DragGrab = { 0.0f, 0.0f }; // cursor in window coords; x as a fraction of the width
+    int m_HoverEdges = 0;  // window edges under the cursor (bitmask, see UpdateWindowResize)
+    int m_ResizeEdges = 0; // edges being dragged
+    glm::vec2 m_ResizeStartCursor = { 0.0f, 0.0f };
+    glm::ivec2 m_ResizeStartPos = { 0, 0 };
+    glm::ivec2 m_ResizeStartSize = { 0, 0 };
 
     // Undo/redo history (YAML scene snapshots).
     std::vector<std::string> m_UndoStack;

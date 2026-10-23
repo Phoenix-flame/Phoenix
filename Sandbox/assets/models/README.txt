@@ -1,7 +1,7 @@
 Walking robot — how to get a rigged + animated model
 =====================================================
 
-The "Load Robot Showcase" scene loads:  assets/models/robot.fbx
+The Robot showcase (File > Showcases > Robot) loads:  assets/models/robot.fbx
 (relative to the executable; the build copies assets/ next to the binary, so just
 drop the file here and rebuild — or copy it into build/Sandbox/assets/models/).
 
@@ -21,7 +21,7 @@ Easiest source: Mixamo (free, by Adobe)
        Keyframe Reduction ...... none
    (Leave "In Place" ON if you want it to walk without drifting away.)
 5. Rename the downloaded file to  robot.fbx  and put it in THIS folder.
-6. Rebuild (or just relaunch) and choose  File > Load Robot Showcase.
+6. Rebuild (or just relaunch) and choose  File > Showcases > Robot.
 
 Other sources that also work (single file with skin + one animation):
   - Sketchfab (download as FBX/glTF, "with animation")
@@ -30,7 +30,7 @@ Other sources that also work (single file with skin + one animation):
 
 Keyboard controller + extra animations (idle / run / jump)
 ----------------------------------------------------------
-The Robot Showcase has a Lua controller on the robot: press Run, click the
+The Robot Showcase has a Lua controller on the robot: press Play, click the
 viewport, then drive with the arrow keys (Up/Down walk, Left/Right turn, Shift to
 run, Space to jump). With only robot.fbx it walks/idles using the single walk clip.
 To get distinct turn/walk/run/jump animations, add these clips for the SAME
@@ -49,7 +49,7 @@ How to download each from Mixamo:
      skeleton + animation are still included); "With Skin" also works.
      Use "In Place" for run/idle so they don't drift.
   4. Save as idle.fbx / run.fbx / jump.fbx here, then reload the scene
-     (File > Load Robot Showcase). The log prints "Merged 1 animation named ..."
+     (File > Showcases > Robot). The log prints "Merged 1 animation named ..."
      for each, and the controller automatically uses them.
 
 The engine merges these onto robot.fbx's skeleton and names each clip after its

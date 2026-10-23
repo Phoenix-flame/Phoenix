@@ -7,7 +7,7 @@ playing, and serializing scenes.
 
 > :warning: This project is under active development.
 
-![The Phoenix editor showing the main showcase scene: neon cubes with bloom, shadows on the floor](images/editor.png)
+![The Phoenix editor: custom title bar with menus and Play, hierarchy, viewport tool strip, properties inspector and status bar](images/editor.png)
 
 ---
 
@@ -245,48 +245,63 @@ live scene in place (so undoing an unrelated edit never reloads your meshes).
 
 The Sandbox app provides:
 
-- **Hierarchy** panel — create/delete/select entities; Create menu for lights, terrain,
-  water, and shapes.
-- **Properties** inspector — per-component panels with live editing.
-- **Viewport** — ImGuizmo transform gizmos, click-to-pick selection, terrain sculpting.
+- **Custom title bar** — the editor runs in an undecorated window and draws its own bar:
+  logo, **File / Edit / Tools / View / Help** menus, a centred **Play / Stop** button, the
+  current scene name and minimize / maximize / close controls. Drag the bar to move the
+  window, double-click it to maximize, and drag any window edge to resize.
+- **Hierarchy** panel — searchable entity list with type icons and Lua / Physics badges;
+  create entities from the **+** button or the right-click menu (lights, terrain, water,
+  shapes).
+- **Properties** inspector — collapsible per-component sections with live editing and a
+  grouped **Add Component** menu (components the entity already has are greyed out).
+- **Viewport** — ImGuizmo transform gizmos with an on-image tool strip (select / move /
+  rotate / scale, local / world space, snapping), click-to-pick selection, terrain
+  sculpting, and a red frame + badge while the simulation is playing.
 - **Timeline** — pick a clip, play/pause/stop, loop mode, speed, and scrub the selected
   entity's animation, with its event markers on the ruler (events are added in the
   Animation component's properties).
 - **Script Editor**, **Textures**, **Shader Library**, **Profiler** panels.
-- **Settings** — ambient, linear lighting, bloom/exposure, sculpt brush, vsync.
-- **File / Edit menus** — load showcases, import/export scenes & shaders, undo/redo.
+- **Settings** — environment (background, ambient), rendering (linear lighting,
+  bloom/exposure, vsync) and the terrain sculpt brush.
+- **Status bar** — edit/play state, entity count, current selection, undo depth and FPS.
+
+Every panel can be toggled from **View**, and **View → Reset Layout** restores the default
+docking layout. **Help → Keyboard Shortcuts** (`F1`) lists the bindings below.
 
 **Controls**
 
 | Action | Binding |
 | --- | --- |
-| Translate / Rotate / Scale gizmo | `W` / `E` / `R` |
+| Translate / Rotate / Scale gizmo | `W` / `E` / `R` (or the viewport tool strip) |
 | No gizmo | `Q` |
+| Snap while dragging a gizmo | hold `Ctrl` (or toggle snapping in the tool strip) |
 | Orbit camera | Right-mouse drag |
 | Pan camera | Middle-mouse drag |
 | Zoom | Mouse wheel |
 | Select entity | Left-click in viewport |
 | Deselect | `Esc` |
+| Delete entity | `Del` |
 | Undo / Redo | `Ctrl+Z` / `Ctrl+Shift+Z` |
-| Play / Stop | toolbar button |
+| New / Import / Export scene | `Ctrl+N` / `Ctrl+O` / `Ctrl+S` |
+| Play / Stop | `F5` or the title-bar button |
 
 ---
 
 ## Built-in Showcases
 
-Open via the **File** menu:
+Open via **File → Showcases**:
 
-- **Load Showcase Scene** — bloom, neon glow, emissive lighting, environment reflection,
+- **Bloom & Shadows** (loaded at startup) — bloom, neon glow, emissive lighting, environment reflection,
   shadows, a textured backpack dropping with a convex collider, and a Lua-scripted cube.
-- **Load Water Showcase** — a sculpted terrain lake basin filled with animated water and
+- **Water** — a sculpted terrain lake basin filled with animated water and
   glowing buoys.
-- **Load Robot Showcase** — skeletal animation: a rigged character on a shadow-receiving
-  floor with a follow camera. Press **Run**, click the viewport, then drive it with the
+- **Robot** — skeletal animation: a rigged character on a shadow-receiving
+  floor with a follow camera. Press **Play**, click the viewport, then drive it with the
   arrow keys (Shift runs, Space jumps); a Lua state machine crossfades idle / walk / run /
   jump.
-- **Load Multi-Shadow Showcase** — three coloured directional lights, each casting its own
+- **Multi-Shadow** — three coloured directional lights, each casting its own
   shadow.
-- **Load Physics Showcase** — restitution and friction tests, a jointed wrecking ball, a
+- **Physics** — restitution and friction tests, a jointed wrecking ball, a
   hinged seesaw, a Lua-driven kinematic spinner, a tethered balloon and a CCD cannon.
 
 ### Getting a walking character for the Robot Showcase
@@ -299,7 +314,7 @@ The robot showcase loads `assets/models/robot.fbx`. To get a free rigged model +
 4. **Download** as **FBX Binary**, **Skin = With Skin** (bundles mesh + skeleton + animation),
    30 FPS. Keep *In Place* on so it walks without drifting.
 5. Rename to `robot.fbx`, drop it in `Sandbox/assets/models/`, rebuild (or copy into
-   `build/Sandbox/assets/models/`), then **File → Load Robot Showcase**.
+   `build/Sandbox/assets/models/`), then **File → Showcases → Robot**.
 
 glTF (`.glb`), Collada (`.dae`) and Sketchfab "with animation" exports also work. Full notes
 in [`Sandbox/assets/models/README.txt`](Sandbox/assets/models/README.txt).
@@ -382,8 +397,9 @@ Phoenix/
 │   ├── src/                  # implementation (renderer, Scene, Physics, ...)
 │   └── assets/               # engine shaders + UI fonts (copied next to every app)
 ├── Sandbox/                  # the editor application
-│   ├── MainLayer.cpp         # viewport, showcases, gizmos, undo/redo, menus
+│   ├── MainLayer.cpp         # title bar, menus, viewport, showcases, gizmos, undo/redo
 │   ├── Panels/SceneEditor.*  # hierarchy, properties, timeline, Lua editor panels
+│   ├── Panels/EditorUI.h     # vector icons + small widgets shared by the editor UI
 │   ├── assets/               # showcase models, textures, extra shaders
 │   └── backpack/             # textured backpack model for the main showcase
 ├── Example/                  # minimal app: a lit cube through the Renderer API

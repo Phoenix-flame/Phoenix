@@ -5,6 +5,8 @@
 #include <Phoenix/imGui/imgui_internal.h>
 #include <Phoenix/Scene/Component.h>
 #include <Phoenix/core/Profiler.h>
+#include <Phoenix/imGui/ImGuiLayer.h>
+#include "Panels/EditorUI.h"
 
 #include <Phoenix/core/application.h>
 #include <Phoenix/Scene/Scene.h>
@@ -17,6 +19,7 @@
 #include <Phoenix/core/Input.h>
 #include <Phoenix/Math/Math.h>
 #include <cmath>
+#include <cstdio>
 #include <algorithm>
 MainLayer::MainLayer(const std::string& name): Phoenix::Layer(name), 
         m_MainCamera()
@@ -37,6 +40,7 @@ void MainLayer::OnAttach() {
     m_Scene->OnResize(m_Framebuffer->GetSpecification().Width, m_Framebuffer->GetSpecification().Height);
 
     BuildShowcaseScene();
+    m_SceneName = "Showcase";
 
     m_ShaderLibrary = CreateScope<ShaderLibrary>();
     m_ShaderLibrary->Add(Shader::Create("assets/shaders/basic.glsl"));
@@ -1009,28 +1013,34 @@ bool MainLayer::MouseRay(const ImVec2& imageMin, glm::vec3& outOrigin, glm::vec3
 }
 
 void MainLayer::BuildDefaultLayout(ImGuiID dockspaceID) {
-    //  +-----------------+---------------------------------+
-    //  | Scene | Settings|                                 |
-    //  | Textures | ...  |            Viewport             |
-    //  +-----------------+                                 |
-    //  |                 +---------------------------------+
-    //  |   Properties    |  Timeline | Script Editor       |
-    //  +-----------------+---------------------------------+
+    //  +------------+--------------------------------+--------------+
+    //  | Hierarchy  |                                |              |
+    //  |            |            Viewport            |  Properties  |
+    //  +------------+                                |              |
+    //  | Settings   +--------------------------------+              |
+    //  | Profiler.. |  Timeline | Script | Textures  |              |
+    //  +------------+--------------------------------+--------------+
     ImGui::DockBuilderRemoveNode(dockspaceID);
     ImGui::DockBuilderAddNode(dockspaceID, ImGuiDockNodeFlags_DockSpace);
     ImGui::DockBuilderSetNodeSize(dockspaceID, ImGui::GetMainViewport()->WorkSize);
 
     ImGuiID center = dockspaceID;
-    ImGuiID left = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, 0.30f, nullptr, &center);
-    ImGuiID leftBottom = ImGui::DockBuilderSplitNode(left, ImGuiDir_Down, 0.55f, nullptr, &left);
+    ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.25f, nullptr, &center);
+    ImGuiID left = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, 0.26f, nullptr, &center);
+    ImGuiID leftBottom = ImGui::DockBuilderSplitNode(left, ImGuiDir_Down, 0.45f, nullptr, &left);
     ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.30f, nullptr, &center);
 
-    for (const char* name : { "Scene", "Settings", "Textures", "Profiler", "Shader Library" })
-        ImGui::DockBuilderDockWindow(name, left);
-    ImGui::DockBuilderDockWindow("Properties", leftBottom);
-    ImGui::DockBuilderDockWindow("Timeline", bottom);
-    ImGui::DockBuilderDockWindow("Script Editor", bottom);
+    ImGui::DockBuilderDockWindow("Hierarchy", left);
+    for (const char* name : { "Settings", "Profiler", "Shader Library" })
+        ImGui::DockBuilderDockWindow(name, leftBottom);
+    ImGui::DockBuilderDockWindow("Properties", right);
+    for (const char* name : { "Timeline", "Script Editor", "Textures" })
+        ImGui::DockBuilderDockWindow(name, bottom);
     ImGui::DockBuilderDockWindow("Viewport", center);
+
+    // The viewport never shares its node, so drop its tab strip.
+    if (ImGuiDockNode* node = ImGui::DockBuilderGetNode(center))
+        node->LocalFlags |= ImGuiDockNodeFlags_AutoHideTabBar;
 
     ImGui::DockBuilderFinish(dockspaceID);
 
@@ -1059,8 +1069,9 @@ void MainLayer::SetActiveScene(const Ref<Scene>& scene) {
     m_LastSnapshot = SceneSerializer(m_Scene).SerializeToString();
 }
 
-void MainLayer::LoadShowcase(void (MainLayer::*build)()) {
+void MainLayer::LoadShowcase(void (MainLayer::*build)(), const char* name) {
     SetActiveScene(CreateRef<Scene>());
+    m_SceneName = name;
     (this->*build)(); // builders populate m_Scene
     m_LastSnapshot = SceneSerializer(m_Scene).SerializeToString();
 }
@@ -1155,76 +1166,77 @@ void MainLayer::OnEvent(Phoenix::Event& e) {
     
     EventDispatcher dispacher(e);
     dispacher.Dispatch<WindowResizeEvent>(BIND_EVENT_FN(MainLayer::OnResize));
-    dispacher.Dispatch<KeyPressedEvent>(BIND_EVENT_FN(MainLayer::OnKeyPressed));
-    dispacher.Dispatch<KeyPressedEvent>([this](KeyPressedEvent& e){
-        // Esc deselects (it used to quit the editor with no chance to save).
-        if (e.GetKeyCode() == Phoenix::Key::Escape && !ImGui::GetIO().WantTextInput){
-            m_SceneEditor->SetSelectedEntity({});
-            return true;
-        }
-        // if (e.GetKeyCode() == Phoenix::Key::S){
-        //     for (unsigned int i = 0 ; i < 100; i++) {
-        //         std::string name = "cube" + std::to_string(i);
-        //         auto cube = m_Scene->CreateEntity(name);
-        //         cube.AddComponent<CubeComponent>();
-        //         auto& t = cube.GetComponent<TransformComponent>();
-        //         t.Translation.x = rand()%100;
-        //         t.Translation.z = rand()%100;
-        //     }
-        // }
-        return false;
-    });
 }
 
 
+namespace {
+    // Window edges for the custom-frame resize (bitmask).
+    enum WindowEdge { EdgeLeft = 1, EdgeRight = 2, EdgeTop = 4, EdgeBottom = 8 };
+
+    constexpr float kTitleBarHeight = 38.0f;
+    constexpr float kStatusBarHeight = 24.0f;
+
+    // Background of the editor chrome (title/status bars, tab strips).
+    ImVec4 ChromeColor() { return ImGui::GetStyleColorVec4(ImGuiCol_MenuBarBg); }
+}
+
+void MainLayer::NewScene() {
+    SetActiveScene(CreateRef<Scene>());
+    m_SceneName = "Untitled";
+}
+
+void MainLayer::ImportScene() {
+    auto scene = CreateRef<Scene>();
+    if (SceneSerializer(scene).Deserialize(m_ScenePath)) {
+        SetActiveScene(scene);
+        m_SceneName = m_ScenePath;
+    }
+}
+
+void MainLayer::ExportScene() {
+    SceneSerializer(m_Scene).Serialize(m_ScenePath);
+    PHX_INFO("Scene exported to {0}", m_ScenePath);
+}
+
+void MainLayer::TogglePlay() {
+    if (m_Scene->IsRunning()) { StopRuntime(); }
+    else                      { StartRuntime(); }
+}
+
 void MainLayer::OnImGuiRender(){
     ImGuizmo::BeginFrame();
-    // Note: Switch this to true to enable dockspace
-    static bool dockspaceOpen = true;
-    static bool opt_fullscreen_persistant = true;
-    bool opt_fullscreen = opt_fullscreen_persistant;
-    static ImGuiDockNodeFlags dockspace_flags = ImGuiDockNodeFlags_None;
+    HandleShortcuts();
 
-    // We are using the ImGuiWindowFlags_NoDocking flag to make the parent window not dockable into,
-    // because it would be confusing to have two docking targets within each others.
-    ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
-    if (opt_fullscreen)
-    {
-        ImGuiViewport* viewport = ImGui::GetMainViewport();
-        ImGui::SetNextWindowPos(viewport->Pos);
-        ImGui::SetNextWindowSize(viewport->Size);
-        // PHX_TRACE("Position: [{0}, {1}] , Size: [{2}, {3}]", viewport->Pos.x, viewport->Pos.y, viewport->Size.x, viewport->Size.y);
-        ImGui::SetNextWindowViewport(viewport->ID);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-        window_flags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
-        window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
-    }
+    // Chrome first: the side bars shrink the viewport work area the dockspace fills.
+    UpdateWindowResize();
+    DrawTitleBar();
+    DrawStatusBar();
 
-    // When using ImGuiDockNodeFlags_PassthruCentralNode, DockSpace() will render our background and handle the pass-thru hole, so we ask Begin() to not render a background.
-    if (dockspace_flags & ImGuiDockNodeFlags_PassthruCentralNode)
-        window_flags |= ImGuiWindowFlags_NoBackground;
-
-    // Important: note that we proceed even if Begin() returns false (aka window is collapsed).
-    // This is because we want to keep our DockSpace() active. If a DockSpace() is inactive, 
-    // all active windows docked into it will lose their parent and become undocked.
-    // We cannot preserve the docking relationship between an active window and an inactive docking, otherwise 
-    // any change of dockspace/settings would lead to windows being stuck in limbo and never being visible.
+    // Dockspace host covering the work area between the title and status bars.
+    // Important: we proceed even if Begin() returns false (aka window is collapsed) to
+    // keep the DockSpace() alive, or every docked window would lose its parent.
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->WorkPos);
+    ImGui::SetNextWindowSize(viewport->WorkSize);
+    ImGui::SetNextWindowViewport(viewport->ID);
+    ImGuiWindowFlags hostFlags = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse
+        | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::Begin("DockSpace Demo", &dockspaceOpen, window_flags);
-    ImGui::PopStyleVar();
-
-    if (opt_fullscreen)
-        ImGui::PopStyleVar(2);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ChromeColor());
+    ImGui::Begin("##EditorDockHost", nullptr, hostFlags);
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(3);
 
     // DockSpace
     ImGuiIO& io = ImGui::GetIO();
     ImGuiStyle& style = ImGui::GetStyle();
     float minWinSizeX = style.WindowMinSize.x;
-    style.WindowMinSize.x = 370.0f;
+    style.WindowMinSize.x = 260.0f;
     if (io.ConfigFlags & ImGuiConfigFlags_DockingEnable)
     {
-        ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
+        ImGuiID dockspace_id = ImGui::GetID("EditorDockSpace");
         // imgui.ini lives next to the executable, so a fresh build has no saved layout
         // and every panel would open floating on top of the others. Lay them out on the
         // first frame unless a saved layout already splits the dockspace.
@@ -1238,206 +1250,20 @@ void MainLayer::OnImGuiRender(){
             m_ResetLayout = false;
             BuildDefaultLayout(dockspace_id);
         }
-        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags);
+        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
     }
-
     style.WindowMinSize.x = minWinSizeX;
 
-    // Main Menu
-    {
-        bool import_shader = false, save = false;
-        if (ImGui::BeginMainMenuBar())
-        {
-            if (ImGui::BeginMenu("File"))
-            {
-                if (ImGui::MenuItem("Load Showcase Scene")) { LoadShowcase(&MainLayer::BuildShowcaseScene); }
-                if (ImGui::MenuItem("Load Water Showcase")) { LoadShowcase(&MainLayer::BuildWaterShowcase); }
-                if (ImGui::MenuItem("Load Robot Showcase")) { LoadShowcase(&MainLayer::BuildRobotShowcase); }
-                if (ImGui::MenuItem("Load Multi-Shadow Showcase")) { LoadShowcase(&MainLayer::BuildMultiShadowShowcase); }
-                if (ImGui::MenuItem("Load Physics Showcase")) { LoadShowcase(&MainLayer::BuildPhysicsShowcase); }
-                ImGui::Separator();
-                if (ImGui::MenuItem("Import Scene")) {
-                    std::string path = "scene.phx";
-                    auto scene = CreateRef<Scene>();
-                    if (SceneSerializer(scene).Deserialize(path)) {
-                        SetActiveScene(scene);
-                    }
-                }
-                if (ImGui::MenuItem("Export Scene")) {
-                    std::string path = "scene.phx";
-                    SceneSerializer(m_Scene).Serialize(path);
-                }
-                ImGui::Separator();
-                if (ImGui::MenuItem("Import Shader")) { import_shader = true; }
-                ImGui::EndMenu();
-            }
-            if (ImGui::BeginMenu("Edit"))
-            {
-                if (ImGui::MenuItem("Undo", "CTRL+Z", false, !m_UndoStack.empty())) { Undo(); }
-                if (ImGui::MenuItem("Redo", "CTRL+SHIFT+Z", false, !m_RedoStack.empty())) { Redo(); }
-                ImGui::Separator();
-                if (ImGui::MenuItem("Cut", "CTRL+X")) {}
-                if (ImGui::MenuItem("Copy", "CTRL+C")) {}
-                if (ImGui::MenuItem("Paste", "CTRL+V")) {}
-                ImGui::EndMenu();
-            }
-            if (ImGui::BeginMenu("View"))
-            {
-                if (m_SceneEditor){
-                    ImGui::MenuItem("Timeline", nullptr, &m_SceneEditor->ShowTimeline());
-                    ImGui::MenuItem("Script Editor", nullptr, &m_SceneEditor->ShowScriptEditor());
-                    ImGui::MenuItem("Textures", nullptr, &m_SceneEditor->ShowTextures());
-                }
-                ImGui::Separator();
-                if (ImGui::MenuItem("Reset Layout")){
-                    m_ResetLayout = true; // applied next frame, before the dockspace is submitted
-                    if (m_SceneEditor){
-                        m_SceneEditor->ShowTimeline() = true;
-                        m_SceneEditor->ShowScriptEditor() = true;
-                        m_SceneEditor->ShowTextures() = true;
-                    }
-                }
-                ImGui::EndMenu();
-            }
-
-            // Run / Stop the physics simulation (right-aligned in the menu bar).
-            {
-                const char* label = m_Scene->IsRunning() ? "Stop" : "Run";
-                float buttonWidth = 60.0f;
-                ImGui::SameLine(ImGui::GetWindowWidth() - buttonWidth - 10.0f);
-                if (ImGui::Button(label, ImVec2(buttonWidth, 0.0f))){
-                    if (m_Scene->IsRunning()) { StopRuntime(); }
-                    else                      { StartRuntime(); }
-                }
-            }
-            ImGui::EndMainMenuBar();
-        }
-
-        if(import_shader)
-            ImGui::OpenPopup("Import Shader");
-
-        if(file_dialog.showFileDialog("Import Shader", imgui_addons::ImGuiFileBrowser::DialogMode::OPEN, ImVec2(700, 310), ".glsl"))
-        {
-            m_ShaderLibrary->Add(Shader::Create(file_dialog.selected_path));
-        }
-    }
-
-    // Settings
-    {
-        ImGui::Begin("Settings", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
-        ImGui::Text("Metrics");
-        ImGuiIO& io = ImGui::GetIO();
-
-        // Basic info
-        ImGui::Text("Dear ImGui %s", ImGui::GetVersion());
-        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
-        ImGui::Text("%d vertices, %d indices (%d triangles)", io.MetricsRenderVertices, io.MetricsRenderIndices, io.MetricsRenderIndices / 3);
-        ImGui::Separator();
-
-        ImGui::ColorEdit3("Background Color", glm::value_ptr(m_BackgroundColor));
-        ImGui::ColorEdit3("Ambient Light", glm::value_ptr(m_Scene->AmbientColor()));
-
-        ImGui::Separator();
-        bool linearLighting = Phoenix::Renderer::IsLinearLighting();
-        if (ImGui::Checkbox("Linear Lighting (sRGB)", &linearLighting))
-            Phoenix::Renderer::SetLinearLighting(linearLighting);
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Light in linear space: sRGB textures/colours are decoded and the\n"
-                              "output is encoded for display. Physically correct falloff and\n"
-                              "blending, but scenes tuned without it will look brighter.");
-        ImGui::Checkbox("Bloom", &m_BloomEnabled);
-        if (m_BloomEnabled || linearLighting)
-            ImGui::DragFloat("Exposure", &m_Exposure, 0.05f, 0.1f, 8.0f);
-        if (m_BloomEnabled){
-            ImGui::DragFloat("Bloom Intensity", &m_BloomIntensity, 0.05f, 0.0f, 5.0f);
-            ImGui::DragFloat("Bloom Threshold", &m_BloomThreshold, 0.05f, 0.0f, 5.0f);
-        }
-        if (ImGui::Checkbox("VSync", &vsync)){
-            Application::Get().GetWindow().SetVSync(vsync);
-        }
-
-        ImGui::Separator();
-        ImGui::Checkbox("Terrain Sculpt", &m_TerrainSculpt);
-        if (m_TerrainSculpt){
-            const char* modes[] = { "Raise", "Lower", "Smooth" };
-            ImGui::Combo("Brush", &m_BrushMode, modes, IM_ARRAYSIZE(modes));
-            ImGui::DragFloat("Radius", &m_BrushRadius, 0.1f, 0.5f, 20.0f);
-            ImGui::DragFloat("Strength", &m_BrushStrength, 0.1f, 0.1f, 30.0f);
-            ImGui::TextDisabled("Select a Terrain, then drag in the viewport.");
-        }
-        ImGui::End();
-    }
-
-    // Profiler
-    {
-        ImGui::Begin("Profiler", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 20);
-        ImGui::Columns(2);
-
-        ImGui::Text("Scope");
-        ImGui::NextColumn();
-        ImGui::Text("Elapsed Time (µs)");
-        ImGui::NextColumn();
-        ImGui::Separator();
-
-        int id = 0;
-        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_Bullet;
-        for (auto p:Application::s_TimeContainer){
-            ImGui::PushID(id++);
-            ImGui::AlignTextToFramePadding();
-            ImGui::Text((p.first).c_str(), nullptr);
-            ImGui::NextColumn();
-            ImGui::SetNextItemWidth(-1);
-            ImGui::Text((std::to_string(p.second) + " µs").c_str(), nullptr);
-            ImGui::NextColumn();
-            ImGui::PopID();
-        }
-        ImGui::Columns(1);
-        ImGui::Separator();
-        ImGui::PopStyleVar();
-        ImGui::PopStyleVar();
-        ImGui::End();
-    }
-
-    // Shader Library
-    {
-        ImGui::Begin("Shader Library", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
-        ImGui::Columns(2);
-        ImGui::Text("Name");
-        ImGui::NextColumn();
-        ImGui::Text("Number of usage");
-        ImGui::NextColumn();
-        ImGui::Separator();
-
-        ShaderLibrary::ShaderMap::iterator iter;
-        int id = 0;
-        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_Bullet;
-        for(iter = m_ShaderLibrary->GetBegin(); iter != m_ShaderLibrary->GetEnd() ; iter ++)
-        {
-            ImGui::PushID(id++);
-            ImGui::AlignTextToFramePadding();
-            ImGui::Text((iter->first).c_str(), nullptr);
-            ImGui::NextColumn();
-            ImGui::Text("0");
-            ImGui::NextColumn();
-            ImGui::PopID();
-        }
-        ImGui::Columns(1);
-        ImGui::Separator();
-        ImGui::PopStyleVar();
-        ImGui::End();
-    }
-
-
+    DrawSettingsPanel();
+    DrawProfilerPanel();
+    DrawShaderLibraryPanel();
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 0, 0 });
     ImGui::Begin("Viewport");
 
     m_ViewportFocused = ImGui::IsWindowFocused();
     m_ViewportHovered = ImGui::IsWindowHovered();
-    
+
     Application::Get().GetImGuiLayer()->BlockEvents(!m_ViewportFocused || !m_ViewportHovered);
 
     ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
@@ -1466,8 +1292,15 @@ void MainLayer::OnImGuiRender(){
         auto& tc = selectedEntity.GetComponent<TransformComponent>();
         glm::mat4 transform = tc.GetTransform();
 
+        // Snap to 0.5 units / 15 degrees / 0.1 scale steps; Ctrl inverts the toggle.
+        bool control = Input::IsKeyPressed(Key::LeftControl) || Input::IsKeyPressed(Key::RightControl);
+        bool snap = m_GizmoSnap != control;
+        float snapValue = m_GizmoType == 1 ? 15.0f : (m_GizmoType == 2 ? 0.1f : 0.5f);
+        float snapValues[3] = { snapValue, snapValue, snapValue };
+
         ImGuizmo::Manipulate(glm::value_ptr(cameraView), glm::value_ptr(cameraProjection),
-            (ImGuizmo::OPERATION)m_GizmoType, ImGuizmo::LOCAL, glm::value_ptr(transform));
+            (ImGuizmo::OPERATION)m_GizmoType, m_GizmoWorld ? ImGuizmo::WORLD : ImGuizmo::LOCAL,
+            glm::value_ptr(transform), nullptr, snap ? snapValues : nullptr);
 
         if (ImGuizmo::IsUsing())
         {
@@ -1482,11 +1315,16 @@ void MainLayer::OnImGuiRender(){
         }
     }
 
+    // Tool strip and status badges over the image (before picking, so clicks on the
+    // tool buttons don't also select whatever is behind them).
+    DrawViewportOverlay(imageMin, viewportPanelSize);
+    bool overlayHovered = ImGui::IsAnyItemHovered();
+
     // Terrain sculpting: while the tool is on and a Terrain is selected, LMB-drag in
     // the viewport raises/lowers/smooths the heightfield under the cursor.
     m_Sculpting = false;
     if (m_TerrainSculpt && selectedEntity && selectedEntity.HasComponent<TerrainComponent>()
-        && m_ViewportHovered && !ImGuizmo::IsUsing() && !ImGuizmo::IsOver()
+        && m_ViewportHovered && !overlayHovered && !ImGuizmo::IsUsing() && !ImGuizmo::IsOver()
         && ImGui::IsMouseDown(ImGuiMouseButton_Left))
     {
         glm::vec3 rayOrigin, rayDir;
@@ -1501,7 +1339,7 @@ void MainLayer::OnImGuiRender(){
 
     // Click-to-select: cast a ray from the cursor and pick the nearest entity.
     // Skipped while interacting with the gizmo, orbiting, or sculpting.
-    if (!m_TerrainSculpt && m_ViewportHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
+    if (!m_TerrainSculpt && m_ViewportHovered && !overlayHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
         && !ImGuizmo::IsUsing() && !ImGuizmo::IsOver())
     {
         glm::vec3 rayOrigin, rayDir;
@@ -1516,6 +1354,8 @@ void MainLayer::OnImGuiRender(){
 
     m_SceneEditor->OnImGuiRender();
 
+    DrawHelpPopups();
+
     ImGui::End();
 
     // After a layout rebuild: show the hierarchy and the timeline in their tab groups
@@ -1523,44 +1363,696 @@ void MainLayer::OnImGuiRender(){
     // dock tab bars only exist once the windows have been docked for a frame.
     if (m_SelectDefaultTabsFrames > 0){
         m_SelectDefaultTabsFrames--;
-        ImGui::SetWindowFocus("Scene");
+        ImGui::SetWindowFocus("Settings");
         ImGui::SetWindowFocus("Timeline");
         ImGui::SetWindowFocus("Viewport");
+    }
+
+    // Resize cursor over the undecorated window's edges (set last so it wins).
+    int edges = m_ResizeEdges ? m_ResizeEdges : m_HoverEdges;
+    if (edges){
+        bool horizontal = edges & (EdgeLeft | EdgeRight), vertical = edges & (EdgeTop | EdgeBottom);
+        if (horizontal && vertical){
+            bool nwse = ((edges & EdgeLeft) && (edges & EdgeTop)) || ((edges & EdgeRight) && (edges & EdgeBottom));
+            ImGui::SetMouseCursor(nwse ? ImGuiMouseCursor_ResizeNWSE : ImGuiMouseCursor_ResizeNESW);
+        }
+        else{
+            ImGui::SetMouseCursor(horizontal ? ImGuiMouseCursor_ResizeEW : ImGuiMouseCursor_ResizeNS);
+        }
     }
 
     // Record an undo snapshot once the current edit has settled.
     CommitHistory();
 }
 
-
-
-bool MainLayer::OnKeyPressed(KeyPressedEvent& e){
-    // Shortcuts
-    if (e.GetRepeatCount() > 0)
-        return false;
-    // Leave keys to the focused text field (its own Ctrl+Z, typing Q/W/E/R).
-    if (ImGui::GetIO().WantTextInput)
-        return false;
-
-    bool control = Input::IsKeyPressed(Key::LeftControl) || Input::IsKeyPressed(Key::RightControl);
-    bool shift = Input::IsKeyPressed(Key::LeftShift) || Input::IsKeyPressed(Key::RightShift);
-
-    // Undo / redo: Ctrl+Z and Ctrl+Shift+Z.
-    if (control && e.GetKeyCode() == Key::Z){
-        if (shift) { Redo(); }
-        else       { Undo(); }
-        return true;
+void MainLayer::UpdateWindowResize(){
+    Window& window = Application::Get().GetWindow();
+    m_HoverEdges = 0;
+    if (!window.HasCustomTitleBar() || window.IsMaximized()){
+        m_ResizeEdges = 0;
+        return;
     }
 
-    // Gizmo operation shortcuts (only when not mid-manipulation).
-    if (!ImGuizmo::IsUsing()){
-        switch (e.GetKeyCode()){
-            case Key::Q: m_GizmoType = -1; break; // none
-            case Key::W: m_GizmoType = 0;  break; // translate
-            case Key::E: m_GizmoType = 1;  break; // rotate
-            case Key::R: m_GizmoType = 2;  break; // scale
+    if (!m_ResizeEdges){
+        // Hover test on the frame's mouse position; only start on a fresh click so a drag
+        // that began elsewhere (a splitter, a slider) never turns into a window resize.
+        const ImGuiIO& io = ImGui::GetIO();
+        const float border = 5.0f;
+        ImVec2 m = io.MousePos;
+        bool inside = m.x >= 0.0f && m.y >= 0.0f && m.x < io.DisplaySize.x && m.y < io.DisplaySize.y;
+        bool free = !ImGui::IsMouseDown(ImGuiMouseButton_Left) || ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+        if (inside && free && !m_TitleDragging && !ImGui::IsAnyItemActive()){
+            if (m.x < border)                       m_HoverEdges |= EdgeLeft;
+            if (m.x >= io.DisplaySize.x - border)   m_HoverEdges |= EdgeRight;
+            if (m.y < border)                       m_HoverEdges |= EdgeTop;
+            if (m.y >= io.DisplaySize.y - border)   m_HoverEdges |= EdgeBottom;
+        }
+        if (m_HoverEdges && ImGui::IsMouseClicked(ImGuiMouseButton_Left)){
+            m_ResizeEdges = m_HoverEdges;
+            m_ResizeStartCursor = window.GetCursorScreenPosition();
+            m_ResizeStartPos = window.GetPosition();
+            m_ResizeStartSize = { (int)window.GetWidth(), (int)window.GetHeight() };
+        }
+        return;
+    }
+
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)){
+        m_ResizeEdges = 0;
+        return;
+    }
+    const int minWidth = 640, minHeight = 360;
+    glm::vec2 delta = window.GetCursorScreenPosition() - m_ResizeStartCursor;
+    glm::ivec2 pos = m_ResizeStartPos, size = m_ResizeStartSize;
+    if (m_ResizeEdges & EdgeRight)  { size.x = std::max(minWidth, m_ResizeStartSize.x + (int)delta.x); }
+    if (m_ResizeEdges & EdgeBottom) { size.y = std::max(minHeight, m_ResizeStartSize.y + (int)delta.y); }
+    if (m_ResizeEdges & EdgeLeft){
+        size.x = std::max(minWidth, m_ResizeStartSize.x - (int)delta.x);
+        pos.x = m_ResizeStartPos.x + (m_ResizeStartSize.x - size.x);
+    }
+    if (m_ResizeEdges & EdgeTop){
+        size.y = std::max(minHeight, m_ResizeStartSize.y - (int)delta.y);
+        pos.y = m_ResizeStartPos.y + (m_ResizeStartSize.y - size.y);
+    }
+    if (pos != window.GetPosition())
+        window.SetPosition(pos.x, pos.y);
+    if (size.x != (int)window.GetWidth() || size.y != (int)window.GetHeight())
+        window.SetSize(size.x, size.y);
+}
+
+void MainLayer::DrawTitleBar(){
+    Window& window = Application::Get().GetWindow();
+    const bool customFrame = window.HasCustomTitleBar();
+    const bool running = m_Scene->IsRunning();
+    ImGuiContext& g = *ImGui::GetCurrentContext();
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+
+    // Logo and app name sit left of the menus; BeginMenuBar starts at MenuBarOffset, and
+    // the y offset centres the menu items vertically in the taller bar.
+    ImFont* headingFont = ImGuiLayer::GetFont(ImGuiLayer::FontType::Heading);
+    const char* appName = "Phoenix";
+    const float logoSize = 20.0f, leftPad = 14.0f;
+    float nameWidth = headingFont->CalcTextSizeA(headingFont->FontSize, FLT_MAX, 0.0f, appName).x;
+    float menuStartX = leftPad + logoSize + 8.0f + nameWidth + 18.0f;
+    g.NextWindowData.MenuBarOffsetMinVal = ImVec2(menuStartX, IM_FLOOR((kTitleBarHeight - ImGui::GetFrameHeight()) * 0.5f));
+
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ChromeColor());
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse
+        | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_MenuBar;
+    bool open = ImGui::BeginViewportSideBar("##TitleBar", viewport, ImGuiDir_Up, kTitleBarHeight, flags);
+    g.NextWindowData.MenuBarOffsetMinVal = ImVec2(0.0f, 0.0f);
+    ImGui::PopStyleVar(2);
+    if (!open){
+        ImGui::End();
+        ImGui::PopStyleColor();
+        return;
+    }
+
+    ImGuiWindow* bar = ImGui::GetCurrentWindow();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImVec2 barMin = bar->Pos;
+    const ImVec2 barMax(bar->Pos.x + bar->Size.x, bar->Pos.y + bar->Size.y);
+    const float midY = (barMin.y + barMax.y) * 0.5f;
+
+    if (ImGui::BeginMenuBar()){
+        // Let everything below use the full bar height, not just the menu strip.
+        ImGui::PushClipRect(barMin, barMax, false);
+
+        // Logo + name.
+        EditorUI::DrawIcon(dl, EditorUI::Icon::Logo, ImVec2(barMin.x + leftPad + logoSize * 0.5f, midY), logoSize, 0);
+        dl->AddText(headingFont, headingFont->FontSize,
+            ImVec2(barMin.x + leftPad + logoSize + 8.0f, midY - headingFont->FontSize * 0.5f), EditorUI::TextColor(), appName);
+
+        DrawMenus();
+        float menusEndX = ImGui::GetCursorScreenPos().x;
+
+        // Window controls (undecorated window only), right to left.
+        const float controlW = 46.0f;
+        float right = barMax.x;
+        if (customFrame){
+            struct Control { const char* id; EditorUI::Icon icon; bool danger; };
+            const Control controls[] = {
+                { "##close", EditorUI::Icon::Close, true },
+                { "##maximize", window.IsMaximized() ? EditorUI::Icon::Restore : EditorUI::Icon::Maximize, false },
+                { "##minimize", EditorUI::Icon::Minimize, false },
+            };
+            for (const Control& c : controls){
+                right -= controlW;
+                ImGui::SetCursorScreenPos(ImVec2(right, barMin.y));
+                bool pressed = ImGui::InvisibleButton(c.id, ImVec2(controlW, kTitleBarHeight));
+                bool hovered = ImGui::IsItemHovered();
+                if (hovered || ImGui::IsItemActive()){
+                    ImU32 bg = c.danger ? EditorUI::Danger(ImGui::IsItemActive() ? 0.8f : 1.0f)
+                                        : ImGui::GetColorU32(ImGui::IsItemActive() ? ImGuiCol_ButtonActive : ImGuiCol_ButtonHovered);
+                    dl->AddRectFilled(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), bg);
+                }
+                ImU32 iconCol = (hovered && c.danger) ? IM_COL32_WHITE : EditorUI::TextColor(hovered ? 1.0f : 0.8f);
+                EditorUI::DrawIcon(dl, c.icon, ImVec2(right + controlW * 0.5f, midY), 20.0f, iconCol);
+                if (pressed){
+                    if (c.icon == EditorUI::Icon::Close)         { Application::Get().Close(); }
+                    else if (c.icon == EditorUI::Icon::Minimize) { window.Minimize(); }
+                    else if (window.IsMaximized())               { window.Restore(); }
+                    else                                         { window.Maximize(); }
+                }
+            }
+            right -= 8.0f;
+        }
+        else{
+            right -= 12.0f;
+        }
+
+        // Scene name, right-aligned before the window controls.
+        {
+            ImFont* small = ImGuiLayer::GetFont(ImGuiLayer::FontType::Small);
+            std::string label = m_SceneName;
+            ImVec2 ts = small->CalcTextSizeA(small->FontSize, FLT_MAX, 0.0f, label.c_str());
+            float x = right - ts.x;
+            if (x > menusEndX + 140.0f){
+                dl->AddText(small, small->FontSize, ImVec2(x, midY - ts.y * 0.5f), EditorUI::MutedColor(), label.c_str());
+                right = x - 12.0f;
+            }
+        }
+
+        // Play / Stop, centred in the bar (pushed right if the menus would overlap it).
+        {
+            const char* label = running ? "Stop" : "Play";
+            ImVec2 ts = ImGui::CalcTextSize(label);
+            ImVec2 size(ts.x + 44.0f, 26.0f);
+            float x = std::max(IM_FLOOR((barMin.x + barMax.x - size.x) * 0.5f), menusEndX + 16.0f);
+            ImGui::SetCursorScreenPos(ImVec2(x, IM_FLOOR(midY - size.y * 0.5f)));
+            bool pressed = ImGui::InvisibleButton("##PlayStop", size);
+            bool hovered = ImGui::IsItemHovered(), held = ImGui::IsItemActive();
+            ImVec2 mn = ImGui::GetItemRectMin(), mx = ImGui::GetItemRectMax();
+            ImU32 bg = running ? EditorUI::Danger(held ? 0.45f : (hovered ? 0.35f : 0.22f))
+                               : ImGui::GetColorU32(held ? ImGuiCol_ButtonActive : (hovered ? ImGuiCol_ButtonHovered : ImGuiCol_Button));
+            dl->AddRectFilled(mn, mx, bg, size.y * 0.5f);
+            ImU32 iconCol = running ? EditorUI::Danger() : EditorUI::Success();
+            EditorUI::DrawIcon(dl, running ? EditorUI::Icon::Stop : EditorUI::Icon::Play,
+                ImVec2(mn.x + 18.0f, midY), 11.0f, iconCol);
+            dl->AddText(ImVec2(mn.x + 30.0f, midY - ts.y * 0.5f), EditorUI::TextColor(), label);
+            if (hovered)
+                ImGui::SetTooltip(running ? "Stop and restore the edit-time scene (F5)" : "Run physics and scripts (F5)");
+            if (pressed)
+                TogglePlay();
+        }
+
+        ImGui::PopClipRect();
+        ImGui::EndMenuBar();
+    }
+
+    // Bottom divider; turns accent-coloured while the simulation runs.
+    dl->PushClipRect(barMin, barMax, false);
+    dl->AddLine(ImVec2(barMin.x, barMax.y - 1.0f), ImVec2(barMax.x, barMax.y - 1.0f),
+        running ? EditorUI::Accent() : ImGui::GetColorU32(ImGuiCol_Border), running ? 2.0f : 1.0f);
+    dl->PopClipRect();
+
+    // Drag the OS window by any empty part of the bar; double-click toggles maximize.
+    if (customFrame){
+        bool barHovered = ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered() && !m_HoverEdges && !m_ResizeEdges;
+        if (barHovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)){
+            m_TitleDragging = false;
+            if (window.IsMaximized()) { window.Restore(); }
+            else                      { window.Maximize(); }
+        }
+        else if (barHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)){
+            glm::vec2 cursor = window.GetCursorScreenPosition();
+            glm::ivec2 pos = window.GetPosition();
+            m_TitleDragging = true;
+            m_TitleDragMoved = false;
+            m_DragStartCursor = cursor;
+            // Keep the grab point at the same fraction of the width, so dragging a
+            // maximized window off restores it under the cursor.
+            m_DragGrab = { (cursor.x - (float)pos.x) / std::max(1.0f, (float)window.GetWidth()), cursor.y - (float)pos.y };
         }
     }
+    ImGui::End();
+    ImGui::PopStyleColor();
 
-    return false;
+    if (m_TitleDragging){
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)){
+            m_TitleDragging = false;
+        }
+        else{
+            glm::vec2 cursor = window.GetCursorScreenPosition();
+            if (!m_TitleDragMoved && glm::length(cursor - m_DragStartCursor) > 4.0f){
+                m_TitleDragMoved = true;
+                if (window.IsMaximized())
+                    window.Restore();
+            }
+            if (m_TitleDragMoved && !window.IsMaximized()){
+                float grabX = m_DragGrab.x * (float)window.GetWidth();
+                window.SetPosition((int)(cursor.x - grabX), (int)(cursor.y - m_DragGrab.y));
+            }
+        }
+    }
+}
+
+void MainLayer::DrawMenus(){
+    const bool running = m_Scene->IsRunning();
+    Entity selected = m_SceneEditor->GetSelectedEntity();
+
+    if (ImGui::BeginMenu("File"))
+    {
+        if (ImGui::MenuItem("New Scene", "Ctrl+N")) { NewScene(); }
+        if (ImGui::BeginMenu("Showcases"))
+        {
+            if (ImGui::MenuItem("Bloom & Shadows"))  { LoadShowcase(&MainLayer::BuildShowcaseScene, "Showcase"); }
+            if (ImGui::MenuItem("Water"))            { LoadShowcase(&MainLayer::BuildWaterShowcase, "Water Showcase"); }
+            if (ImGui::MenuItem("Robot"))            { LoadShowcase(&MainLayer::BuildRobotShowcase, "Robot Showcase"); }
+            if (ImGui::MenuItem("Multi-Shadow"))     { LoadShowcase(&MainLayer::BuildMultiShadowShowcase, "Multi-Shadow Showcase"); }
+            if (ImGui::MenuItem("Physics"))          { LoadShowcase(&MainLayer::BuildPhysicsShowcase, "Physics Showcase"); }
+            ImGui::EndMenu();
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Import Scene", "Ctrl+O")) { ImportScene(); }
+        if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Load %s from the executable's directory", m_ScenePath.c_str()); }
+        if (ImGui::MenuItem("Export Scene", "Ctrl+S")) { ExportScene(); }
+        if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Save to %s next to the executable", m_ScenePath.c_str()); }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Import Shader...")) { m_OpenImportShader = true; }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Exit")) { Application::Get().Close(); }
+        ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("Edit"))
+    {
+        if (ImGui::MenuItem("Undo", "Ctrl+Z", false, !running && !m_UndoStack.empty())) { Undo(); }
+        if (ImGui::MenuItem("Redo", "Ctrl+Shift+Z", false, !running && !m_RedoStack.empty())) { Redo(); }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Deselect", "Esc", false, (bool)selected)) { m_SceneEditor->SetSelectedEntity({}); }
+        if (ImGui::MenuItem("Delete Entity", "Del", false, (bool)selected)){
+            m_Scene->DestroyEntity(selected);
+            m_SceneEditor->SetSelectedEntity({});
+        }
+        ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("Tools"))
+    {
+        if (ImGui::MenuItem("Select", "Q", m_GizmoType == -1)) { m_GizmoType = -1; }
+        if (ImGui::MenuItem("Move", "W", m_GizmoType == 0))    { m_GizmoType = 0; }
+        if (ImGui::MenuItem("Rotate", "E", m_GizmoType == 1))  { m_GizmoType = 1; }
+        if (ImGui::MenuItem("Scale", "R", m_GizmoType == 2))   { m_GizmoType = 2; }
+        ImGui::Separator();
+        ImGui::MenuItem("World Space Gizmo", nullptr, &m_GizmoWorld);
+        ImGui::MenuItem("Snap to Increments", nullptr, &m_GizmoSnap);
+        ImGui::Separator();
+        ImGui::MenuItem("Terrain Sculpt", nullptr, &m_TerrainSculpt);
+        ImGui::Separator();
+        if (ImGui::MenuItem(running ? "Stop" : "Play", "F5")) { TogglePlay(); }
+        ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("View"))
+    {
+        ImGui::MenuItem("Settings", nullptr, &m_ShowSettings);
+        ImGui::MenuItem("Profiler", nullptr, &m_ShowProfiler);
+        ImGui::MenuItem("Shader Library", nullptr, &m_ShowShaderLibrary);
+        if (m_SceneEditor){
+            ImGui::MenuItem("Timeline", nullptr, &m_SceneEditor->ShowTimeline());
+            ImGui::MenuItem("Script Editor", nullptr, &m_SceneEditor->ShowScriptEditor());
+            ImGui::MenuItem("Textures", nullptr, &m_SceneEditor->ShowTextures());
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("VSync", nullptr, &vsync)) { Application::Get().GetWindow().SetVSync(vsync); }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Reset Layout")){
+            m_ResetLayout = true; // applied next frame, before the dockspace is submitted
+            m_ShowSettings = m_ShowProfiler = m_ShowShaderLibrary = true;
+            if (m_SceneEditor){
+                m_SceneEditor->ShowTimeline() = true;
+                m_SceneEditor->ShowScriptEditor() = true;
+                m_SceneEditor->ShowTextures() = true;
+            }
+        }
+        ImGui::EndMenu();
+    }
+    if (ImGui::BeginMenu("Help"))
+    {
+        if (ImGui::MenuItem("Keyboard Shortcuts", "F1")) { m_OpenShortcuts = true; }
+        if (ImGui::MenuItem("About Phoenix"))           { m_OpenAbout = true; }
+        ImGui::EndMenu();
+    }
+}
+
+void MainLayer::DrawStatusBar(){
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ChromeColor());
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10.0f, 0.0f));
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse
+        | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing;
+    bool open = ImGui::BeginViewportSideBar("##StatusBar", viewport, ImGuiDir_Down, kStatusBarHeight, flags);
+    ImGui::PopStyleVar(2);
+    if (open){
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImVec2 wp = ImGui::GetWindowPos(), ws = ImGui::GetWindowSize();
+        dl->AddLine(wp, ImVec2(wp.x + ws.x, wp.y), ImGui::GetColorU32(ImGuiCol_Border));
+
+        ImGui::PushFont(ImGuiLayer::GetFont(ImGuiLayer::FontType::Small));
+        const ImGuiIO& io = ImGui::GetIO();
+        const float textY = IM_FLOOR((kStatusBarHeight - ImGui::GetFontSize()) * 0.5f);
+        const bool running = m_Scene->IsRunning();
+
+        // Left: mode, entity count, selection.
+        ImGui::SetCursorPos(ImVec2(10.0f, textY));
+        {
+            ImVec2 p = ImGui::GetCursorScreenPos();
+            dl->AddCircleFilled(ImVec2(p.x + 4.0f, p.y + ImGui::GetFontSize() * 0.5f), 3.5f,
+                running ? EditorUI::Danger() : EditorUI::Success());
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 13.0f);
+            ImGui::TextUnformatted(running ? "Playing" : "Editing");
+        }
+        auto separator = [](){
+            ImGui::SameLine(0.0f, 10.0f);
+            ImGui::TextDisabled("|");
+            ImGui::SameLine(0.0f, 10.0f);
+        };
+        separator();
+        ImGui::Text("%d entities", m_SceneEditor->GetEntityCount());
+        Entity selected = m_SceneEditor->GetSelectedEntity();
+        if (selected && selected.HasComponent<TagComponent>()){
+            separator();
+            ImGui::TextDisabled("Selected");
+            ImGui::SameLine();
+            ImGui::TextUnformatted(selected.GetComponent<TagComponent>().Tag.c_str());
+        }
+        if (m_TerrainSculpt){
+            separator();
+            ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(EditorUI::Accent()), "Sculpt mode");
+        }
+
+        // Right: performance + history.
+        char stats[128];
+        std::snprintf(stats, sizeof(stats), "Undo %d   |   %s   |   %.0f FPS  (%.2f ms)",
+            (int)m_UndoStack.size(), vsync ? "VSync on" : "VSync off",
+            io.Framerate, io.Framerate > 0.0f ? 1000.0f / io.Framerate : 0.0f);
+        float w = ImGui::CalcTextSize(stats).x;
+        ImGui::SameLine();
+        float x = ImGui::GetWindowWidth() - w - 12.0f;
+        if (x > ImGui::GetCursorPosX() + 20.0f){
+            ImGui::SetCursorPos(ImVec2(x, textY));
+            ImGui::TextDisabled("%s", stats);
+        }
+        ImGui::PopFont();
+    }
+    ImGui::End();
+    ImGui::PopStyleColor();
+}
+
+void MainLayer::DrawViewportOverlay(const ImVec2& imageMin, const ImVec2& imageSize){
+    if (imageSize.x < 120.0f || imageSize.y < 80.0f)
+        return;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const bool running = m_Scene->IsRunning();
+    const float margin = 10.0f, button = 28.0f, gap = 2.0f, inner = 4.0f;
+
+    // Tool strip (top-left): gizmo operation, space and snapping.
+    struct Tool { const char* id; EditorUI::Icon icon; int type; const char* tooltip; };
+    const Tool tools[] = {
+        { "##ToolSelect", EditorUI::Icon::Select, -1, "Select (Q)" },
+        { "##ToolMove",   EditorUI::Icon::Move,    0, "Move (W)" },
+        { "##ToolRotate", EditorUI::Icon::Rotate,  1, "Rotate (E)" },
+        { "##ToolScale",  EditorUI::Icon::Scale,   2, "Scale (R)" },
+    };
+    const int toolCount = IM_ARRAYSIZE(tools);
+    const float dividerW = 9.0f;
+    ImVec2 stripMin(imageMin.x + margin, imageMin.y + margin);
+    ImVec2 stripSize(inner * 2.0f + (toolCount + 2) * button + (toolCount + 1) * gap + dividerW, button + inner * 2.0f);
+    dl->AddRectFilled(stripMin, ImVec2(stripMin.x + stripSize.x, stripMin.y + stripSize.y), IM_COL32(18, 19, 22, 215), 7.0f);
+    dl->AddRect(stripMin, ImVec2(stripMin.x + stripSize.x, stripMin.y + stripSize.y), IM_COL32(255, 255, 255, 18), 7.0f);
+
+    float x = stripMin.x + inner;
+    const float y = stripMin.y + inner;
+    for (const Tool& t : tools){
+        ImGui::SetCursorScreenPos(ImVec2(x, y));
+        if (EditorUI::IconButton(t.id, t.icon, ImVec2(button, button), m_GizmoType == t.type, t.tooltip))
+            m_GizmoType = t.type;
+        x += button + gap;
+    }
+    dl->AddLine(ImVec2(x + dividerW * 0.5f - gap * 0.5f, y + 5.0f), ImVec2(x + dividerW * 0.5f - gap * 0.5f, y + button - 5.0f),
+        IM_COL32(255, 255, 255, 40));
+    x += dividerW;
+    ImGui::SetCursorScreenPos(ImVec2(x, y));
+    if (EditorUI::IconButton("##ToolSpace", m_GizmoWorld ? EditorUI::Icon::World : EditorUI::Icon::Local,
+            ImVec2(button, button), false, m_GizmoWorld ? "World space handles (click for local)" : "Local space handles (click for world)"))
+        m_GizmoWorld = !m_GizmoWorld;
+    x += button + gap;
+    ImGui::SetCursorScreenPos(ImVec2(x, y));
+    if (EditorUI::IconButton("##ToolSnap", EditorUI::Icon::Magnet, ImVec2(button, button), m_GizmoSnap,
+            "Snap: 0.5 units / 15 deg / 0.1 scale (hold Ctrl to invert)"))
+        m_GizmoSnap = !m_GizmoSnap;
+
+    // Play state: accent frame + badge (top-right).
+    if (running){
+        dl->AddRect(imageMin, ImVec2(imageMin.x + imageSize.x, imageMin.y + imageSize.y), EditorUI::Danger(0.85f), 0.0f, 0, 2.0f);
+        const char* text = "Playing  -  F5 to stop";
+        ImVec2 size = EditorUI::PillSize(text, 5.0f);
+        EditorUI::DrawPill(dl, ImVec2(imageMin.x + imageSize.x - size.x - margin, imageMin.y + margin + inner),
+            text, EditorUI::Danger(), IM_COL32(18, 19, 22, 215), 5.0f);
+    }
+
+    // Sculpt tool hint (bottom-centre).
+    if (m_TerrainSculpt){
+        const char* modes[] = { "Raise", "Lower", "Smooth" };
+        char text[128];
+        std::snprintf(text, sizeof(text), "Sculpt: %s   radius %.1f   strength %.1f   -  drag on a selected terrain",
+            modes[m_BrushMode], m_BrushRadius, m_BrushStrength);
+        ImVec2 size = EditorUI::PillSize(text, 5.0f);
+        EditorUI::DrawPill(dl, ImVec2(imageMin.x + (imageSize.x - size.x) * 0.5f, imageMin.y + imageSize.y - size.y - margin),
+            text, EditorUI::Accent(), IM_COL32(18, 19, 22, 215), 5.0f);
+    }
+}
+
+void MainLayer::DrawSettingsPanel(){
+    if (!m_ShowSettings)
+        return;
+    ImGui::Begin("Settings", &m_ShowSettings);
+    // Widgets take the space left of a fixed label column, so labels never clip.
+    ImGui::PushItemWidth(-130.0f);
+
+    if (ImGui::CollapsingHeader("Environment", ImGuiTreeNodeFlags_DefaultOpen)){
+        ImGui::ColorEdit3("Background", glm::value_ptr(m_BackgroundColor));
+        ImGui::ColorEdit3("Ambient Light", glm::value_ptr(m_Scene->AmbientColor()));
+        ImGui::Spacing();
+    }
+
+    if (ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen)){
+        bool linearLighting = Phoenix::Renderer::IsLinearLighting();
+        if (ImGui::Checkbox("Linear Lighting (sRGB)", &linearLighting))
+            Phoenix::Renderer::SetLinearLighting(linearLighting);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Light in linear space: sRGB textures/colours are decoded and the\n"
+                              "output is encoded for display. Physically correct falloff and\n"
+                              "blending, but scenes tuned without it will look brighter.");
+        ImGui::Checkbox("Bloom", &m_BloomEnabled);
+        if (m_BloomEnabled || linearLighting)
+            ImGui::DragFloat("Exposure", &m_Exposure, 0.05f, 0.1f, 8.0f);
+        if (m_BloomEnabled){
+            ImGui::DragFloat("Bloom Intensity", &m_BloomIntensity, 0.05f, 0.0f, 5.0f);
+            ImGui::DragFloat("Bloom Threshold", &m_BloomThreshold, 0.05f, 0.0f, 5.0f);
+        }
+        if (ImGui::Checkbox("VSync", &vsync)){
+            Application::Get().GetWindow().SetVSync(vsync);
+        }
+        ImGui::Spacing();
+    }
+
+    if (ImGui::CollapsingHeader("Terrain Sculpt", ImGuiTreeNodeFlags_DefaultOpen)){
+        ImGui::Checkbox("Sculpt Mode", &m_TerrainSculpt);
+        ImGui::BeginDisabled(!m_TerrainSculpt);
+        const char* modes[] = { "Raise", "Lower", "Smooth" };
+        for (int i = 0; i < IM_ARRAYSIZE(modes); i++){
+            if (i > 0) { ImGui::SameLine(); }
+            ImGui::RadioButton(modes[i], &m_BrushMode, i);
+        }
+        ImGui::DragFloat("Radius", &m_BrushRadius, 0.1f, 0.5f, 20.0f);
+        ImGui::DragFloat("Strength", &m_BrushStrength, 0.1f, 0.1f, 30.0f);
+        ImGui::EndDisabled();
+        ImGui::TextDisabled("Select a Terrain, then drag in the viewport.");
+    }
+
+    ImGui::PopItemWidth();
+    ImGui::End();
+}
+
+void MainLayer::DrawProfilerPanel(){
+    if (!m_ShowProfiler)
+        return;
+    ImGui::Begin("Profiler", &m_ShowProfiler);
+    const ImGuiIO& io = ImGui::GetIO();
+
+    // Headline numbers.
+    if (ImGui::BeginTable("##ProfilerStats", 3, ImGuiTableFlags_SizingStretchSame)){
+        auto stat = [](const char* label, const char* value){
+            ImGui::TableNextColumn();
+            ImGui::TextDisabled("%s", label);
+            ImGui::PushFont(ImGuiLayer::GetFont(ImGuiLayer::FontType::Heading));
+            ImGui::TextUnformatted(value);
+            ImGui::PopFont();
+        };
+        char fps[32], ms[32], tris[32];
+        std::snprintf(fps, sizeof(fps), "%.0f", io.Framerate);
+        std::snprintf(ms, sizeof(ms), "%.2f ms", io.Framerate > 0.0f ? 1000.0f / io.Framerate : 0.0f);
+        std::snprintf(tris, sizeof(tris), "%d", io.MetricsRenderIndices / 3);
+        stat("FPS", fps);
+        stat("Frame", ms);
+        stat("UI Triangles", tris);
+        ImGui::EndTable();
+    }
+    ImGui::Spacing();
+
+    // Scope timings with a bar relative to the slowest scope.
+    int maxTime = 1;
+    for (const auto& p : Application::s_TimeContainer)
+        maxTime = std::max(maxTime, p.second);
+    ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingStretchProp;
+    if (ImGui::BeginTable("##ProfilerScopes", 2, flags)){
+        ImGui::TableSetupColumn("Scope", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+        ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+        ImGui::TableHeadersRow();
+        for (const auto& p : Application::s_TimeContainer){
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(p.first.c_str());
+            ImGui::TableNextColumn();
+            char label[32];
+            std::snprintf(label, sizeof(label), "%d us", p.second);
+            ImGui::ProgressBar((float)p.second / (float)maxTime, ImVec2(-FLT_MIN, 0.0f), label);
+        }
+        ImGui::EndTable();
+    }
+    if (Application::s_TimeContainer.empty())
+        ImGui::TextDisabled("No profiled scopes yet.");
+
+    ImGui::Spacing();
+    ImGui::TextDisabled("Dear ImGui %s", ImGui::GetVersion());
+    ImGui::End();
+}
+
+void MainLayer::DrawShaderLibraryPanel(){
+    if (!m_ShowShaderLibrary)
+        return;
+    ImGui::Begin("Shader Library", &m_ShowShaderLibrary);
+    if (ImGui::Button("Import Shader...", ImVec2(-FLT_MIN, 0.0f)))
+        m_OpenImportShader = true;
+    ImGui::Spacing();
+
+    ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH;
+    if (ImGui::BeginTable("##Shaders", 1, flags)){
+        ImGui::TableSetupColumn("Loaded shaders");
+        ImGui::TableHeadersRow();
+        for (auto iter = m_ShaderLibrary->GetBegin(); iter != m_ShaderLibrary->GetEnd(); ++iter){
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(iter->first.c_str());
+        }
+        ImGui::EndTable();
+    }
+    ImGui::End();
+}
+
+void MainLayer::DrawHelpPopups(){
+    // Opened from the menus / shortcuts via flags: OpenPopup must run in this ID scope.
+    if (m_OpenImportShader){ ImGui::OpenPopup("Import Shader"); m_OpenImportShader = false; }
+    if (m_OpenShortcuts)   { ImGui::OpenPopup("Keyboard Shortcuts"); m_OpenShortcuts = false; }
+    if (m_OpenAbout)       { ImGui::OpenPopup("About Phoenix"); m_OpenAbout = false; }
+
+    if (file_dialog.showFileDialog("Import Shader", imgui_addons::ImGuiFileBrowser::DialogMode::OPEN, ImVec2(700, 310), ".glsl"))
+    {
+        m_ShaderLibrary->Add(Shader::Create(file_dialog.selected_path));
+    }
+
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(440.0f, 0.0f), ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal("Keyboard Shortcuts", nullptr, ImGuiWindowFlags_NoSavedSettings)){
+        struct Row { const char* action; const char* keys; };
+        const Row rows[] = {
+            { "Select / Move / Rotate / Scale", "Q / W / E / R" },
+            { "Snap while dragging a gizmo",    "Hold Ctrl" },
+            { "Orbit / Pan / Zoom camera",      "RMB / MMB / Wheel" },
+            { "Select entity",                  "Left-click" },
+            { "Deselect",                       "Esc" },
+            { "Delete entity",                  "Del" },
+            { "Undo / Redo",                    "Ctrl+Z / Ctrl+Shift+Z" },
+            { "New / Import / Export scene",    "Ctrl+N / Ctrl+O / Ctrl+S" },
+            { "Play / Stop",                    "F5" },
+            { "This window",                    "F1" },
+        };
+        if (ImGui::BeginTable("##Shortcuts", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)){
+            ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Keys", ImGuiTableColumnFlags_WidthFixed);
+            for (const Row& r : rows){
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn(); ImGui::TextUnformatted(r.action);
+                ImGui::TableNextColumn(); ImGui::TextDisabled("%s", r.keys);
+            }
+            ImGui::EndTable();
+        }
+        ImGui::Spacing();
+        if (ImGui::Button("Close", ImVec2(-FLT_MIN, 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(380.0f, 0.0f), ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal("About Phoenix", nullptr, ImGuiWindowFlags_NoSavedSettings)){
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        EditorUI::DrawIcon(ImGui::GetWindowDrawList(), EditorUI::Icon::Logo, ImVec2(p.x + 20.0f, p.y + 22.0f), 36.0f, 0);
+        ImGui::SetCursorScreenPos(ImVec2(p.x + 52.0f, p.y + 4.0f));
+        ImGui::BeginGroup();
+        ImGui::PushFont(ImGuiLayer::GetFont(ImGuiLayer::FontType::Heading));
+        ImGui::TextUnformatted("Phoenix Engine");
+        ImGui::PopFont();
+        ImGui::TextDisabled("Real-time 3D engine and editor");
+        ImGui::EndGroup();
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::TextWrapped("C++17 / OpenGL 4.5 forward renderer with an EnTT ECS, Jolt physics, "
+                           "Lua scripting and skeletal animation.");
+        ImGui::TextDisabled("Dear ImGui %s", ImGui::GetVersion());
+        ImGui::Spacing();
+        if (ImGui::Button("Close", ImVec2(-FLT_MIN, 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+}
+
+
+void MainLayer::HandleShortcuts(){
+    // Polled through ImGui rather than KeyPressed events: the ImGui layer swallows key
+    // events whenever a panel (not the viewport) has focus, so shortcuts work anywhere.
+    // Leave keys to a focused text field (its own Ctrl+Z, typing Q/W/E/R).
+    const ImGuiIO& io = ImGui::GetIO();
+    if (io.WantTextInput)
+        return;
+    auto pressed = [](ImGuiKey key){ return ImGui::IsKeyPressed(key, false); };
+    const bool control = io.KeyCtrl;
+
+    // Undo / redo: Ctrl+Z and Ctrl+Shift+Z.
+    if (control && pressed(ImGuiKey_Z)){
+        if (io.KeyShift) { Redo(); }
+        else             { Undo(); }
+    }
+
+    // Scene file shortcuts.
+    if (control && pressed(ImGuiKey_N)) { NewScene(); }
+    if (control && pressed(ImGuiKey_O)) { ImportScene(); }
+    if (control && pressed(ImGuiKey_S)) { ExportScene(); }
+
+    if (pressed(ImGuiKey_F5)) { TogglePlay(); }
+    if (pressed(ImGuiKey_F1)) { m_OpenShortcuts = true; }
+
+    // Esc deselects, unless it is closing a popup.
+    if (pressed(ImGuiKey_Escape) && !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId))
+        m_SceneEditor->SetSelectedEntity({});
+
+    // Gizmo operation shortcuts (only when not mid-manipulation).
+    if (!control && !ImGuizmo::IsUsing()){
+        if (pressed(ImGuiKey_Q)) { m_GizmoType = -1; } // none
+        if (pressed(ImGuiKey_W)) { m_GizmoType = 0; }  // translate
+        if (pressed(ImGuiKey_E)) { m_GizmoType = 1; }  // rotate
+        if (pressed(ImGuiKey_R)) { m_GizmoType = 2; }  // scale
+    }
 }

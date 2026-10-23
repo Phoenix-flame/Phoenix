@@ -2,7 +2,9 @@
 #include <Phoenix/imGui/imgui.h>
 #include <Phoenix/imGui/imgui_internal.h>
 #include <Phoenix/Scene/Component.h>
+#include <Phoenix/imGui/ImGuiLayer.h>
 #include <glm/gtc/type_ptr.hpp>
+#include "EditorUI.h"
 #include <cstring>
 #include <cctype>
 #include <type_traits>
@@ -10,6 +12,7 @@
 #include <vector>
 #include <unordered_set>
 #include <algorithm>
+#include <cmath>
 
 namespace Phoenix{
 
@@ -209,8 +212,83 @@ namespace Phoenix{
         }
     }
 
+    void SceneEditor::CreateEntityMenu(){
+        if (ImGui::MenuItem("Empty Entity"))
+            m_SelectedEntity = m_ActiveScene->CreateEntity("Empty Entity");
+
+        ImGui::Separator();
+        if (ImGui::BeginMenu("Shape")){
+            struct ShapeDef { const char* label; const char* name; PrimitiveComponent::Type type; };
+            const ShapeDef shapes[] = {
+                { "Cube",              "Cube",     PrimitiveComponent::Type::Cube     },
+                { "Sphere",            "Sphere",   PrimitiveComponent::Type::Sphere   },
+                { "Pillar (Cylinder)", "Pillar",   PrimitiveComponent::Type::Cylinder },
+                { "Cone",              "Cone",     PrimitiveComponent::Type::Cone     },
+                { "Plane",             "Plane",    PrimitiveComponent::Type::Plane    },
+            };
+            for (const auto& shape : shapes){
+                if (ImGui::MenuItem(shape.label)){
+                    m_SelectedEntity = m_ActiveScene->CreateEntity(shape.name);
+                    m_SelectedEntity.AddComponent<PrimitiveComponent>(shape.type);
+                }
+            }
+            ImGui::EndMenu();
+        }
+
+        bool pointLightsFull = m_ActiveScene->GetNumberOfPointLights() >= Scene::MAX_NUM_POINT_LIGHTS;
+        if (ImGui::MenuItem("Point Light", nullptr, false, !pointLightsFull)){
+            try
+            {
+                m_SelectedEntity = m_ActiveScene->CreatePointLightEntity("Point Light");
+            }
+            catch(const std::exception& e)
+            {
+                PHX_ERROR(e.what());
+            }
+        }
+        if (pointLightsFull && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("The renderer supports up to %d point lights.", Scene::MAX_NUM_POINT_LIGHTS);
+        if (ImGui::MenuItem("Directional Light"))
+            m_SelectedEntity = m_ActiveScene->CreateDirLightEntity("Directional Light");
+
+        ImGui::Separator();
+        if (ImGui::MenuItem("Terrain")){
+            m_SelectedEntity = m_ActiveScene->CreateEntity("Terrain");
+            auto& terrain = m_SelectedEntity.AddComponent<TerrainComponent>();
+            terrain.material.ambient  = glm::vec3(0.25f, 0.35f, 0.20f);
+            terrain.material.diffuse  = glm::vec3(0.35f, 0.50f, 0.28f);
+            terrain.material.specular = glm::vec3(0.1f);
+            terrain.material.shininess = 8.0f;
+        }
+        if (ImGui::MenuItem("Water")){
+            m_SelectedEntity = m_ActiveScene->CreateEntity("Water");
+            m_SelectedEntity.AddComponent<WaterComponent>();
+        }
+    }
+
     void SceneEditor::ScenePanel(){
-        ImGui::Begin("Scene", nullptr, (ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize) & ImGuiWindowFlags_None);
+        ImGui::Begin("Hierarchy");
+
+        // Toolbar: filter + create.
+        {
+            float buttonSize = ImGui::GetFrameHeight();
+            ImGui::SetNextItemWidth(-(buttonSize + ImGui::GetStyle().ItemSpacing.x));
+            ImGui::InputTextWithHint("##Search", "Search entities", m_SearchBuf, sizeof(m_SearchBuf));
+            ImGui::SameLine();
+            if (ImGui::Button("##CreateEntity", ImVec2(buttonSize, buttonSize)))
+                ImGui::OpenPopup("CreateEntity");
+            ImVec2 mn = ImGui::GetItemRectMin(), mx = ImGui::GetItemRectMax();
+            EditorUI::DrawIcon(ImGui::GetWindowDrawList(), EditorUI::Icon::Plus,
+                ImVec2((mn.x + mx.x) * 0.5f, (mn.y + mx.y) * 0.5f), 12.0f, EditorUI::TextColor());
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Create entity");
+            if (ImGui::BeginPopup("CreateEntity")){
+                CreateEntityMenu();
+                ImGui::EndPopup();
+            }
+        }
+        ImGui::Spacing();
+
         // EnTT 3.16 removed registry::each(); iterate the entity storage instead.
         // Snapshot ids first (EntityNode may DestroyEntity, invalidating live
         // iteration) AND filter to valid entities: the entity storage retains
@@ -221,75 +299,46 @@ namespace Phoenix{
         for (auto entityID : registry.storage<entt::entity>())
             if (registry.valid(entityID))
                 entities.push_back(entityID);
+        m_EntityCount = (int)entities.size();
+
+        // Case-insensitive substring filter on the tag.
+        std::string filter = m_SearchBuf;
+        std::transform(filter.begin(), filter.end(), filter.begin(), [](unsigned char c){ return (char)std::tolower(c); });
+        auto matches = [&](Entity entity){
+            if (filter.empty()) { return true; }
+            std::string tag = entity.GetComponent<TagComponent>().Tag;
+            std::transform(tag.begin(), tag.end(), tag.begin(), [](unsigned char c){ return (char)std::tolower(c); });
+            return tag.find(filter) != std::string::npos;
+        };
+
+        ImGui::BeginChild("##EntityList", ImVec2(0, 0), false);
+        int shown = 0;
         for (auto entityID : entities)
 		{
 			Entity entity{ entityID , m_ActiveScene.get() };
+            if (!matches(entity)) { continue; }
 			EntityNode(entity);
+            shown++;
 		}
+        if (shown == 0){
+            if (entities.empty()) { EditorUI::EmptyState("The scene is empty", "Right-click or press + to create an entity."); }
+            else                  { EditorUI::EmptyState("No matching entities"); }
+        }
 
-        if (ImGui::IsMouseDown(0) && ImGui::IsWindowHovered())
+        // Click on blank space deselects.
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered())
 		{
 			m_SelectedEntity = {};
 		}
 
 		// Right-click on blank space
 		if (ImGui::BeginPopupContextWindow(NULL, ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)){
-			if (ImGui::MenuItem("Create Empty Entity"))
-			{
-				m_SelectedEntity = m_ActiveScene->CreateEntity("Empty Entity");
-			}
-
-			if (ImGui::MenuItem("Create Point Light"))
-			{
-				try
-				{
-					m_SelectedEntity = m_ActiveScene->CreatePointLightEntity("Point Light");
-				}
-				catch(const std::exception& e)
-				{
-					PHX_ERROR(e.what());
-				}
-				
-			}
-				
-			
-			if (ImGui::MenuItem("Create Directional Light"))
-				m_SelectedEntity = m_ActiveScene->CreateDirLightEntity("Directional Light");
-
-			if (ImGui::MenuItem("Create Terrain")){
-				m_SelectedEntity = m_ActiveScene->CreateEntity("Terrain");
-				auto& terrain = m_SelectedEntity.AddComponent<TerrainComponent>();
-				terrain.material.ambient  = glm::vec3(0.25f, 0.35f, 0.20f);
-				terrain.material.diffuse  = glm::vec3(0.35f, 0.50f, 0.28f);
-				terrain.material.specular = glm::vec3(0.1f);
-				terrain.material.shininess = 8.0f;
-			}
-
-			if (ImGui::MenuItem("Create Water")){
-				m_SelectedEntity = m_ActiveScene->CreateEntity("Water");
-				m_SelectedEntity.AddComponent<WaterComponent>();
-			}
-
-			if (ImGui::BeginMenu("Create Shape")){
-				struct ShapeDef { const char* label; const char* name; PrimitiveComponent::Type type; };
-				const ShapeDef shapes[] = {
-					{ "Sphere",          "Sphere",   PrimitiveComponent::Type::Sphere   },
-					{ "Pillar (Cylinder)", "Pillar", PrimitiveComponent::Type::Cylinder },
-					{ "Cone",            "Cone",     PrimitiveComponent::Type::Cone     },
-					{ "Plane",           "Plane",    PrimitiveComponent::Type::Plane    },
-					{ "Cube",            "Cube",     PrimitiveComponent::Type::Cube     },
-				};
-				for (const auto& s : shapes){
-					if (ImGui::MenuItem(s.label)){
-						m_SelectedEntity = m_ActiveScene->CreateEntity(s.name);
-						m_SelectedEntity.AddComponent<PrimitiveComponent>(s.type);
-					}
-				}
-				ImGui::EndMenu();
-			}
-
+            ImGui::TextDisabled("Create");
+            ImGui::Separator();
+            CreateEntityMenu();
 			ImGui::EndPopup();
 		}
+        ImGui::EndChild();
 
         ImGui::End();
     }
@@ -300,6 +349,9 @@ namespace Phoenix{
 		if (m_SelectedEntity){
 			DrawComponents(m_SelectedEntity);
 		}
+        else{
+            EditorUI::EmptyState("No entity selected", "Pick one in the Hierarchy or click it in the viewport.");
+        }
 
 		ImGui::End();
     }
@@ -310,14 +362,16 @@ namespace Phoenix{
         ImGui::Begin("Script Editor", &m_ShowScriptEditor);
         if (m_SelectedEntity && m_SelectedEntity.HasComponent<LuaScriptComponent>()){
             auto& tag = m_SelectedEntity.GetComponent<TagComponent>().Tag;
+            ImGui::PushFont(ImGuiLayer::GetFont(ImGuiLayer::FontType::Bold));
             ImGui::Text("%s", tag.c_str());
+            ImGui::PopFont();
             ImGui::SameLine();
-            ImGui::TextDisabled("| Tab: autocomplete/indent  Ctrl+Z: undo  Ctrl+C/V/X");
+            ImGui::TextDisabled("Lua   |   Tab: autocomplete / indent   Ctrl+Z: undo   Ctrl+C/V/X");
             ImGui::Separator();
             LuaCodeEditor("##ScriptEditorField", m_SelectedEntity.GetComponent<LuaScriptComponent>().source);
         }
         else{
-            ImGui::TextDisabled("Select an entity with a Lua Script component.");
+            EditorUI::EmptyState("No script to edit", "Select an entity with a Lua Script component.");
         }
         ImGui::End();
     }
@@ -328,7 +382,7 @@ namespace Phoenix{
 
         Entity e = m_SelectedEntity;
         if (!e || !e.HasComponent<AnimationComponent>() || !e.HasComponent<MeshComponent>()){
-            ImGui::TextDisabled("Select an entity with an Animation component.");
+            EditorUI::EmptyState("Nothing to animate", "Select an entity with an Animation component.");
             ImGui::End();
             return;
         }
@@ -384,10 +438,16 @@ namespace Phoenix{
         float w = ImGui::GetContentRegionAvail().x;
         float h = 22.0f;
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        dl->AddRectFilled(p0, ImVec2(p0.x + w, p0.y + h), IM_COL32(35, 35, 40, 255), 3.0f);
+        dl->AddRectFilled(p0, ImVec2(p0.x + w, p0.y + h), ImGui::GetColorU32(ImGuiCol_FrameBg), 4.0f);
         if (dur > 0.0f){
+            // Second ticks.
+            for (float s = 1.0f; s < dur; s += 1.0f){
+                float tx = p0.x + w * (s / dur);
+                dl->AddLine(ImVec2(tx, p0.y + h * 0.6f), ImVec2(tx, p0.y + h), EditorUI::MutedColor(), 1.0f);
+            }
             float px = p0.x + w * (cur / dur);
-            dl->AddLine(ImVec2(px, p0.y), ImVec2(px, p0.y + h), IM_COL32(255, 200, 0, 255), 2.0f);
+            dl->AddLine(ImVec2(px, p0.y), ImVec2(px, p0.y + h), EditorUI::Accent(), 2.0f);
+            dl->AddTriangleFilled(ImVec2(px - 5.0f, p0.y), ImVec2(px + 5.0f, p0.y), ImVec2(px, p0.y + 6.0f), EditorUI::Accent());
             for (const auto& ev : comp.events){
                 if (ev.clip != comp.clip) { continue; }
                 float frac = ev.time / dur; frac = frac < 0.0f ? 0.0f : (frac > 1.0f ? 1.0f : frac);
@@ -472,40 +532,115 @@ namespace Phoenix{
         ImGui::End();
     }
 
+    // Small glyph for the hierarchy row, picked from what the entity mostly is.
+    static void DrawEntityIcon(ImDrawList* dl, Entity entity, ImVec2 c){
+        const float r = 5.5f;
+        if (entity.HasComponent<CameraComponent>()){
+            ImU32 col = IM_COL32(110, 170, 255, 255);
+            dl->AddRectFilled(ImVec2(c.x - r, c.y - r * 0.6f), ImVec2(c.x + r * 0.35f, c.y + r * 0.6f), col, 1.5f);
+            dl->AddTriangleFilled(ImVec2(c.x + r * 0.35f, c.y), ImVec2(c.x + r, c.y - r * 0.6f), ImVec2(c.x + r, c.y + r * 0.6f), col);
+        }
+        else if (entity.HasComponent<DirLightComponent>() || entity.HasComponent<PointLightComponent>()){
+            ImU32 col = IM_COL32(255, 205, 80, 255);
+            dl->AddCircleFilled(c, r * 0.5f, col);
+            for (int i = 0; i < 8; i++){
+                float a = IM_PI * 0.25f * i;
+                dl->AddLine(ImVec2(c.x + cosf(a) * r * 0.75f, c.y + sinf(a) * r * 0.75f),
+                            ImVec2(c.x + cosf(a) * r * 1.1f, c.y + sinf(a) * r * 1.1f), col, 1.2f);
+            }
+        }
+        else if (entity.HasComponent<TerrainComponent>()){
+            ImU32 col = IM_COL32(120, 200, 110, 255);
+            dl->AddTriangleFilled(ImVec2(c.x - r, c.y + r * 0.7f), ImVec2(c.x - r * 0.15f, c.y - r * 0.8f), ImVec2(c.x + r * 0.7f, c.y + r * 0.7f), col);
+            dl->AddTriangleFilled(ImVec2(c.x, c.y + r * 0.7f), ImVec2(c.x + r * 0.55f, c.y - r * 0.2f), ImVec2(c.x + r * 1.1f, c.y + r * 0.7f), col);
+        }
+        else if (entity.HasComponent<WaterComponent>()){
+            ImU32 col = IM_COL32(90, 200, 230, 255);
+            for (int row = 0; row < 2; row++){
+                float y = c.y - r * 0.3f + row * r * 0.75f;
+                dl->PathClear();
+                for (int i = 0; i <= 8; i++){
+                    float x = c.x - r + i * (2.0f * r / 8.0f);
+                    dl->PathLineTo(ImVec2(x, y + sinf(i * IM_PI * 0.5f) * r * 0.22f));
+                }
+                dl->PathStroke(col, 0, 1.4f);
+            }
+        }
+        else if (entity.HasComponent<MeshComponent>()){
+            EditorUI::DrawIcon(dl, EditorUI::Icon::Local, c, r * 2.2f, IM_COL32(190, 140, 255, 255));
+        }
+        else if (entity.HasComponent<CubeComponent>() || entity.HasComponent<PrimitiveComponent>()){
+            // Swatch in the object's own colour.
+            const Material& m = entity.HasComponent<CubeComponent>() ? entity.GetComponent<CubeComponent>().material
+                                                                     : entity.GetComponent<PrimitiveComponent>().material;
+            glm::vec3 col = glm::clamp(glm::max(m.diffuse, m.emissive * std::min(1.0f, m.emissiveStrength)), 0.0f, 1.0f);
+            dl->AddRectFilled(ImVec2(c.x - r * 0.8f, c.y - r * 0.8f), ImVec2(c.x + r * 0.8f, c.y + r * 0.8f),
+                ImGui::GetColorU32(ImVec4(col.r, col.g, col.b, 1.0f)), 2.0f);
+            dl->AddRect(ImVec2(c.x - r * 0.8f, c.y - r * 0.8f), ImVec2(c.x + r * 0.8f, c.y + r * 0.8f), IM_COL32(255, 255, 255, 60), 2.0f);
+        }
+        else{
+            dl->AddCircle(c, r * 0.7f, EditorUI::MutedColor(), 12, 1.3f);
+        }
+    }
+
     void SceneEditor::EntityNode(Entity entity){
         auto& tag = entity.GetComponent<TagComponent>().Tag;
-		
-		ImGuiTreeNodeFlags flags = ((m_SelectedEntity == entity) ? ImGuiTreeNodeFlags_Selected : 0) | ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
+        const bool selected = (m_SelectedEntity == entity);
 
-		bool opened = ImGui::TreeNodeEx((void*)(uint64_t)(uint32_t)entity, flags, tag.c_str(), nullptr);
-		if (ImGui::IsItemClicked()){
-			m_SelectedEntity = entity;
-		}
-		
+        ImGui::PushID((int)(uint32_t)entity);
+        const float rowHeight = ImGui::GetTextLineHeight() + 8.0f;
+        ImVec2 rowMin = ImGui::GetCursorScreenPos();
+
+        // Selection uses the accent (the theme's Header colours are neutral).
+        ImGui::PushStyleColor(ImGuiCol_Header, ImGui::ColorConvertU32ToFloat4(EditorUI::Accent(0.24f)));
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImGui::ColorConvertU32ToFloat4(selected ? EditorUI::Accent(0.30f) : IM_COL32(255, 255, 255, 14)));
+        ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImGui::ColorConvertU32ToFloat4(EditorUI::Accent(0.36f)));
+        if (ImGui::Selectable("##entity", selected, ImGuiSelectableFlags_SpanAvailWidth, ImVec2(0.0f, rowHeight)))
+            m_SelectedEntity = entity;
+        ImGui::PopStyleColor(3);
+
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImVec2 rowMax = ImGui::GetItemRectMax();
+        if (selected)
+            dl->AddRectFilled(ImVec2(rowMin.x, rowMin.y), ImVec2(rowMin.x + 2.0f, rowMax.y), EditorUI::Accent());
+        float midY = rowMin.y + rowHeight * 0.5f;
+        DrawEntityIcon(dl, entity, ImVec2(rowMin.x + 13.0f, midY));
+        dl->AddText(ImVec2(rowMin.x + 26.0f, midY - ImGui::GetTextLineHeight() * 0.5f), EditorUI::TextColor(), tag.c_str());
+
+        // Right-aligned hints for behaviour that isn't visible in the viewport.
+        {
+            const char* badges[2] = {};
+            int count = 0;
+            if (entity.HasComponent<LuaScriptComponent>()) { badges[count++] = "Lua"; }
+            if (entity.HasComponent<RigidBodyComponent>()) { badges[count++] = "Physics"; }
+            ImFont* small = ImGuiLayer::GetFont(ImGuiLayer::FontType::Small);
+            float x = rowMax.x - 6.0f;
+            for (int i = 0; i < count; i++){
+                ImVec2 ts = small->CalcTextSizeA(small->FontSize, FLT_MAX, 0.0f, badges[i]);
+                x -= ts.x + 10.0f;
+                ImVec2 bMin(x, midY - ts.y * 0.5f - 1.0f), bMax(x + ts.x + 10.0f, midY + ts.y * 0.5f + 1.0f);
+                dl->AddRectFilled(bMin, bMax, IM_COL32(255, 255, 255, 16), 3.0f);
+                dl->AddText(small, small->FontSize, ImVec2(x + 5.0f, bMin.y + 1.0f), EditorUI::MutedColor(), badges[i]);
+                x -= 4.0f;
+            }
+        }
 
 		bool entityDeleted = false;
 		if (ImGui::BeginPopupContextItem()){
-			if (ImGui::MenuItem("Delete Entity"))
+            m_SelectedEntity = entity;
+			if (ImGui::MenuItem("Delete Entity", "Del"))
 				entityDeleted = true;
-
 			ImGui::EndPopup();	
 		}
+        ImGui::PopID();
 
-		if (m_SelectedEntity == entity && (!entityDeleted))
+		if (selected && !entityDeleted)
 		{
 			// Ignore Delete while typing (e.g. in the Tag field), or it deletes the entity.
 			if (ImGui::IsKeyPressed(ImGuiKey_Delete) && !ImGui::GetIO().WantTextInput)
 			{
 				entityDeleted = true;
 			}
-		}
-
-		if (opened){
-			ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
-			bool opened = ImGui::TreeNodeEx((void*)9817239, flags, tag.c_str(), nullptr);
-			if (opened)
-				ImGui::TreePop();
-			ImGui::TreePop();
 		}
 
 		if (entityDeleted){
@@ -523,19 +658,22 @@ namespace Phoenix{
 			auto& component = entity.GetComponent<T>();
 			ImVec2 contentRegionAvailable = ImGui::GetContentRegionAvail();
 
-			// Scope every ID below (tree node, "+" button, popup) to this component type.
-			// TreeNodeEx only pushes its ID while open, so without this the "+" buttons and
+			// Scope every ID below (tree node, settings button, popup) to this component type.
+			// TreeNodeEx only pushes its ID while open, so without this the settings buttons and
 			// "ComponentSettings" popups of collapsed components collided, and "Remove"
 			// could remove a different component.
 			ImGui::PushID((void*)typeid(T).hash_code());
 
-			ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{ 4, 4 });
-			float lineHeight = ImGui::GetIO().FontDefault->FontSize + ImGui::GetStyle().FramePadding.y * 2.0;
-			ImGui::Separator();
+			ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{ 6, 5 });
+			ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+			float lineHeight = ImGui::GetFontSize() + ImGui::GetStyle().FramePadding.y * 2.0f;
+			ImGui::PushFont(ImGuiLayer::GetFont(ImGuiLayer::FontType::Bold));
 			bool open = ImGui::TreeNodeEx("##component", treeNodeFlags, "%s", name.c_str());
-			ImGui::PopStyleVar();
-			ImGui::SameLine(contentRegionAvailable.x - lineHeight * 0.5f);
-			if (ImGui::Button("+", ImVec2{ lineHeight, lineHeight })){
+			ImGui::PopFont();
+			ImGui::PopStyleVar(2);
+
+			ImGui::SameLine(contentRegionAvailable.x - lineHeight + ImGui::GetStyle().WindowPadding.x * 0.5f);
+			if (EditorUI::IconButton("##settings", EditorUI::Icon::More, ImVec2{ lineHeight, lineHeight }, false, "Component settings")){
 				ImGui::OpenPopup("ComponentSettings");
 			}
 
@@ -552,7 +690,13 @@ namespace Phoenix{
 			}
 
 			if (open){
+				// Widgets fill the space left of a label column, so labels never clip.
+				ImGui::Indent(4.0f);
+				ImGui::PushItemWidth(-std::max(110.0f, ImGui::GetContentRegionAvail().x * 0.38f));
 				uiFunction(component);
+				ImGui::PopItemWidth();
+				ImGui::Unindent(4.0f);
+				ImGui::Spacing();
 				ImGui::TreePop();
 			}
 			ImGui::PopID();
@@ -576,16 +720,16 @@ namespace Phoenix{
         ImGui::SetColumnWidth(0, columnWidth);
         ImGui::Text(label.c_str(), nullptr);
         ImGui::NextColumn();
-        ImGui::PushMultiItemsWidths(3, ImGui::CalcItemWidth());
+        ImGui::PushMultiItemsWidths(3, ImGui::GetContentRegionAvail().x);
 
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{ 4, 4 });
 
         float lineHeight = ImGui::GetIO().FontDefault->FontSize + ImGui::GetStyle().FramePadding.y * 2.0;
         ImVec2 buttonSize = { lineHeight + 3.0f, lineHeight };
 
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.8f, 0.1f, 0.15f, 1.0f });
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.9f, 0.2f, 0.2f, 1.0f });
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 0.8f, 0.1f, 0.15f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.78f, 0.25f, 0.27f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.88f, 0.35f, 0.36f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 0.78f, 0.25f, 0.27f, 1.0f });
         ImGui::PushFont(boldFont);
         if (ImGui::Button(label1.c_str(), buttonSize))
             values.x = resetValue;
@@ -597,9 +741,9 @@ namespace Phoenix{
         ImGui::PopItemWidth();
         ImGui::SameLine();
 
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.2f, 0.7f, 0.2f, 1.0f });
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.3f, 0.8f, 0.3f, 1.0f });
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 0.2f, 0.7f, 0.2f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.33f, 0.62f, 0.30f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.42f, 0.72f, 0.38f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 0.33f, 0.62f, 0.30f, 1.0f });
         ImGui::PushFont(boldFont);
         if (ImGui::Button(label2.c_str(), buttonSize))
             values.y = resetValue;
@@ -611,9 +755,9 @@ namespace Phoenix{
         ImGui::PopItemWidth();
         ImGui::SameLine();
 
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.1f, 0.25f, 0.8f, 1.0f });
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.2f, 0.35f, 0.9f, 1.0f });
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 0.1f, 0.25f, 0.8f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.25f, 0.45f, 0.82f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.35f, 0.55f, 0.90f, 1.0f });
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{ 0.25f, 0.45f, 0.82f, 1.0f });
         ImGui::PushFont(boldFont);
         if (ImGui::Button(label3.c_str(), buttonSize))
             values.z = resetValue;
@@ -633,113 +777,68 @@ namespace Phoenix{
 
 
 
+    // "Add Component" entry: disabled when the entity already has one.
+    template<typename T>
+    static void AddComponentItem(Entity entity, const char* label){
+        if (ImGui::MenuItem(label, nullptr, false, !entity.HasComponent<T>()))
+            entity.AddComponent<T>();
+    }
+
     void SceneEditor::DrawComponents(Entity entity){
 		{
-			int total_w = ImGui::GetContentRegionAvail().x;
+			const float addWidth = ImGui::CalcTextSize("Add Component").x + 30.0f;
 			if (entity.HasComponent<TagComponent>()){
 				auto& tag = entity.GetComponent<TagComponent>().Tag;
 				char buffer[256];
 				memset(buffer, 0, sizeof(buffer));
-				std::strncpy(buffer, tag.c_str(), sizeof(buffer));
-				if (ImGui::InputText("##Tag", buffer, sizeof(buffer))){
+				std::strncpy(buffer, tag.c_str(), sizeof(buffer) - 1);
+				ImGui::SetNextItemWidth(-(addWidth + ImGui::GetStyle().ItemSpacing.x));
+				if (ImGui::InputTextWithHint("##Tag", "Name", buffer, sizeof(buffer))){
 					tag = std::string(buffer);
 				}
+				ImGui::SameLine();
 			}
-			ImGui::SameLine(total_w - 90);
-			ImGui::PushItemWidth(-1);
-			ImGui::SetNextItemWidth(total_w);
-			if (ImGui::Button("Add Component"))
+			ImGui::PushStyleColor(ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4(EditorUI::Accent(0.80f)));
+			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::ColorConvertU32ToFloat4(EditorUI::Accent(0.95f)));
+			ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImGui::ColorConvertU32ToFloat4(EditorUI::Accent(0.70f)));
+			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.08f, 0.08f, 0.09f, 1.0f));
+			if (ImGui::Button("Add Component", ImVec2(addWidth, 0.0f)))
 				ImGui::OpenPopup("AddComponent");
+			ImGui::PopStyleColor(4);
+			ImGui::Spacing();
 		}
 
 		if (ImGui::BeginPopup("AddComponent")){
-            if (ImGui::MenuItem("Camera")){
-                if (!m_SelectedEntity.HasComponent<CameraComponent>())
-                    m_SelectedEntity.AddComponent<CameraComponent>();
-                else
-                    PHX_WARN("This entity already has the Camera Component");
-                ImGui::CloseCurrentPopup();
-            }
-            if (ImGui::MenuItem("Camera Follow")){
-                if (!m_SelectedEntity.HasComponent<CameraFollowComponent>())
-                    m_SelectedEntity.AddComponent<CameraFollowComponent>();
-                ImGui::CloseCurrentPopup();
-            }
-            if (ImGui::MenuItem("Cube")){
-                if (!m_SelectedEntity.HasComponent<CubeComponent>())
-                    m_SelectedEntity.AddComponent<CubeComponent>();
-                else
-                    PHX_WARN("This entity already has the Cube Component");
-                ImGui::CloseCurrentPopup();
-            }
-			if (ImGui::MenuItem("Point Light")){
-                // The shader only lights with the first MAX_NUM_POINT_LIGHTS; more are ignored.
-                if (m_ActiveScene->GetNumberOfPointLights() >= Scene::MAX_NUM_POINT_LIGHTS)
-                    PHX_ERROR("Reached maximum number of point lights ({0})", Scene::MAX_NUM_POINT_LIGHTS);
-                else if (!m_SelectedEntity.HasComponent<PointLightComponent>())
-                    m_SelectedEntity.AddComponent<PointLightComponent>();
-                ImGui::CloseCurrentPopup();
-            }
-            if (ImGui::MenuItem("Rigid Body")){
-                if (!m_SelectedEntity.HasComponent<RigidBodyComponent>())
-                    m_SelectedEntity.AddComponent<RigidBodyComponent>();
-                ImGui::CloseCurrentPopup();
-            }
-            if (ImGui::MenuItem("Box Collider")){
-                if (!m_SelectedEntity.HasComponent<BoxColliderComponent>())
-                    m_SelectedEntity.AddComponent<BoxColliderComponent>();
-                ImGui::CloseCurrentPopup();
-            }
-            if (ImGui::MenuItem("Sphere Collider")){
-                if (!m_SelectedEntity.HasComponent<SphereColliderComponent>())
-                    m_SelectedEntity.AddComponent<SphereColliderComponent>();
-                ImGui::CloseCurrentPopup();
-            }
-            if (ImGui::MenuItem("Capsule Collider")){
-                if (!m_SelectedEntity.HasComponent<CapsuleColliderComponent>())
-                    m_SelectedEntity.AddComponent<CapsuleColliderComponent>();
-                ImGui::CloseCurrentPopup();
-            }
-            if (ImGui::MenuItem("Cylinder Collider")){
-                if (!m_SelectedEntity.HasComponent<CylinderColliderComponent>())
-                    m_SelectedEntity.AddComponent<CylinderColliderComponent>();
-                ImGui::CloseCurrentPopup();
-            }
-            if (ImGui::MenuItem("Mesh Collider")){
-                if (!m_SelectedEntity.HasComponent<MeshColliderComponent>())
-                    m_SelectedEntity.AddComponent<MeshColliderComponent>();
-                ImGui::CloseCurrentPopup();
-            }
-            if (ImGui::MenuItem("Joint")){
-                if (!m_SelectedEntity.HasComponent<JointComponent>())
-                    m_SelectedEntity.AddComponent<JointComponent>();
-                ImGui::CloseCurrentPopup();
-            }
-            if (ImGui::MenuItem("Wireframe")){
-                if (!m_SelectedEntity.HasComponent<WireframeComponent>())
-                    m_SelectedEntity.AddComponent<WireframeComponent>();
-                ImGui::CloseCurrentPopup();
-            }
-            if (ImGui::MenuItem("Lua Script")){
-                if (!m_SelectedEntity.HasComponent<LuaScriptComponent>())
-                    m_SelectedEntity.AddComponent<LuaScriptComponent>();
-                ImGui::CloseCurrentPopup();
-            }
-            if (ImGui::MenuItem("Shape")){
-                if (!m_SelectedEntity.HasComponent<PrimitiveComponent>())
-                    m_SelectedEntity.AddComponent<PrimitiveComponent>();
-                ImGui::CloseCurrentPopup();
-            }
-            if (ImGui::MenuItem("Animation")){
-                if (!m_SelectedEntity.HasComponent<AnimationComponent>())
-                    m_SelectedEntity.AddComponent<AnimationComponent>();
-                ImGui::CloseCurrentPopup();
-            }
+            ImGui::TextDisabled("Rendering");
+            AddComponentItem<CubeComponent>(entity, "Cube");
+            AddComponentItem<PrimitiveComponent>(entity, "Shape");
+            AddComponentItem<WireframeComponent>(entity, "Wireframe");
+            AddComponentItem<AnimationComponent>(entity, "Animation");
+            ImGui::Separator();
+            ImGui::TextDisabled("Lighting & Camera");
+            // The shader only lights with the first MAX_NUM_POINT_LIGHTS; more are ignored.
+            bool pointLightsFull = m_ActiveScene->GetNumberOfPointLights() >= Scene::MAX_NUM_POINT_LIGHTS;
+            if (ImGui::MenuItem("Point Light", nullptr, false, !pointLightsFull && !entity.HasComponent<PointLightComponent>()))
+                entity.AddComponent<PointLightComponent>();
+            if (pointLightsFull && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("The renderer supports up to %d point lights.", Scene::MAX_NUM_POINT_LIGHTS);
+            AddComponentItem<CameraComponent>(entity, "Camera");
+            AddComponentItem<CameraFollowComponent>(entity, "Camera Follow");
+            ImGui::Separator();
+            ImGui::TextDisabled("Physics");
+            AddComponentItem<RigidBodyComponent>(entity, "Rigid Body");
+            AddComponentItem<BoxColliderComponent>(entity, "Box Collider");
+            AddComponentItem<SphereColliderComponent>(entity, "Sphere Collider");
+            AddComponentItem<CapsuleColliderComponent>(entity, "Capsule Collider");
+            AddComponentItem<CylinderColliderComponent>(entity, "Cylinder Collider");
+            AddComponentItem<MeshColliderComponent>(entity, "Mesh Collider");
+            AddComponentItem<JointComponent>(entity, "Joint");
+            ImGui::Separator();
+            ImGui::TextDisabled("Scripting");
+            AddComponentItem<LuaScriptComponent>(entity, "Lua Script");
 
 			ImGui::EndPopup();
 		}
-
-		ImGui::PopItemWidth();
 
 		DrawComponent<TransformComponent>("Transform", entity, [](auto& component){
 			DrawVec3Control("Translation", component.Translation);
@@ -1011,7 +1110,7 @@ namespace Phoenix{
 			if (ImGui::IsItemHovered()) ImGui::SetTooltip("For fast movers (bullets) so they don't tunnel through walls.");
 			ImGui::Checkbox("Sensor (Trigger)", &component.isSensor);
 			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Detects contacts (Lua OnCollisionEnter/Exit) without colliding.");
-			ImGui::TextDisabled("Applied on Run");
+			ImGui::TextDisabled("Applied on Play");
 		});
 
 		DrawComponent<BoxColliderComponent>("Box Collider", entity, [](auto& component){
@@ -1021,12 +1120,12 @@ namespace Phoenix{
 				component.halfExtents.y = extents[1];
 				component.halfExtents.z = extents[2];
 			}
-			ImGui::TextDisabled("Scaled by Transform on Run");
+			ImGui::TextDisabled("Scaled by Transform on Play");
 		});
 
 		DrawComponent<SphereColliderComponent>("Sphere Collider", entity, [](SphereColliderComponent& component){
 			ImGui::DragFloat("Radius", &component.radius, 0.05f, 0.01f, 100.0f, "%.2f");
-			ImGui::TextDisabled("Scaled by the largest Transform scale axis on Run");
+			ImGui::TextDisabled("Scaled by the largest Transform scale axis on Play");
 		});
 
 		DrawComponent<CapsuleColliderComponent>("Capsule Collider", entity, [](CapsuleColliderComponent& component){
@@ -1091,14 +1190,14 @@ namespace Phoenix{
 						component.maxAngle = glm::radians(maxDeg);
 				}
 			}
-			ImGui::TextDisabled("Connected on Run; needs a Rigid Body + collider.");
+			ImGui::TextDisabled("Connected on Play; needs a Rigid Body + collider.");
 		});
 
 		DrawComponent<TerrainComponent>("Terrain", entity, [](TerrainComponent& component){
 			ImGui::ColorEdit3("Color", glm::value_ptr(component.material.diffuse));
 			component.material.ambient = component.material.diffuse * 0.6f;
 			ImGui::SliderFloat("Reflectivity", &component.material.reflectivity, 0.0f, 1.0f);
-			ImGui::Checkbox("Collider on Run", &component.generateCollider);
+			ImGui::Checkbox("Collider on Play", &component.generateCollider);
 			ImGui::TextDisabled("%d x %d grid, %.0f units. Sculpt via Settings > Terrain Sculpt.",
 				component.resolution, component.resolution, component.size);
 			if (ImGui::Button("Flatten")){
@@ -1133,7 +1232,7 @@ namespace Phoenix{
 			ImGui::TextDisabled(component.convex
 				? "Convex hull of the mesh (works for dynamic bodies)."
 				: "Exact triangle mesh (STATIC bodies only).");
-			ImGui::TextDisabled("Built from the Mesh on Run; needs a Rigid Body + Mesh.");
+			ImGui::TextDisabled("Built from the Mesh on Play; needs a Rigid Body + Mesh.");
 		});
 
 		DrawComponent<WireframeComponent>("Wireframe", entity, [](auto& component){
@@ -1148,7 +1247,7 @@ namespace Phoenix{
 				m_ShowScriptEditor = true;
 			}
 			if (ImGui::TreeNode("API reference")){
-				ImGui::TextDisabled("Runs while playing (Run). Define OnUpdate(dt).");
+				ImGui::TextDisabled("Runs while playing (Play / F5). Define OnUpdate(dt).");
 				ImGui::BulletText("GetTranslation() -> x, y, z");
 				ImGui::BulletText("SetTranslation(x, y, z)");
 				ImGui::BulletText("GetRotation() -> x, y, z   (radians)");
