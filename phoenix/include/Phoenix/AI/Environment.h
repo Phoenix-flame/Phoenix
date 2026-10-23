@@ -100,6 +100,14 @@ namespace Phoenix{
         bool HasExternalAgents() const;
         // True when external agents should be driven by a client instead of frame time.
         bool externalControl = false;
+        // A bridge client is connected (it may use only the physics API, without agents).
+        bool clientConnected = false;
+        // The scene advances only on client requests (ExternalStep / Simulate).
+        bool ClientDriven() const { return externalControl && (clientConnected || HasExternalAgents()); }
+        // Advance `steps` physics steps (agents keep deciding with their own policies;
+        // External agents hold still unless an action was sent). For physics-only clients.
+        void Simulate(int steps);
+        Scene* GetScene() { return m_Scene; }
         std::vector<AgentState*> ExternalAgents();
         void ExternalReset();
         // Re-seed episode randomization and random policies (Gymnasium reset(seed=...)).

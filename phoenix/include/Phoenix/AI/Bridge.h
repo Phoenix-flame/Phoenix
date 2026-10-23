@@ -2,6 +2,8 @@
 #include <deque>
 #include <string>
 
+namespace YAML { class Node; }
+
 namespace Phoenix{
 
     class Environment;
@@ -12,6 +14,8 @@ namespace Phoenix{
     //   {"cmd":"reset","seed":N}             -> {"obs": [[...], ...]} (seed optional)
     //   {"cmd":"step","actions":[[...],...]} -> obs, rewards, terminated, truncated
     //   {"cmd":"close"}                      -> disconnects
+    // plus the physics API (bodies, forces, ray casts, contacts, gravity, stepping),
+    // see HandlePhysics in BridgePhysics.cpp and python/phoenix_env.py.
     // External agents run in lockstep: the scene advances only on "step". One client
     // at a time; everything is non-blocking and serviced from the editor's frame loop.
     class Bridge{
@@ -44,6 +48,8 @@ namespace Phoenix{
         void Send(const std::string& line);
         void DropClient();
         std::string Handle(const std::string& request, Environment& env);
+        // Physics commands; returns false for commands it doesn't know.
+        bool HandlePhysics(const std::string& cmd, const YAML::Node& msg, Environment& env, std::string& outReply);
 
         int m_ListenSocket = -1;
         int m_ClientSocket = -1;

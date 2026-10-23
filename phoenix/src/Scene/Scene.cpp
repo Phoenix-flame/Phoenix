@@ -143,7 +143,9 @@ namespace Phoenix{
 
     void Scene::OnRuntimeStart(){
         m_PhysicsWorld = CreateScope<PhysicsWorld>();
+        m_PhysicsWorld->SetGravity(m_Simulation.gravity);
         m_SimTime = 0.0f;
+        m_ContactLog.clear();
         m_BodyToEntity.clear();
 
         // One body per rigid-body entity. Shape priority: explicit primitive colliders
@@ -581,9 +583,10 @@ namespace Phoenix{
                 m_PhysicsWorld->GetBodyTransform(rb.runtimeBodyID, transform.Translation, transform.Rotation);
             }
 
-            // Contact events -> Lua OnCollisionEnter/Exit(otherTag) on both entities'
-            // scripts. Deduped per frame (Jolt can report one pair per sub-shape).
-            if (!m_Scripts.empty()){
+            // Contact events -> the contact log (Python physics API) and Lua
+            // OnCollisionEnter/Exit(otherTag) on both entities' scripts. Deduped per step
+            // (Jolt can report one pair per sub-shape).
+            {
                 auto events = m_PhysicsWorld->ConsumeContactEvents();
                 std::set<std::tuple<uint32_t, uint32_t, bool>> seen;
                 for (const auto& ev : events){
@@ -593,6 +596,11 @@ namespace Phoenix{
                     Entity entityA = FindEntityByBodyID(ev.bodyA);
                     Entity entityB = FindEntityByBodyID(ev.bodyB);
                     if (!entityA || !entityB) { continue; }
+
+                    // Bounded: a client that never drains the log only keeps the latest events.
+                    if (m_ContactLog.size() >= 4096) { m_ContactLog.erase(m_ContactLog.begin(), m_ContactLog.begin() + 2048); }
+                    m_ContactLog.push_back({ (entt::entity)entityA, (entt::entity)entityB, ev.entered, m_SimTime });
+
                     auto tagOf = [](Entity e){
                         return e.HasComponent<TagComponent>() ? e.GetComponent<TagComponent>().Tag : std::string();
                     };
@@ -602,9 +610,6 @@ namespace Phoenix{
                         else if (se == (entt::entity)entityB) { script->OnCollision(tagOf(entityA), ev.entered); }
                     }
                 }
-            }
-            else{
-                m_PhysicsWorld->ConsumeContactEvents(); // keep the queue drained
             }
         }
 

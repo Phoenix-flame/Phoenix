@@ -37,7 +37,7 @@ namespace Phoenix{
         Environment* env = ctx.environment;
         if (!env) { return { "Stopped", EditorUI::MutedColor() }; }
         if (env->paused) { return { "Paused", IM_COL32(240, 200, 70, 255) }; }
-        if (env->externalControl && env->HasExternalAgents()){
+        if (env->ClientDriven()){
             if (ctx.bridge && ctx.bridge->HasClient()) { return { "Python connected", IM_COL32(90, 170, 255, 255) }; }
             return { "Waiting for Python", IM_COL32(90, 170, 255, 255) };
         }
@@ -132,8 +132,8 @@ namespace Phoenix{
         }
         if (running){
             ImGui::TextDisabled("%s physics steps/s  |  %.1fx real time", Compact(env->StepsPerSecond()).c_str(), env->SimSpeed());
-            if (env->externalControl && env->HasExternalAgents())
-                ImGui::TextDisabled("Python agents set the pace: the speed control doesn't apply.");
+            if (env->ClientDriven())
+                ImGui::TextDisabled("The Python client sets the pace: the speed control doesn't apply.");
         }
     }
 
@@ -234,7 +234,7 @@ namespace Phoenix{
         for (auto e : agents)
             if (agents.get<AgentComponent>(e).policy == AgentComponent::Policy::External) { external++; }
         if (external == 0)
-            ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.3f, 1.0f), "No agent uses the Python policy yet (Agent > Policy > Python).");
+            ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.3f, 1.0f), "No agent uses the Python policy: clients can still use the physics API (PhoenixSim).");
         else
             ImGui::TextDisabled("%d agent%s will be driven by the client. A client's reset starts Play automatically.",
                 external, external == 1 ? "" : "s");

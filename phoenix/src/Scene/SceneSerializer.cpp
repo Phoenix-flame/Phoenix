@@ -27,6 +27,7 @@ namespace Phoenix{
         const SimulationSettings def{};
         sim.fixedTimestep = (node && node["FixedTimestep"]) ? node["FixedTimestep"].as<float>(def.fixedTimestep) : def.fixedTimestep;
         sim.seed = (node && node["Seed"]) ? node["Seed"].as<int>(def.seed) : def.seed;
+        sim.gravity = (node && node["Gravity"]) ? ReadVec3(node["Gravity"], def.gravity) : def.gravity;
     }
 
     static void SerializeMaterial(YAML::Emitter& out, const Material& material){
@@ -355,6 +356,7 @@ namespace Phoenix{
         out << YAML::Key << "Simulation" << YAML::Value << YAML::BeginMap;
         out << YAML::Key << "FixedTimestep" << YAML::Value << m_Scene->Simulation().fixedTimestep;
         out << YAML::Key << "Seed" << YAML::Value << m_Scene->Simulation().seed;
+        out << YAML::Key << "Gravity" << YAML::Value << m_Scene->Simulation().gravity;
         out << YAML::EndMap;
         out << YAML::Key << "Entities" << YAML::Value << YAML::BeginSeq;
 

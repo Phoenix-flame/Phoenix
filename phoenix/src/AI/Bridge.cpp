@@ -1,5 +1,6 @@
 #include <Phoenix/AI/Bridge.h>
 #include <Phoenix/AI/Environment.h>
+#include "Json.h"
 #include <Phoenix/core/log.h>
 #include <yaml-cpp/yaml.h>
 
@@ -26,34 +27,6 @@ namespace Phoenix{
     static void SetNonBlocking(int fd){
         int flags = fcntl(fd, F_GETFL, 0);
         fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-    }
-
-    // ---- Minimal JSON writing (the protocol only needs numbers, bools and strings) ----
-
-    static void AppendNumber(std::string& out, float v){
-        if (!std::isfinite(v)) { v = 0.0f; }
-        char buf[32];
-        std::snprintf(buf, sizeof(buf), "%.6g", v);
-        out += buf;
-    }
-
-    static void AppendString(std::string& out, const std::string& s){
-        out += '"';
-        for (char c : s){
-            if (c == '"' || c == '\\') { out += '\\'; out += c; }
-            else if ((unsigned char)c < 0x20) { out += ' '; }
-            else { out += c; }
-        }
-        out += '"';
-    }
-
-    static void AppendArray(std::string& out, const std::vector<float>& values){
-        out += '[';
-        for (size_t i = 0; i < values.size(); i++){
-            if (i) { out += ','; }
-            AppendNumber(out, values[i]);
-        }
-        out += ']';
     }
 
     Bridge::~Bridge(){
@@ -234,7 +207,7 @@ namespace Phoenix{
         std::string cmd = msg["cmd"] ? msg["cmd"].as<std::string>("") : "";
 
         if (cmd == "hello" || cmd == "spec"){
-            std::string out = "{\"ok\":true,\"version\":1,\"agents\":[";
+            std::string out = "{\"ok\":true,\"version\":2,\"agents\":[";
             std::vector<AgentState*> agents = env.ExternalAgents();
             for (size_t i = 0; i < agents.size(); i++){
                 if (i) { out += ','; }
@@ -251,9 +224,8 @@ namespace Phoenix{
                 }
                 out += "]}";
             }
-            out += "]}";
-            if (agents.empty())
-                return "{\"ok\":false,\"error\":\"no agents use the External policy (set Policy = External on an Agent)\"}";
+            // Physics-only clients may connect to scenes without Python agents.
+            out += "],\"physics\":true}";
             return out;
         }
         if (cmd == "reset"){
@@ -282,6 +254,8 @@ namespace Phoenix{
             DropClient();
             return "";
         }
+        std::string physics;
+        if (HandlePhysics(cmd, msg, env, physics)) { return physics; }
         std::string out = "{\"ok\":false,\"error\":";
         AppendString(out, "unknown cmd '" + cmd + "'");
         return out + "}";

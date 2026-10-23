@@ -10,7 +10,17 @@ only when this client steps it, so any RL library can train against it:
     obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
 
 `PhoenixEnv` controls one agent (the others with the Python policy receive a
-no-op action); `PhoenixMultiAgentEnv` steps all of them together.
+no-op action); `PhoenixMultiAgentEnv` steps all of them together. Every env has a
+`physics` attribute (`PhoenixPhysics`) to read and drive rigid bodies directly, and
+`PhoenixSim` gives that physics API alone, for scenes without Python agents:
+
+    from phoenix_env import PhoenixSim
+    sim = PhoenixSim(port=5555)
+    sim.reset()
+    ball = sim.physics.body("Ball")                 # by tag or id
+    sim.physics.apply_impulse("Ball", [0, 5, 0])
+    sim.physics.simulate(60)                        # one simulated second at 60 Hz
+    hit = sim.physics.raycast([0, 5, 0], [0, -1, 0])
 
 The wire protocol is newline-delimited JSON over a local TCP socket, so this
 module only needs numpy; gymnasium is used when installed (for compatibility
@@ -93,6 +103,80 @@ class PhoenixClient:
         self._sock.close()
 
 
+def _vec3(v):
+    return [float(x) for x in np.asarray(v, dtype=np.float64).reshape(3)]
+
+
+class PhoenixPhysics:
+    """Rigid-body access to the playing scene (shares the env's connection).
+
+    Entities are addressed by id (see `bodies()`) or tag (first match). Vectors are
+    [x, y, z]; rotations are XYZ Euler angles in radians. Bodies are returned as
+    dicts with id, tag, type, position, rotation, scale, velocity, angular_velocity,
+    mass, friction and restitution. Forces and torques act during the next physics
+    step; impulses change velocity immediately.
+    """
+
+    def __init__(self, client):
+        self._client = client
+
+    def _call(self, cmd, **args):
+        args = {k: v for k, v in args.items() if v is not None}
+        return self._client.request({"cmd": cmd, **args})
+
+    def info(self):
+        """Gravity, fixed timestep, simulated time and the number of bodies."""
+        return self._call("physics_info")
+
+    def set_gravity(self, gravity):
+        self._call("set_gravity", gravity=_vec3(gravity))
+
+    def bodies(self, tag=None, all=False):
+        """Every rigid body (or every entity with all=True), optionally filtered by tag."""
+        return self._call("bodies", tag=tag, all=bool(all))["bodies"]
+
+    def body(self, entity):
+        return self._call("body", entity=entity)["body"]
+
+    def set_body(self, entity, position=None, rotation=None, velocity=None, angular_velocity=None):
+        """Teleport and/or set velocities; returns the updated body."""
+        return self._call("set_body", entity=entity,
+                          position=None if position is None else _vec3(position),
+                          rotation=None if rotation is None else _vec3(rotation),
+                          velocity=None if velocity is None else _vec3(velocity),
+                          angular_velocity=None if angular_velocity is None else _vec3(angular_velocity))["body"]
+
+    def apply_force(self, entity, force, point=None):
+        """Newtons, for the next step; at a world point it also adds torque."""
+        self._call("apply_force", entity=entity, force=_vec3(force), point=None if point is None else _vec3(point))
+
+    def apply_impulse(self, entity, impulse, point=None):
+        self._call("apply_impulse", entity=entity, impulse=_vec3(impulse), point=None if point is None else _vec3(point))
+
+    def apply_torque(self, entity, torque):
+        self._call("apply_torque", entity=entity, torque=_vec3(torque))
+
+    def apply_angular_impulse(self, entity, impulse):
+        self._call("apply_angular_impulse", entity=entity, impulse=_vec3(impulse))
+
+    def set_material(self, entity, friction=None, restitution=None):
+        self._call("set_material", entity=entity, friction=friction, restitution=restitution)
+
+    def raycast(self, origin, direction, max_distance=100.0, ignore=None):
+        """First hit as a dict (entity, tag, point, normal, distance), or None."""
+        reply = self._call("raycast", origin=_vec3(origin), direction=_vec3(direction),
+                           max_distance=float(max_distance), ignore=ignore)
+        return reply if reply.get("hit") else None
+
+    def contacts(self):
+        """Contacts that began (entered=True) or ended since the last call."""
+        return self._call("contacts")["contacts"]
+
+    def simulate(self, steps=1):
+        """Advance `steps` fixed physics steps; returns the simulated time."""
+        return self._call("simulate", steps=int(steps))["time"]
+
+
 def _make_spaces(agent):
     observation = spaces.Box(-np.inf, np.inf, (agent["obs_size"],), np.float32)
     if agent["action_type"] == "discrete":
@@ -119,7 +203,10 @@ class PhoenixEnv(_EnvBase):
 
     def __init__(self, host="127.0.0.1", port=5555, agent=0, timeout=60.0):
         self._client = PhoenixClient(host, port, timeout)
+        self.physics = PhoenixPhysics(self._client)
         self.agents = self._client.request({"cmd": "hello"})["agents"]
+        if not self.agents:
+            raise PhoenixError("no agent uses the Python policy (use PhoenixSim for physics-only scenes)")
         if not 0 <= agent < len(self.agents):
             raise PhoenixError(f"agent index {agent} out of range ({len(self.agents)} Python agents)")
         self.agent_index = agent
@@ -160,6 +247,7 @@ class PhoenixMultiAgentEnv:
 
     def __init__(self, host="127.0.0.1", port=5555, timeout=60.0):
         self._client = PhoenixClient(host, port, timeout)
+        self.physics = PhoenixPhysics(self._client)
         self.agents = self._client.request({"cmd": "hello"})["agents"]
         self.num_agents = len(self.agents)
         built = [_make_spaces(a) for a in self.agents]
@@ -178,6 +266,26 @@ class PhoenixMultiAgentEnv:
         reply = self._client.request({"cmd": "step", "actions": encoded})
         obs = [np.asarray(o, dtype=np.float32) for o in reply["obs"]]
         return obs, reply["rewards"], reply["terminated"], reply["truncated"], {"episode": reply["episode"]}
+
+    def close(self):
+        self._client.close()
+
+
+class PhoenixSim:
+    """Physics-only connection: no agents needed. The scene advances only through
+    `physics.simulate(steps)` (and `reset()` restores the edit-time layout plus
+    randomization), so a script fully controls the simulation."""
+
+    def __init__(self, host="127.0.0.1", port=5555, timeout=60.0):
+        self._client = PhoenixClient(host, port, timeout)
+        self.physics = PhoenixPhysics(self._client)
+        self.agents = self._client.request({"cmd": "hello"})["agents"]
+
+    def reset(self, seed=None):
+        message = {"cmd": "reset"}
+        if seed is not None:
+            message["seed"] = int(seed)
+        self._client.request(message)
 
     def close(self):
         self._client.close()

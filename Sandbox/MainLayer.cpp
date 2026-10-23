@@ -1150,6 +1150,7 @@ void MainLayer::UpdateSimulation(float frameSeconds) {
     env.maxSpeed = m_MaxSpeed;
     env.paused = m_Paused;
     env.externalControl = m_BridgeEnabled;
+    env.clientConnected = m_Bridge.HasClient();
     // Fast-forwarding without drawing the viewport leaves most of the frame to the simulation.
     env.frameBudgetMs = !m_MaxSpeed ? 14.0f : (m_RenderAtMaxSpeed ? 22.0f : 40.0f);
     if (m_BridgeEnabled) { m_Bridge.Process(&env, 20.0f); }
@@ -1964,6 +1965,9 @@ void MainLayer::DrawSettingsPanel(){
             sim.fixedTimestep = 1.0f / (float)std::max(1, hz);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("Fixed physics step while playing. Agents decide every Decision Period steps.");
+        ImGui::DragFloat3("Gravity", glm::value_ptr(sim.gravity), 0.05f, -100.0f, 100.0f, "%.2f");
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("m/s^2. Python clients can also change it while playing (set_gravity).");
         ImGui::InputInt("Random Seed", &sim.seed);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("Seeds episode randomization (spawn randomizers, random policies). 0 = different every run.");

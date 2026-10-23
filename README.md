@@ -45,7 +45,9 @@ Gymnasium-compatible API. Phoenix provides the environment; the learning algorit
 - **RL environment design**: agents with discrete or continuous actions, ray sensors,
   reward zones, step/approach/fall rewards, episode limits and domain randomization.
 - **Environment API for Python**: a lockstep Gymnasium bridge (single- and multi-agent)
-  that any RL library can train against (Stable-Baselines3, CleanRL, RLlib, ...).
+  that any RL library can train against (Stable-Baselines3, CleanRL, RLlib, ...), plus a
+  **physics API**: body state, forces / impulses / torques, teleports, materials, ray
+  casts, contact events, gravity and direct stepping.
 - **Fixed-timestep simulation** with time scaling, max-speed fast-forward, pause and
   single-step, reproducible seeds, and an Agent Monitor for live observations/actions.
 - **Entity Component System** powered by [EnTT](https://github.com/skypjack/entt).
@@ -149,10 +151,45 @@ obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
   and `PhoenixMultiAgentEnv` (all Python agents, lists in/out).
 - `python/examples/random_agent.py` — smoke test, needs only numpy.
 - `python/examples/train_sb3.py` — Stable-Baselines3 PPO training + evaluation.
+- `python/examples/physics_api.py` — tour of the physics API below.
 
-The protocol is newline-delimited JSON over TCP (`hello`, `reset`, `step`, `close`),
+The protocol is newline-delimited JSON over TCP (`hello`, `reset`, `step`, `close`, plus
+the physics commands documented in [`BridgePhysics.cpp`](phoenix/src/AI/BridgePhysics.cpp)),
 documented in [`Bridge.h`](phoenix/include/Phoenix/AI/Bridge.h), so clients in other
 languages are easy to write.
+
+### Physics API
+
+Every env has a `physics` attribute, and `PhoenixSim` offers the physics API alone for
+scenes **without** Python agents. While a client is connected the scene advances only
+through `step()` / `physics.simulate(n)`, so your code owns the clock.
+
+```python
+from phoenix_env import PhoenixSim
+
+sim = PhoenixSim(port=5555)
+sim.reset(seed=0)                                  # edit-time layout + randomization
+p = sim.physics
+p.bodies()                                         # every rigid body: id, tag, type, pose, velocities, mass
+p.apply_impulse("Ball", [0, 5, 0])                 # by tag (first match) or id
+p.simulate(60)                                     # 60 fixed steps = 1 s at 60 Hz
+hit = p.raycast([0, 5, 0], [0, -1, 0], max_distance=20, ignore="Ball")
+events = p.contacts()                              # begun / ended since the last call
+```
+
+| Method | Purpose |
+| --- | --- |
+| `info()` | Gravity, fixed timestep, simulated time, body count |
+| `bodies(tag=None, all=False)`, `body(entity)` | Body state: `id`, `tag`, `type` (static / dynamic / kinematic), `position`, `rotation` (XYZ Euler, radians), `scale`, `velocity`, `angular_velocity`, `mass`, `friction`, `restitution` |
+| `set_body(entity, position=, rotation=, velocity=, angular_velocity=)` | Teleport and/or set velocities |
+| `apply_force(entity, force, point=None)`, `apply_torque(entity, torque)` | Act during the next step (at a world point, a force also adds torque) |
+| `apply_impulse(entity, impulse, point=None)`, `apply_angular_impulse(entity, impulse)` | Instant change of momentum |
+| `set_material(entity, friction=, restitution=)` | Change surface properties live |
+| `raycast(origin, direction, max_distance=100, ignore=None)` | First hit: `entity`, `tag`, `point`, `normal`, `distance` (or `None`) |
+| `contacts()` | Contact begin/end events (`a`, `b`, `tag_a`, `tag_b`, `entered`, `time`), cleared on reset |
+| `set_gravity(g)`, `simulate(steps=1)` | World gravity (also in Settings > Simulation); advance the simulation |
+
+Forces need a dynamic body; errors come back as `PhoenixError` with the reason.
 
 ### Scripting agents in Lua
 
@@ -378,7 +415,7 @@ The Sandbox app provides:
   Animation component's properties).
 - **Training** and **Agent Monitor** panels — see [AI Sandbox](#ai-sandbox-reinforcement-learning).
 - **Script Editor**, **Textures**, **Shader Library**, **Profiler** panels.
-- **Settings** — simulation (physics rate, seed), environment (background, ambient), rendering (linear lighting,
+- **Settings** — simulation (physics rate, gravity, seed), environment (background, ambient), rendering (linear lighting,
   bloom/exposure, vsync) and the terrain sculpt brush.
 - **Status bar** — edit/play state, entity count, selection, episode / generation, Python
   connection, simulation speed and FPS.
@@ -525,7 +562,7 @@ Phoenix/
 │   ├── include/Phoenix/      # public headers
 │   │   ├── core/  event/  renderer/  Scene/  Physics/  AI/  imGui/  Math/  opengl/
 │   ├── src/                  # implementation (renderer, Scene, Physics, AI, ...)
-│   │   └── AI/               # Environment (episodes, rewards, resets), Bridge (Python API)
+│   │   └── AI/               # Environment (episodes, rewards, resets), Bridge + physics API
 │   └── assets/               # engine shaders + UI fonts (copied next to every app)
 ├── Sandbox/                  # the editor application
 │   ├── MainLayer.cpp         # title bar, menus, viewport, showcases, gizmos, undo/redo

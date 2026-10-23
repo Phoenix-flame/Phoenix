@@ -18,6 +18,7 @@
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/ContactListener.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
+#include <Jolt/Physics/Body/BodyLock.h>
 #include <Jolt/Physics/Body/BodyLockMulti.h>
 #include <Jolt/Physics/Body/BodyFilter.h>
 #include <Jolt/Physics/Constraints/PointConstraint.h>
@@ -440,6 +441,80 @@ namespace Phoenix{
             JPH::Vec3(velocity.x, velocity.y, velocity.z));
     }
 
+    glm::vec3 PhysicsWorld::GetAngularVelocity(uint32_t bodyID) const{
+        if (bodyID == InvalidBody) { return glm::vec3(0.0f); }
+        JPH::Vec3 v = m_Impl->physicsSystem.GetBodyInterface().GetAngularVelocity(JPH::BodyID(bodyID));
+        return { v.GetX(), v.GetY(), v.GetZ() };
+    }
+
+    void PhysicsWorld::ApplyForceAtPoint(uint32_t bodyID, const glm::vec3& force, const glm::vec3& p){
+        if (bodyID == InvalidBody) { return; }
+        m_Impl->physicsSystem.GetBodyInterface().AddForce(JPH::BodyID(bodyID),
+            JPH::Vec3(force.x, force.y, force.z), JPH::RVec3(p.x, p.y, p.z));
+    }
+
+    void PhysicsWorld::ApplyImpulseAtPoint(uint32_t bodyID, const glm::vec3& impulse, const glm::vec3& p){
+        if (bodyID == InvalidBody) { return; }
+        m_Impl->physicsSystem.GetBodyInterface().AddImpulse(JPH::BodyID(bodyID),
+            JPH::Vec3(impulse.x, impulse.y, impulse.z), JPH::RVec3(p.x, p.y, p.z));
+    }
+
+    void PhysicsWorld::ApplyTorque(uint32_t bodyID, const glm::vec3& torque){
+        if (bodyID == InvalidBody) { return; }
+        m_Impl->physicsSystem.GetBodyInterface().AddTorque(JPH::BodyID(bodyID), JPH::Vec3(torque.x, torque.y, torque.z));
+    }
+
+    void PhysicsWorld::ApplyAngularImpulse(uint32_t bodyID, const glm::vec3& impulse){
+        if (bodyID == InvalidBody) { return; }
+        m_Impl->physicsSystem.GetBodyInterface().AddAngularImpulse(JPH::BodyID(bodyID), JPH::Vec3(impulse.x, impulse.y, impulse.z));
+    }
+
+    float PhysicsWorld::GetMass(uint32_t bodyID) const{
+        if (bodyID == InvalidBody) { return 0.0f; }
+        JPH::BodyLockRead lock(m_Impl->physicsSystem.GetBodyLockInterface(), JPH::BodyID(bodyID));
+        if (!lock.Succeeded() || !lock.GetBody().IsDynamic()) { return 0.0f; }
+        float inverse = lock.GetBody().GetMotionProperties()->GetInverseMass();
+        return inverse > 0.0f ? 1.0f / inverse : 0.0f;
+    }
+
+    bool PhysicsWorld::IsDynamic(uint32_t bodyID) const{
+        if (bodyID == InvalidBody) { return false; }
+        return m_Impl->physicsSystem.GetBodyInterface().GetMotionType(JPH::BodyID(bodyID)) == JPH::EMotionType::Dynamic;
+    }
+
+    void PhysicsWorld::SetBodyTransform(uint32_t bodyID, const glm::vec3& position, const glm::vec3& rotationEuler){
+        if (bodyID == InvalidBody) { return; }
+        glm::quat q = EulerXYZToQuat(rotationEuler);
+        JPH::BodyInterface& bi = m_Impl->physicsSystem.GetBodyInterface();
+        JPH::BodyID id(bodyID);
+        bool isStatic = bi.GetMotionType(id) == JPH::EMotionType::Static;
+        bi.SetPositionAndRotation(id, JPH::RVec3(position.x, position.y, position.z), JPH::Quat(q.x, q.y, q.z, q.w),
+            isStatic ? JPH::EActivation::DontActivate : JPH::EActivation::Activate);
+    }
+
+    void PhysicsWorld::SetFriction(uint32_t bodyID, float friction){
+        if (bodyID == InvalidBody) { return; }
+        m_Impl->physicsSystem.GetBodyInterface().SetFriction(JPH::BodyID(bodyID), friction);
+    }
+
+    void PhysicsWorld::SetRestitution(uint32_t bodyID, float restitution){
+        if (bodyID == InvalidBody) { return; }
+        m_Impl->physicsSystem.GetBodyInterface().SetRestitution(JPH::BodyID(bodyID), restitution);
+    }
+
+    glm::vec3 PhysicsWorld::GetGravity() const{
+        JPH::Vec3 g = m_Impl->physicsSystem.GetGravity();
+        return { g.GetX(), g.GetY(), g.GetZ() };
+    }
+
+    void PhysicsWorld::SetGravity(const glm::vec3& gravity){
+        m_Impl->physicsSystem.SetGravity(JPH::Vec3(gravity.x, gravity.y, gravity.z));
+        // Sleeping bodies wouldn't notice the change until something woke them.
+        JPH::BodyIDVector bodies;
+        m_Impl->physicsSystem.GetBodies(bodies);
+        m_Impl->physicsSystem.GetBodyInterface().ActivateBodies(bodies.data(), (int)bodies.size());
+    }
+
     void PhysicsWorld::MoveKinematic(uint32_t bodyID, const glm::vec3& position, const glm::vec3& rotationEuler, float dt){
         if (bodyID == InvalidBody || dt <= 0.0f) { return; }
         glm::quat q = EulerXYZToQuat(rotationEuler);
@@ -469,6 +544,28 @@ namespace Phoenix{
         if (!m_Impl->physicsSystem.GetNarrowPhaseQuery().CastRay(ray, hit, {}, {}, filter)) { return false; }
         outBody = hit.mBodyID.GetIndexAndSequenceNumber();
         outPoint = origin + d * hit.mFraction;
+        return true;
+    }
+
+    bool PhysicsWorld::RayCast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
+                               RayHit& outHit, uint32_t ignoreBody) const{
+        using namespace JPH;
+        glm::vec3 d = direction * maxDistance;
+        RRayCast ray{ RVec3(origin.x, origin.y, origin.z), Vec3(d.x, d.y, d.z) };
+        RayCastResult hit;
+        IgnoreSingleBodyFilter ignore(ignoreBody == InvalidBody ? BodyID() : BodyID(ignoreBody));
+        BodyFilter all;
+        const BodyFilter& filter = ignoreBody == InvalidBody ? all : static_cast<const BodyFilter&>(ignore);
+        if (!m_Impl->physicsSystem.GetNarrowPhaseQuery().CastRay(ray, hit, {}, {}, filter)) { return false; }
+        outHit.body = hit.mBodyID.GetIndexAndSequenceNumber();
+        outHit.point = origin + d * hit.mFraction;
+        outHit.distance = maxDistance * hit.mFraction;
+        BodyLockRead lock(m_Impl->physicsSystem.GetBodyLockInterface(), hit.mBodyID);
+        if (lock.Succeeded()){
+            Vec3 n = lock.GetBody().GetWorldSpaceSurfaceNormal(hit.mSubShapeID2,
+                RVec3(outHit.point.x, outHit.point.y, outHit.point.z));
+            outHit.normal = { n.GetX(), n.GetY(), n.GetZ() };
+        }
         return true;
     }
 

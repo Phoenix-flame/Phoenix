@@ -215,6 +215,9 @@ namespace Phoenix{
             }
         }
 
+        // Contacts from the previous episode (and the teleports above) don't belong to this one.
+        m_Scene->DrainContacts();
+
         m_Episode++;
         for (auto& agent : m_Agents) { BeginAgentEpisode(agent); }
 
@@ -600,7 +603,7 @@ namespace Phoenix{
             m_Log->episodes.push_back(record);
             if (m_Log->episodes.size() > 20000) { m_Log->episodes.erase(m_Log->episodes.begin(), m_Log->episodes.begin() + 5000); }
             // A client decides when to reset its episodes.
-            if (!externalControl || !HasExternalAgents()) { ResetEpisode(); }
+            if (!ClientDriven()) { ResetEpisode(); }
         }
     }
 
@@ -609,7 +612,7 @@ namespace Phoenix{
         const float fixed = std::clamp(m_Scene->Simulation().fixedTimestep, 1.0f / 1000.0f, 0.1f);
         const double budget = frameBudgetMs / 1000.0;
 
-        if (!paused && !(externalControl && HasExternalAgents())){
+        if (!paused && !ClientDriven()){
             if (maxSpeed){
                 for (int i = 0; i < 200000 && NowSeconds() - start < budget; i++) { PhysicsStep(fixed); }
                 m_Accumulator = 0.0f;
@@ -644,6 +647,11 @@ namespace Phoenix{
             PhysicsStep(fixed);
             if (m_Log->totalSteps != steps || m_Episode != episode || m_Agents.empty()) { break; }
         }
+    }
+
+    void Environment::Simulate(int steps){
+        const float fixed = std::clamp(m_Scene->Simulation().fixedTimestep, 1.0f / 1000.0f, 0.1f);
+        for (int i = 0; i < steps; i++) { PhysicsStep(fixed); }
     }
 
     int Environment::EpisodeStep() const{

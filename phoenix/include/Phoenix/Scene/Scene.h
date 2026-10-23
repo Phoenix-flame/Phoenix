@@ -23,6 +23,14 @@ namespace Phoenix{
     struct SimulationSettings{
         float fixedTimestep = 1.0f / 60.0f; // seconds per physics step while playing
         int seed = 0;                       // episode randomization seed (0 = random each run)
+        glm::vec3 gravity = { 0.0f, -9.81f, 0.0f };
+    };
+
+    // A rigid-body contact that began (entered) or ended while playing.
+    struct ContactRecord{
+        entt::entity a, b;
+        bool entered;
+        float time; // simulated seconds since Play
     };
 
     class Scene{
@@ -81,6 +89,9 @@ namespace Phoenix{
         Environment* GetEnvironment() { return m_Environment; }
 
         SimulationSettings& Simulation() { return m_Simulation; }
+
+        // Contacts recorded since the last call (bounded to the most recent few thousand).
+        std::vector<ContactRecord> DrainContacts() { std::vector<ContactRecord> out; out.swap(m_ContactLog); return out; }
         // Seconds simulated since play started.
         float GetSimulationTime() const { return m_SimTime; }
 
@@ -103,12 +114,14 @@ namespace Phoenix{
         friend class SceneSerializer;
         friend class Environment;
         friend class AIPanels;
+        friend class Bridge;
     
     private:
         glm::vec3 m_AmbientColor = glm::vec3(0.1f);
         float m_Time = 0.0f; // accumulated seconds (drives water animation)
         float m_SimTime = 0.0f;
         SimulationSettings m_Simulation;
+        std::vector<ContactRecord> m_ContactLog;
         Environment* m_Environment = nullptr;
         glm::mat4 m_ActiveView{ 1.0f }, m_ActiveProjection{ 1.0f };
 
