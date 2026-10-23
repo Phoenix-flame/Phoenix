@@ -7,6 +7,7 @@
 #include <Phoenix/core/Profiler.h>
 #include <Phoenix/imGui/ImGuiLayer.h>
 #include "Panels/EditorUI.h"
+#include "AIPrefabs.h"
 
 #include <Phoenix/core/application.h>
 #include <Phoenix/Scene/Scene.h>
@@ -39,8 +40,9 @@ void MainLayer::OnAttach() {
 
     m_Scene->OnResize(m_Framebuffer->GetSpecification().Width, m_Framebuffer->GetSpecification().Height);
 
-    BuildShowcaseScene();
-    m_SceneName = "Showcase";
+    // The editor is an RL sandbox first: open on the learning showcase.
+    BuildAIGoalShowcase();
+    m_SceneName = "AI: Find the Goal";
 
     m_ShaderLibrary = CreateScope<ShaderLibrary>();
     m_ShaderLibrary->Add(Shader::Create("assets/shaders/basic.glsl"));
@@ -1013,28 +1015,30 @@ bool MainLayer::MouseRay(const ImVec2& imageMin, glm::vec3& outOrigin, glm::vec3
 }
 
 void MainLayer::BuildDefaultLayout(ImGuiID dockspaceID) {
-    //  +------------+--------------------------------+--------------+
-    //  | Hierarchy  |                                |              |
-    //  |            |            Viewport            |  Properties  |
-    //  +------------+                                |              |
-    //  | Settings   +--------------------------------+              |
-    //  | Profiler.. |  Timeline | Script | Textures  |              |
-    //  +------------+--------------------------------+--------------+
+    //  +------------+--------------------------------+---------------+
+    //  | Hierarchy  |                                |  Properties   |
+    //  |            |            Viewport            |               |
+    //  +------------+                                +---------------+
+    //  | Settings   +--------------------------------+ Agent Monitor |
+    //  | Profiler.. | Training | Timeline | Script.. |               |
+    //  +------------+--------------------------------+---------------+
     ImGui::DockBuilderRemoveNode(dockspaceID);
     ImGui::DockBuilderAddNode(dockspaceID, ImGuiDockNodeFlags_DockSpace);
     ImGui::DockBuilderSetNodeSize(dockspaceID, ImGui::GetMainViewport()->WorkSize);
 
     ImGuiID center = dockspaceID;
     ImGuiID right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.25f, nullptr, &center);
+    ImGuiID rightBottom = ImGui::DockBuilderSplitNode(right, ImGuiDir_Down, 0.42f, nullptr, &right);
     ImGuiID left = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, 0.26f, nullptr, &center);
     ImGuiID leftBottom = ImGui::DockBuilderSplitNode(left, ImGuiDir_Down, 0.45f, nullptr, &left);
-    ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.30f, nullptr, &center);
+    ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.36f, nullptr, &center);
 
     ImGui::DockBuilderDockWindow("Hierarchy", left);
     for (const char* name : { "Settings", "Profiler", "Shader Library" })
         ImGui::DockBuilderDockWindow(name, leftBottom);
     ImGui::DockBuilderDockWindow("Properties", right);
-    for (const char* name : { "Timeline", "Script Editor", "Textures" })
+    ImGui::DockBuilderDockWindow("Agent Monitor", rightBottom);
+    for (const char* name : { "Training", "Timeline", "Script Editor", "Textures" })
         ImGui::DockBuilderDockWindow(name, bottom);
     ImGui::DockBuilderDockWindow("Viewport", center);
 
@@ -1051,9 +1055,13 @@ void MainLayer::BuildDefaultLayout(ImGuiID dockspaceID) {
 
 void MainLayer::SetActiveScene(const Ref<Scene>& scene) {
     // The old scene is being discarded: just tear its simulation down, no restore.
+    m_Environment.reset();
     if (m_Scene && m_Scene->IsRunning())
         m_Scene->OnRuntimeStop();
     m_RuntimeSnapshot.clear();
+    // A different environment: its learning curves and policy don't carry over.
+    m_EpisodeLog.Clear();
+    m_Paused = false;
 
     m_Scene = scene;
     m_Scene->OnResize(m_ViewportSize.x, m_ViewportSize.y);
@@ -1079,9 +1087,15 @@ void MainLayer::LoadShowcase(void (MainLayer::*build)(), const char* name) {
 void MainLayer::StartRuntime() {
     m_RuntimeSnapshot = SceneSerializer(m_Scene).SerializeToString();
     m_Scene->OnRuntimeStart();
+    m_Paused = false;
+    m_Environment = CreateScope<Environment>(m_Scene.get(), &m_EpisodeLog);
+    m_Environment->Start();
 }
 
 void MainLayer::StopRuntime() {
+    m_Environment.reset();
+    // A connected trainer would otherwise restart Play with its next request.
+    if (m_Bridge.HasClient()) { m_Bridge.Disconnect(); }
     m_Scene->OnRuntimeStop();
     // Undo everything the simulation and scripts changed (transforms, colours,
     // spawned/destroyed entities) so Stop returns to the edit-time scene.
@@ -1112,7 +1126,45 @@ void MainLayer::OnDetach() {
     PHX_INFO("{0} detached.", this->layer_name);
 }
 
+void MainLayer::UpdateSimulation(float frameSeconds) {
+    // Python bridge lifecycle follows the Training panel's checkbox.
+    if (m_BridgeEnabled && !m_Bridge.IsListening() && m_BridgeFailedPort != m_BridgePort){
+        if (!m_Bridge.Start(m_BridgePort)) { m_BridgeFailedPort = m_BridgePort; }
+    }
+    if (!m_BridgeEnabled){
+        if (m_Bridge.IsListening()) { m_Bridge.Stop(); }
+        m_BridgeFailedPort = 0;
+    }
+
+    if (!m_Environment){
+        // A client asking for a reset while editing starts the simulation for it.
+        if (m_BridgeEnabled){
+            m_Bridge.Process(nullptr, 1.0f);
+            if (m_Bridge.WantsPlay() && !m_Scene->IsRunning()) { StartRuntime(); }
+        }
+        return;
+    }
+
+    Environment& env = *m_Environment;
+    env.timeScale = m_TimeScale;
+    env.maxSpeed = m_MaxSpeed;
+    env.paused = m_Paused;
+    env.externalControl = m_BridgeEnabled;
+    // Fast-forwarding without drawing the viewport leaves most of the frame to the simulation.
+    env.frameBudgetMs = !m_MaxSpeed ? 14.0f : (m_RenderAtMaxSpeed ? 22.0f : 40.0f);
+    if (m_BridgeEnabled) { m_Bridge.Process(&env, 20.0f); }
+    {
+        PHX_PROFILE("Simulation");
+        env.Update(frameSeconds);
+    }
+}
+
 void MainLayer::OnUpdate(Phoenix::Timestep ts) {
+    UpdateSimulation((float)ts);
+    // The viewport keeps its last image while fast-forwarding with rendering off.
+    if (m_Environment && m_MaxSpeed && !m_RenderAtMaxSpeed)
+        return;
+
     Phoenix::RenderCommand::SetClearColor(glm::vec4(0.0, 0.0, 0.0, 1.0));
     Phoenix::RenderCommand::Clear();
 
@@ -1141,7 +1193,7 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
         Phoenix::RenderCommand::Clear();
         {
             PHX_PROFILE("Scene Update");
-            m_Scene->OnUpdate(m_MainCamera, ts, m_SceneEditor->GetSelectedEntity());
+            m_Scene->OnRender(m_MainCamera, ts, m_SceneEditor->GetSelectedEntity());
         }
         m_Bloom.Composite(m_Framebuffer->GetRendererID(), m_BloomEnabled ? m_BloomIntensity : 0.0f,
                           m_BloomThreshold, m_Exposure, linear);
@@ -1152,7 +1204,7 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
         Phoenix::RenderCommand::Clear();
         {
             PHX_PROFILE("Scene Update");
-            m_Scene->OnUpdate(m_MainCamera, ts, m_SceneEditor->GetSelectedEntity());
+            m_Scene->OnRender(m_MainCamera, ts, m_SceneEditor->GetSelectedEntity());
         }
         m_Framebuffer->Unbind();
     }
@@ -1257,6 +1309,11 @@ void MainLayer::OnImGuiRender(){
     DrawSettingsPanel();
     DrawProfilerPanel();
     DrawShaderLibraryPanel();
+    {
+        AIPanelContext ai = MakeAIContext();
+        m_AIPanels.DrawTrainingPanel(ai);
+        m_AIPanels.DrawAgentMonitor(ai);
+    }
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 0, 0 });
     ImGui::Begin("Viewport");
@@ -1315,8 +1372,13 @@ void MainLayer::OnImGuiRender(){
         }
     }
 
-    // Tool strip and status badges over the image (before picking, so clicks on the
-    // tool buttons don't also select whatever is behind them).
+    // Sensors, reward zones and spawn ranges, then the tool strip on top (before picking,
+    // so clicks on the tool buttons don't also select whatever is behind them).
+    {
+        AIPanelContext ai = MakeAIContext();
+        m_AIPanels.DrawViewportOverlay(ai, imageMin, viewportPanelSize,
+            m_Scene->GetActiveProjection() * m_Scene->GetActiveView());
+    }
     DrawViewportOverlay(imageMin, viewportPanelSize);
     bool overlayHovered = ImGui::IsAnyItemHovered();
 
@@ -1364,7 +1426,7 @@ void MainLayer::OnImGuiRender(){
     if (m_SelectDefaultTabsFrames > 0){
         m_SelectDefaultTabsFrames--;
         ImGui::SetWindowFocus("Settings");
-        ImGui::SetWindowFocus("Timeline");
+        ImGui::SetWindowFocus("Training");
         ImGui::SetWindowFocus("Viewport");
     }
 
@@ -1552,9 +1614,31 @@ void MainLayer::DrawTitleBar(){
                 ImVec2(mn.x + 18.0f, midY), 11.0f, iconCol);
             dl->AddText(ImVec2(mn.x + 30.0f, midY - ts.y * 0.5f), EditorUI::TextColor(), label);
             if (hovered)
-                ImGui::SetTooltip(running ? "Stop and restore the edit-time scene (F5)" : "Run physics and scripts (F5)");
+                ImGui::SetTooltip(running ? "Stop and restore the edit-time scene (F5)" : "Run physics, scripts and agents (F5)");
             if (pressed)
                 TogglePlay();
+
+            // Pause / step while running, plus the current speed.
+            if (running){
+                float bx = mx.x + 6.0f;
+                ImGui::SetCursorScreenPos(ImVec2(bx, mn.y));
+                if (EditorUI::IconButton("##TitlePause", m_Paused ? EditorUI::Icon::Play : EditorUI::Icon::Pause,
+                        ImVec2(size.y, size.y), m_Paused, m_Paused ? "Resume (F6)" : "Pause (F6)", 0.42f))
+                    m_Paused = !m_Paused;
+                ImGui::SetCursorScreenPos(ImVec2(bx + size.y + 2.0f, mn.y));
+                if (EditorUI::IconButton("##TitleStep", EditorUI::Icon::StepForward, ImVec2(size.y, size.y), false,
+                        "Step one decision (F7)", 0.42f) && m_Environment){
+                    m_Paused = true;
+                    m_Environment->paused = true;
+                    m_Environment->StepDecision();
+                }
+                char speed[16];
+                if (m_MaxSpeed) { std::snprintf(speed, sizeof(speed), "Max"); }
+                else            { std::snprintf(speed, sizeof(speed), "%gx", m_TimeScale); }
+                ImFont* small = ImGuiLayer::GetFont(ImGuiLayer::FontType::Small);
+                dl->AddText(small, small->FontSize, ImVec2(bx + size.y * 2.0f + 10.0f, midY - small->FontSize * 0.5f),
+                    EditorUI::MutedColor(), speed);
+            }
         }
 
         ImGui::PopClipRect();
@@ -1617,6 +1701,13 @@ void MainLayer::DrawMenus(){
         if (ImGui::MenuItem("New Scene", "Ctrl+N")) { NewScene(); }
         if (ImGui::BeginMenu("Showcases"))
         {
+            ImGui::TextDisabled("Reinforcement learning");
+            if (ImGui::MenuItem("AI: Find the Goal"))   { LoadShowcase(&MainLayer::BuildAIGoalShowcase, "AI: Find the Goal"); }
+            if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Four walker agents with ray sensors learn to reach a randomized goal."); }
+            if (ImGui::MenuItem("AI: Roller Ball"))     { LoadShowcase(&MainLayer::BuildAIRollerShowcase, "AI: Roller Ball"); }
+            if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Balls learn continuous force control to reach a target without falling."); }
+            ImGui::Separator();
+            ImGui::TextDisabled("Engine");
             if (ImGui::MenuItem("Bloom & Shadows"))  { LoadShowcase(&MainLayer::BuildShowcaseScene, "Showcase"); }
             if (ImGui::MenuItem("Water"))            { LoadShowcase(&MainLayer::BuildWaterShowcase, "Water Showcase"); }
             if (ImGui::MenuItem("Robot"))            { LoadShowcase(&MainLayer::BuildRobotShowcase, "Robot Showcase"); }
@@ -1660,10 +1751,21 @@ void MainLayer::DrawMenus(){
         ImGui::MenuItem("Terrain Sculpt", nullptr, &m_TerrainSculpt);
         ImGui::Separator();
         if (ImGui::MenuItem(running ? "Stop" : "Play", "F5")) { TogglePlay(); }
+        if (ImGui::MenuItem(m_Paused ? "Resume" : "Pause", "F6", false, running)) { m_Paused = !m_Paused; }
+        if (ImGui::MenuItem("Step Decision", "F7", false, running && m_Environment)){
+            m_Paused = true;
+            m_Environment->paused = true;
+            m_Environment->StepDecision();
+        }
+        if (ImGui::MenuItem("Reset Episode", nullptr, false, running && m_Environment)) { m_Environment->ResetEpisode(); }
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("View"))
     {
+        ImGui::MenuItem("Training", nullptr, &m_AIPanels.showTraining);
+        ImGui::MenuItem("Agent Monitor", nullptr, &m_AIPanels.showAgentMonitor);
+        ImGui::MenuItem("AI Overlays", nullptr, &m_AIPanels.showOverlays);
+        ImGui::Separator();
         ImGui::MenuItem("Settings", nullptr, &m_ShowSettings);
         ImGui::MenuItem("Profiler", nullptr, &m_ShowProfiler);
         ImGui::MenuItem("Shader Library", nullptr, &m_ShowShaderLibrary);
@@ -1678,6 +1780,7 @@ void MainLayer::DrawMenus(){
         if (ImGui::MenuItem("Reset Layout")){
             m_ResetLayout = true; // applied next frame, before the dockspace is submitted
             m_ShowSettings = m_ShowProfiler = m_ShowShaderLibrary = true;
+            m_AIPanels.showTraining = m_AIPanels.showAgentMonitor = true;
             if (m_SceneEditor){
                 m_SceneEditor->ShowTimeline() = true;
                 m_SceneEditor->ShowScriptEditor() = true;
@@ -1688,6 +1791,7 @@ void MainLayer::DrawMenus(){
     }
     if (ImGui::BeginMenu("Help"))
     {
+        if (ImGui::MenuItem("AI Sandbox Guide"))        { m_OpenGuide = true; }
         if (ImGui::MenuItem("Keyboard Shortcuts", "F1")) { m_OpenShortcuts = true; }
         if (ImGui::MenuItem("About Phoenix"))           { m_OpenAbout = true; }
         ImGui::EndMenu();
@@ -1740,12 +1844,27 @@ void MainLayer::DrawStatusBar(){
             separator();
             ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(EditorUI::Accent()), "Sculpt mode");
         }
+        if (m_Environment && !m_Environment->Agents().empty()){
+            separator();
+            ImGui::Text("Episode %d", m_Environment->Episode());
+            ImGui::SameLine();
+            ImGui::TextDisabled("step %d", m_Environment->EpisodeStep());
+        }
+        if (m_Bridge.HasClient()){
+            separator();
+            ImGui::TextColored(ImVec4(0.35f, 0.67f, 1.0f, 1.0f), "Python connected");
+        }
 
         // Right: performance + history.
         char stats[128];
-        std::snprintf(stats, sizeof(stats), "Undo %d   |   %s   |   %.0f FPS  (%.2f ms)",
-            (int)m_UndoStack.size(), vsync ? "VSync on" : "VSync off",
-            io.Framerate, io.Framerate > 0.0f ? 1000.0f / io.Framerate : 0.0f);
+        if (m_Environment)
+            std::snprintf(stats, sizeof(stats), "%.0f steps/s   |   %.1fx   |   %.0f FPS  (%.2f ms)",
+                m_Environment->StepsPerSecond(), m_Environment->SimSpeed(),
+                io.Framerate, io.Framerate > 0.0f ? 1000.0f / io.Framerate : 0.0f);
+        else
+            std::snprintf(stats, sizeof(stats), "Undo %d   |   %s   |   %.0f FPS  (%.2f ms)",
+                (int)m_UndoStack.size(), vsync ? "VSync on" : "VSync off",
+                io.Framerate, io.Framerate > 0.0f ? 1000.0f / io.Framerate : 0.0f);
         float w = ImGui::CalcTextSize(stats).x;
         ImGui::SameLine();
         float x = ImGui::GetWindowWidth() - w - 12.0f;
@@ -1777,7 +1896,7 @@ void MainLayer::DrawViewportOverlay(const ImVec2& imageMin, const ImVec2& imageS
     const int toolCount = IM_ARRAYSIZE(tools);
     const float dividerW = 9.0f;
     ImVec2 stripMin(imageMin.x + margin, imageMin.y + margin);
-    ImVec2 stripSize(inner * 2.0f + (toolCount + 2) * button + (toolCount + 1) * gap + dividerW, button + inner * 2.0f);
+    ImVec2 stripSize(inner * 2.0f + (toolCount + 3) * button + (toolCount + 2) * gap + dividerW, button + inner * 2.0f);
     dl->AddRectFilled(stripMin, ImVec2(stripMin.x + stripSize.x, stripMin.y + stripSize.y), IM_COL32(18, 19, 22, 215), 7.0f);
     dl->AddRect(stripMin, ImVec2(stripMin.x + stripSize.x, stripMin.y + stripSize.y), IM_COL32(255, 255, 255, 18), 7.0f);
 
@@ -1801,11 +1920,18 @@ void MainLayer::DrawViewportOverlay(const ImVec2& imageMin, const ImVec2& imageS
     if (EditorUI::IconButton("##ToolSnap", EditorUI::Icon::Magnet, ImVec2(button, button), m_GizmoSnap,
             "Snap: 0.5 units / 15 deg / 0.1 scale (hold Ctrl to invert)"))
         m_GizmoSnap = !m_GizmoSnap;
+    x += button + gap;
+    ImGui::SetCursorScreenPos(ImVec2(x, y));
+    if (EditorUI::IconButton("##ToolAIOverlay", EditorUI::Icon::Eye, ImVec2(button, button), m_AIPanels.showOverlays,
+            "AI overlays: ray sensors, reward zones, spawn ranges"))
+        m_AIPanels.showOverlays = !m_AIPanels.showOverlays;
 
     // Play state: accent frame + badge (top-right).
     if (running){
         dl->AddRect(imageMin, ImVec2(imageMin.x + imageSize.x, imageMin.y + imageSize.y), EditorUI::Danger(0.85f), 0.0f, 0, 2.0f);
-        const char* text = "Playing  -  F5 to stop";
+        const char* text = m_Paused ? "Paused  -  F6 to resume, F7 to step"
+                         : (m_MaxSpeed && !m_RenderAtMaxSpeed) ? "Training at max speed  -  view paused"
+                         : "Playing  -  F5 to stop";
         ImVec2 size = EditorUI::PillSize(text, 5.0f);
         EditorUI::DrawPill(dl, ImVec2(imageMin.x + imageSize.x - size.x - margin, imageMin.y + margin + inner),
             text, EditorUI::Danger(), IM_COL32(18, 19, 22, 215), 5.0f);
@@ -1829,6 +1955,21 @@ void MainLayer::DrawSettingsPanel(){
     ImGui::Begin("Settings", &m_ShowSettings);
     // Widgets take the space left of a fixed label column, so labels never clip.
     ImGui::PushItemWidth(-130.0f);
+
+    if (ImGui::CollapsingHeader("Simulation", ImGuiTreeNodeFlags_DefaultOpen)){
+        SimulationSettings& sim = m_Scene->Simulation();
+        int hz = (int)std::lround(1.0f / std::max(1e-4f, sim.fixedTimestep));
+        ImGui::BeginDisabled(m_Scene->IsRunning());
+        if (ImGui::SliderInt("Physics Rate", &hz, 20, 240, "%d Hz"))
+            sim.fixedTimestep = 1.0f / (float)std::max(1, hz);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Fixed physics step while playing. Agents decide every Decision Period steps.");
+        ImGui::InputInt("Random Seed", &sim.seed);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Seeds episode randomization (spawn randomizers, random policies). 0 = different every run.");
+        ImGui::EndDisabled();
+        ImGui::Spacing();
+    }
 
     if (ImGui::CollapsingHeader("Environment", ImGuiTreeNodeFlags_DefaultOpen)){
         ImGui::ColorEdit3("Background", glm::value_ptr(m_BackgroundColor));
@@ -1956,6 +2097,7 @@ void MainLayer::DrawHelpPopups(){
     if (m_OpenImportShader){ ImGui::OpenPopup("Import Shader"); m_OpenImportShader = false; }
     if (m_OpenShortcuts)   { ImGui::OpenPopup("Keyboard Shortcuts"); m_OpenShortcuts = false; }
     if (m_OpenAbout)       { ImGui::OpenPopup("About Phoenix"); m_OpenAbout = false; }
+    if (m_OpenGuide)       { ImGui::OpenPopup("AI Sandbox Guide"); m_OpenGuide = false; }
 
     if (file_dialog.showFileDialog("Import Shader", imgui_addons::ImGuiFileBrowser::DialogMode::OPEN, ImVec2(700, 310), ".glsl"))
     {
@@ -1977,6 +2119,9 @@ void MainLayer::DrawHelpPopups(){
             { "Undo / Redo",                    "Ctrl+Z / Ctrl+Shift+Z" },
             { "New / Import / Export scene",    "Ctrl+N / Ctrl+O / Ctrl+S" },
             { "Play / Stop",                    "F5" },
+            { "Pause / Step one decision",      "F6 / F7" },
+            { "Frame selection",                "F" },
+            { "Drive a Keyboard-policy agent",  "WASD / arrows" },
             { "This window",                    "F1" },
         };
         if (ImGui::BeginTable("##Shortcuts", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)){
@@ -1996,6 +2141,41 @@ void MainLayer::DrawHelpPopups(){
     }
 
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(560.0f, 0.0f), ImGuiCond_Appearing);
+    if (ImGui::BeginPopupModal("AI Sandbox Guide", nullptr, ImGuiWindowFlags_NoSavedSettings)){
+        struct Step { const char* title; const char* text; };
+        const Step steps[] = {
+            { "1. Build the world",
+              "Create > AI > Training Arena gives a walled floor. Add obstacles (Create > AI > Wall), goals and "
+              "hazards (Reward Zones). Tags matter: agents target the nearest \"Goal\"; rays detect the tags you list." },
+            { "2. Add an agent",
+              "Create > AI > Agent. In Properties pick its control (Move / Force / Custom Lua), action space, "
+              "observations (velocity, heading, target, rays, script values) and rewards." },
+            { "3. Randomize",
+              "Spawn Randomizer moves entities every episode so the policy generalizes instead of memorizing." },
+            { "4. Test it yourself",
+              "Set Policy to Keyboard, press Play (F5) and drive with WASD. Watch rewards in the Agent Monitor." },
+            { "5. Connect your RL code",
+              "Set Policy to Python, enable Training > Python Bridge, and drive the scene from any Gymnasium-based "
+              "library (python/phoenix_env.py). The scene advances in lockstep with your step() calls." },
+            { "6. Inspect",
+              "Watch episode returns in the Training panel and observations in the Agent Monitor; export CSV." },
+        };
+        for (const Step& step : steps){
+            ImGui::PushFont(ImGuiLayer::GetFont(ImGuiLayer::FontType::Bold));
+            ImGui::TextUnformatted(step.title);
+            ImGui::PopFont();
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+            ImGui::TextWrapped("%s", step.text);
+            ImGui::PopStyleColor();
+            ImGui::Spacing();
+        }
+        if (ImGui::Button("Close", ImVec2(-FLT_MIN, 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape))
+            ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(380.0f, 0.0f), ImGuiCond_Appearing);
     if (ImGui::BeginPopupModal("About Phoenix", nullptr, ImGuiWindowFlags_NoSavedSettings)){
         ImVec2 p = ImGui::GetCursorScreenPos();
@@ -2005,12 +2185,13 @@ void MainLayer::DrawHelpPopups(){
         ImGui::PushFont(ImGuiLayer::GetFont(ImGuiLayer::FontType::Heading));
         ImGui::TextUnformatted("Phoenix Engine");
         ImGui::PopFont();
-        ImGui::TextDisabled("Real-time 3D engine and editor");
+        ImGui::TextDisabled("AI sandbox for reinforcement-learning environments");
         ImGui::EndGroup();
         ImGui::Spacing();
         ImGui::Separator();
-        ImGui::TextWrapped("C++17 / OpenGL 4.5 forward renderer with an EnTT ECS, Jolt physics, "
-                           "Lua scripting and skeletal animation.");
+        ImGui::TextWrapped("Design environments for RL agents: sensors, rewards, randomization, an in-editor "
+                           "Gymnasium bridge for your Python RL code, on a C++17 engine with an EnTT ECS, "
+                           "Jolt physics, Lua scripting and an OpenGL renderer.");
         ImGui::TextDisabled("Dear ImGui %s", ImGui::GetVersion());
         ImGui::Spacing();
         if (ImGui::Button("Close", ImVec2(-FLT_MIN, 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape))
@@ -2042,6 +2223,21 @@ void MainLayer::HandleShortcuts(){
     if (control && pressed(ImGuiKey_S)) { ExportScene(); }
 
     if (pressed(ImGuiKey_F5)) { TogglePlay(); }
+    if (pressed(ImGuiKey_F6) && m_Scene->IsRunning()) { m_Paused = !m_Paused; }
+    if (pressed(ImGuiKey_F7) && m_Environment){
+        m_Paused = true;
+        m_Environment->paused = true;
+        m_Environment->StepDecision();
+    }
+    // Frame the selection (keeps the current viewing angle).
+    if (!control && pressed(ImGuiKey_F)){
+        Entity selected = m_SceneEditor->GetSelectedEntity();
+        if (selected && selected.HasComponent<TransformComponent>()){
+            const auto& t = selected.GetComponent<TransformComponent>();
+            float size = std::max({ t.Scale.x, t.Scale.y, t.Scale.z });
+            m_MainCamera.Focus(t.Translation, std::clamp(size * 2.5f, 4.0f, 120.0f));
+        }
+    }
     if (pressed(ImGuiKey_F1)) { m_OpenShortcuts = true; }
 
     // Esc deselects, unless it is closing a popup.
@@ -2055,4 +2251,104 @@ void MainLayer::HandleShortcuts(){
         if (pressed(ImGuiKey_E)) { m_GizmoType = 1; }  // rotate
         if (pressed(ImGuiKey_R)) { m_GizmoType = 2; }  // scale
     }
+}
+
+
+AIPanelContext MainLayer::MakeAIContext() {
+    AIPanelContext ctx;
+    ctx.scene = m_Scene.get();
+    ctx.environment = m_Environment.get();
+    ctx.log = &m_EpisodeLog;
+    ctx.bridge = &m_Bridge;
+    ctx.selected = m_SceneEditor->GetSelectedEntity();
+    ctx.timeScale = &m_TimeScale;
+    ctx.maxSpeed = &m_MaxSpeed;
+    ctx.paused = &m_Paused;
+    ctx.bridgeEnabled = &m_BridgeEnabled;
+    ctx.renderAtMaxSpeed = &m_RenderAtMaxSpeed;
+    ctx.bridgePort = &m_BridgePort;
+    ctx.togglePlay = [this](){ TogglePlay(); };
+    ctx.select = [this](Entity e){ m_SceneEditor->SetSelectedEntity(e); };
+    return ctx;
+}
+
+// Four identical arenas side by side: every walker agent evaluates its own candidate
+// episode, so a client gets four episodes for the price of one (multi-agent API).
+void MainLayer::BuildAIGoalShowcase() {
+    m_Scene->AmbientColor() = glm::vec3(0.12f);
+    {
+        auto sun = m_Scene->CreateDirLightEntity("Sun");
+        auto& t = sun.GetComponent<TransformComponent>();
+        t.Translation = { 8.0f, 16.0f, 10.0f };
+        t.Rotation = { glm::radians(-60.0f), glm::radians(25.0f), 0.0f };
+        auto& dl = sun.GetComponent<DirLightComponent>();
+        dl.ambient = glm::vec3(0.06f);
+        dl.diffuse = glm::vec3(0.8f);
+    }
+
+    const float spacing = 20.0f;
+    for (int i = 0; i < 4; i++){
+        glm::vec3 c((i % 2) * spacing - spacing * 0.5f, 0.0f, (i / 2) * spacing - spacing * 0.5f);
+        std::string suffix = " " + std::to_string(i + 1);
+        AIPrefabs::CreateArena(*m_Scene, c, 16.0f, ("Arena" + suffix).c_str());
+
+        auto agent = AIPrefabs::CreateAgent(*m_Scene, c + glm::vec3(0.0f, 0.45f, 4.0f), ("Agent" + suffix).c_str());
+        agent.GetComponent<RandomizerComponent>().positionRange = { 5.0f, 0.0f, 2.0f };
+
+        auto goal = AIPrefabs::CreateGoal(*m_Scene, c + glm::vec3(0.0f, 0.06f, -3.5f));
+        auto& goalRandom = goal.AddComponent<RandomizerComponent>();
+        goalRandom.positionRange = { 5.5f, 0.0f, 2.5f };
+        goalRandom.randomYaw = false;
+
+        auto hazard = AIPrefabs::CreateHazard(*m_Scene, c + glm::vec3(0.0f, 0.03f, 0.5f), { 2.5f, 1.2f });
+        auto& hazardRandom = hazard.AddComponent<RandomizerComponent>();
+        hazardRandom.positionRange = { 4.5f, 0.0f, 0.8f };
+        hazardRandom.randomYaw = false;
+    }
+
+    m_MainCamera.Focus({ 0.0f, 0.0f, 1.0f }, 42.0f, 180.0f, -58.0f);
+}
+
+// Rolling balls on raised platforms: continuous force actions, fall-off penalty.
+void MainLayer::BuildAIRollerShowcase() {
+    m_Scene->AmbientColor() = glm::vec3(0.1f);
+    {
+        auto sun = m_Scene->CreateDirLightEntity("Sun");
+        auto& t = sun.GetComponent<TransformComponent>();
+        t.Translation = { 6.0f, 14.0f, 8.0f };
+        t.Rotation = { glm::radians(-55.0f), glm::radians(35.0f), 0.0f };
+    }
+
+    const float spacing = 16.0f;
+    for (int i = 0; i < 4; i++){
+        glm::vec3 c((i % 2) * spacing - spacing * 0.5f, 0.0f, (i / 2) * spacing - spacing * 0.5f);
+        std::string suffix = " " + std::to_string(i + 1);
+
+        auto platform = m_Scene->CreateEntity(("Platform" + suffix).c_str());
+        auto& t = platform.GetComponent<TransformComponent>();
+        t.Translation = c + glm::vec3(0.0f, -0.25f, 0.0f);
+        t.Scale = { 10.0f, 0.5f, 10.0f };
+        auto& cube = platform.AddComponent<CubeComponent>();
+        cube.material.ambient = glm::vec3(0.18f, 0.2f, 0.24f);
+        cube.material.diffuse = glm::vec3(0.36f, 0.4f, 0.48f);
+        cube.material.specular = glm::vec3(0.2f);
+        cube.material.reflectivity = 0.1f;
+        auto& rb = platform.AddComponent<RigidBodyComponent>();
+        rb.type = RigidBodyComponent::Type::Static;
+        rb.friction = 0.8f;
+        platform.AddComponent<BoxColliderComponent>();
+
+        auto ball = AIPrefabs::CreateRollerAgent(*m_Scene, c + glm::vec3(0.0f, 0.5f, 0.0f), ("Roller" + suffix).c_str());
+        auto& ballRandom = ball.AddComponent<RandomizerComponent>();
+        ballRandom.positionRange = { 3.5f, 0.0f, 3.5f };
+        ballRandom.randomYaw = false;
+
+        auto goal = AIPrefabs::CreateGoal(*m_Scene, c + glm::vec3(2.0f, 0.06f, -2.0f));
+        goal.GetComponent<TransformComponent>().Scale = { 1.2f, 0.12f, 1.2f };
+        auto& goalRandom = goal.AddComponent<RandomizerComponent>();
+        goalRandom.positionRange = { 3.5f, 0.0f, 3.5f };
+        goalRandom.randomYaw = false;
+    }
+
+    m_MainCamera.Focus({ 0.0f, 0.0f, 0.0f }, 32.0f, 180.0f, -55.0f);
 }

@@ -5,6 +5,8 @@
 #include <Phoenix/imGui/ImGuiLayer.h>
 #include <glm/gtc/type_ptr.hpp>
 #include "EditorUI.h"
+#include "AIPrefabs.h"
+#include <Phoenix/AI/Environment.h>
 #include <cstring>
 #include <cctype>
 #include <type_traits>
@@ -215,6 +217,29 @@ namespace Phoenix{
     void SceneEditor::CreateEntityMenu(){
         if (ImGui::MenuItem("Empty Entity"))
             m_SelectedEntity = m_ActiveScene->CreateEntity("Empty Entity");
+
+        if (ImGui::BeginMenu("AI")){
+            Scene& scene = *m_ActiveScene;
+            if (ImGui::MenuItem("Agent (walker)"))
+                m_SelectedEntity = AIPrefabs::CreateAgent(scene, { 0.0f, 0.45f, 0.0f });
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Upright box with Move control, a 7-ray sensor and the Python policy.");
+            if (ImGui::MenuItem("Agent (rolling ball)"))
+                m_SelectedEntity = AIPrefabs::CreateRollerAgent(scene, { 0.0f, 0.5f, 0.0f });
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Sphere pushed by continuous forces.");
+            ImGui::Separator();
+            if (ImGui::MenuItem("Goal Zone"))
+                m_SelectedEntity = AIPrefabs::CreateGoal(scene, { 0.0f, 0.06f, -4.0f });
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("+1 reward and end of episode on entry (tag \"Goal\").");
+            if (ImGui::MenuItem("Hazard Zone"))
+                m_SelectedEntity = AIPrefabs::CreateHazard(scene, { 3.0f, 0.03f, 0.0f });
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("-1 reward and end of episode on entry (tag \"Hazard\").");
+            if (ImGui::MenuItem("Wall"))
+                m_SelectedEntity = AIPrefabs::CreateWall(scene, { 0.0f, 0.6f, 4.0f }, { 6.0f, 1.2f, 0.4f });
+            if (ImGui::MenuItem("Training Arena"))
+                m_SelectedEntity = AIPrefabs::CreateArena(scene, { 0.0f, 0.0f, 0.0f }, 16.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("16 x 16 m floor enclosed by four walls.");
+            ImGui::EndMenu();
+        }
 
         ImGui::Separator();
         if (ImGui::BeginMenu("Shape")){
@@ -535,7 +560,21 @@ namespace Phoenix{
     // Small glyph for the hierarchy row, picked from what the entity mostly is.
     static void DrawEntityIcon(ImDrawList* dl, Entity entity, ImVec2 c){
         const float r = 5.5f;
-        if (entity.HasComponent<CameraComponent>()){
+        if (entity.HasComponent<AgentComponent>()){
+            // Robot face: accent head with two eyes and an antenna.
+            dl->AddRectFilled(ImVec2(c.x - r, c.y - r * 0.8f), ImVec2(c.x + r, c.y + r * 0.9f), EditorUI::Accent(), 2.5f);
+            dl->AddCircleFilled(ImVec2(c.x - r * 0.4f, c.y), 1.4f, IM_COL32(20, 20, 24, 255));
+            dl->AddCircleFilled(ImVec2(c.x + r * 0.4f, c.y), 1.4f, IM_COL32(20, 20, 24, 255));
+            dl->AddLine(ImVec2(c.x, c.y - r * 0.8f), ImVec2(c.x, c.y - r * 1.25f), EditorUI::Accent(), 1.2f);
+        }
+        else if (entity.HasComponent<RewardZoneComponent>()){
+            bool positive = entity.GetComponent<RewardZoneComponent>().reward >= 0.0f;
+            ImU32 col = positive ? EditorUI::Success() : EditorUI::Danger();
+            ImU32 fill = positive ? EditorUI::Success(0.3f) : EditorUI::Danger(0.3f);
+            dl->AddRectFilled(ImVec2(c.x - r * 0.85f, c.y - r * 0.85f), ImVec2(c.x + r * 0.85f, c.y + r * 0.85f), fill, 2.0f);
+            dl->AddRect(ImVec2(c.x - r * 0.85f, c.y - r * 0.85f), ImVec2(c.x + r * 0.85f, c.y + r * 0.85f), col, 2.0f, 0, 1.3f);
+        }
+        else if (entity.HasComponent<CameraComponent>()){
             ImU32 col = IM_COL32(110, 170, 255, 255);
             dl->AddRectFilled(ImVec2(c.x - r, c.y - r * 0.6f), ImVec2(c.x + r * 0.35f, c.y + r * 0.6f), col, 1.5f);
             dl->AddTriangleFilled(ImVec2(c.x + r * 0.35f, c.y), ImVec2(c.x + r, c.y - r * 0.6f), ImVec2(c.x + r, c.y + r * 0.6f), col);
@@ -609,10 +648,17 @@ namespace Phoenix{
 
         // Right-aligned hints for behaviour that isn't visible in the viewport.
         {
-            const char* badges[2] = {};
+            const char* badges[3] = {};
             int count = 0;
+            if (entity.HasComponent<AgentComponent>()){
+                static const char* policies[] = { "Keyboard", "Random", "Python" };
+                badges[count++] = policies[std::clamp((int)entity.GetComponent<AgentComponent>().policy, 0, 2)];
+            }
+            else if (entity.HasComponent<RewardZoneComponent>()){
+                badges[count++] = entity.GetComponent<RewardZoneComponent>().reward >= 0.0f ? "+Reward" : "-Reward";
+            }
             if (entity.HasComponent<LuaScriptComponent>()) { badges[count++] = "Lua"; }
-            if (entity.HasComponent<RigidBodyComponent>()) { badges[count++] = "Physics"; }
+            if (count < 2 && entity.HasComponent<RigidBodyComponent>()) { badges[count++] = "Physics"; }
             ImFont* small = ImGuiLayer::GetFont(ImGuiLayer::FontType::Small);
             float x = rowMax.x - 6.0f;
             for (int i = 0; i < count; i++){
@@ -833,6 +879,12 @@ namespace Phoenix{
             AddComponentItem<CylinderColliderComponent>(entity, "Cylinder Collider");
             AddComponentItem<MeshColliderComponent>(entity, "Mesh Collider");
             AddComponentItem<JointComponent>(entity, "Joint");
+            ImGui::Separator();
+            ImGui::TextDisabled("AI / RL Environment");
+            AddComponentItem<AgentComponent>(entity, "Agent");
+            AddComponentItem<RaySensorComponent>(entity, "Ray Sensor");
+            AddComponentItem<RewardZoneComponent>(entity, "Reward Zone");
+            AddComponentItem<RandomizerComponent>(entity, "Spawn Randomizer");
             ImGui::Separator();
             ImGui::TextDisabled("Scripting");
             AddComponentItem<LuaScriptComponent>(entity, "Lua Script");
@@ -1108,6 +1160,8 @@ namespace Phoenix{
 			}
 			ImGui::Checkbox("Continuous Collision", &component.continuousCollision);
 			if (ImGui::IsItemHovered()) ImGui::SetTooltip("For fast movers (bullets) so they don't tunnel through walls.");
+			ImGui::Checkbox("Upright (lock tilt)", &component.lockTilt);
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Only rotates about Y, so walking agents and characters never tip over.");
 			ImGui::Checkbox("Sensor (Trigger)", &component.isSensor);
 			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Detects contacts (Lua OnCollisionEnter/Exit) without colliding.");
 			ImGui::TextDisabled("Applied on Play");
@@ -1240,6 +1294,179 @@ namespace Phoenix{
 			ImGui::TextDisabled("Object is drawn as a wireframe.\nRemove this component to hide it.");
 		});
 
+		DrawComponent<AgentComponent>("Agent", entity, [this, entity](AgentComponent& component) mutable {
+			const bool running = m_ActiveScene->IsRunning();
+			if (running)
+				ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(EditorUI::Accent()), "Spaces are fixed while playing; changes apply on the next Play.");
+
+			char behavior[64];
+			std::strncpy(behavior, component.behavior.c_str(), sizeof(behavior) - 1);
+			behavior[sizeof(behavior) - 1] = 0;
+			if (ImGui::InputText("Behavior", behavior, sizeof(behavior))) { component.behavior = behavior; }
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Name reported to the client (Python) for this agent.");
+
+			// Policy as a segmented control: it is the most important choice here.
+			ImGui::TextDisabled("Policy");
+			{
+				const char* labels[] = { "Keyboard", "Random", "Python" };
+				const char* tips[] = {
+					"Drive it yourself with WASD / arrow keys (or the script's Heuristic()) to test the environment.",
+					"Uniformly random actions: a baseline for rewards.",
+					"Actions come from your RL code over the bridge (Gymnasium API, see python/).",
+				};
+				int policy = (int)component.policy;
+				if (EditorUI::Segmented("##policy", &policy, labels, 3, 0.0f, tips))
+					component.policy = (AgentComponent::Policy)policy;
+				// Live switch: the running agent follows the new policy at its next decision.
+				if (Environment* env = m_ActiveScene->GetEnvironment())
+					if (AgentState* state = env->FindAgent((entt::entity)entity))
+						state->policy = component.policy;
+			}
+
+			EditorUI::SectionLabel("Actions");
+			{
+				const char* controls[] = { "Move (walk + turn)", "Force (push)", "Custom (Lua OnAction)" };
+				int control = (int)component.control;
+				if (ImGui::Combo("Control", &control, controls, IM_ARRAYSIZE(controls)))
+					component.control = (AgentComponent::Control)control;
+				int type = (int)component.actionType;
+				ImGui::RadioButton("Discrete", &type, 0); ImGui::SameLine();
+				ImGui::RadioButton("Continuous", &type, 1);
+				component.actionType = (AgentComponent::ActionType)type;
+				if (component.control == AgentComponent::Control::Custom){
+					ImGui::DragInt(type == 0 ? "Choices" : "Dimensions", &component.customActionSize, 0.1f, 1, 64);
+				}
+				std::vector<std::string> names = Environment::DescribeActions(component);
+				std::string summary;
+				for (size_t i = 0; i < names.size(); i++) { summary += (i ? ", " : "") + names[i]; }
+				ImGui::TextDisabled("%d %s: %s", (int)names.size(), type == 0 ? "choices" : "values in [-1, 1]", summary.c_str());
+
+				if (component.control == AgentComponent::Control::Move){
+					ImGui::DragFloat("Move Speed", &component.moveSpeed, 0.05f, 0.1f, 30.0f, "%.2f m/s");
+					ImGui::DragFloat("Turn Speed", &component.turnSpeed, 0.05f, 0.1f, 20.0f, "%.2f rad/s");
+				}
+				else if (component.control == AgentComponent::Control::Force){
+					ImGui::DragFloat("Force", &component.force, 0.5f, 0.0f, 1000.0f, "%.1f N");
+					ImGui::DragFloat("Speed Scale", &component.moveSpeed, 0.05f, 0.1f, 30.0f, "%.2f m/s");
+					if (ImGui::IsItemHovered()) ImGui::SetTooltip("Velocity observations are divided by this.");
+				}
+				ImGui::DragInt("Decision Period", &component.decisionPeriod, 0.1f, 1, 120, "%d steps");
+				float hz = 1.0f / std::max(1e-4f, m_ActiveScene->Simulation().fixedTimestep) / (float)std::max(1, component.decisionPeriod);
+				if (ImGui::IsItemHovered()) ImGui::SetTooltip("Physics steps each action is held for (%.1f decisions per simulated second).", hz);
+			}
+
+			EditorUI::SectionLabel("Observations");
+			{
+				if (ImGui::BeginTable("##obs", 2)){
+					ImGui::TableNextColumn(); ImGui::Checkbox("Velocity", &component.observeVelocity);
+					ImGui::TableNextColumn(); ImGui::Checkbox("Heading", &component.observeHeading);
+					ImGui::TableNextColumn(); ImGui::Checkbox("Target", &component.observeTarget);
+					ImGui::TableNextColumn(); ImGui::Checkbox("Position", &component.observePosition);
+					ImGui::EndTable();
+				}
+				char target[64];
+				std::strncpy(target, component.targetTag.c_str(), sizeof(target) - 1);
+				target[sizeof(target) - 1] = 0;
+				if (ImGui::InputText("Target Tag", target, sizeof(target))) { component.targetTag = target; }
+				if (ImGui::IsItemHovered()) ImGui::SetTooltip("The nearest entity with this tag is the target (observations + approach reward).");
+				ImGui::DragFloat("Scale", &component.observationScale, 0.1f, 0.1f, 1000.0f, "%.1f m = 1.0");
+				ImGui::DragInt("Custom Values", &component.customObservationSize, 0.1f, 0, 256);
+				if (ImGui::IsItemHovered()) ImGui::SetTooltip("Values the script adds with AddObservation(...) in CollectObservations().");
+
+				std::vector<std::string> labels = Environment::DescribeObservations(*m_ActiveScene, (entt::entity)entity);
+				if (ImGui::TreeNodeEx("##layout", ImGuiTreeNodeFlags_SpanAvailWidth, "Observation vector: %d values", (int)labels.size())){
+					if (!entity.HasComponent<RaySensorComponent>())
+						ImGui::TextDisabled("Add a Ray Sensor to let the agent see walls and goals.");
+					// Collapse each ray's values into one line to keep the list short.
+					for (size_t i = 0; i < labels.size(); i++){
+						if (labels[i].rfind("ray", 0) == 0 && labels[i].find(".distance") == std::string::npos) { continue; }
+						if (labels[i].rfind("ray", 0) == 0){
+							auto& sensor = entity.GetComponent<RaySensorComponent>();
+							ImGui::BulletText("[%d] %s + %d tag flags", (int)i, labels[i].c_str(), (int)sensor.detectableTags.size());
+						}
+						else { ImGui::BulletText("[%d] %s", (int)i, labels[i].c_str()); }
+					}
+					ImGui::TreePop();
+				}
+			}
+
+			EditorUI::SectionLabel("Rewards & Episode");
+			{
+				ImGui::DragFloat("Step Reward", &component.stepReward, 0.0005f, -1.0f, 1.0f, "%.4f");
+				if (ImGui::IsItemHovered()) ImGui::SetTooltip("Added every decision. Small negative values reward finishing quickly.");
+				ImGui::DragFloat("Approach Reward", &component.approachReward, 0.005f, -10.0f, 10.0f, "%.3f / m");
+				if (ImGui::IsItemHovered()) ImGui::SetTooltip("Reward per metre moved toward the target (shaping). 0 = sparse rewards only.");
+				ImGui::DragFloat("Fall Height", &component.fallHeight, 0.1f, -1000.0f, 1000.0f, "%.1f m");
+				ImGui::DragFloat("Fall Reward", &component.fallReward, 0.01f, -100.0f, 100.0f, "%.2f");
+				ImGui::DragInt("Max Steps", &component.maxSteps, 1.0f, 0, 100000, component.maxSteps == 0 ? "unlimited" : "%d decisions");
+				ImGui::TextDisabled("Goals and hazards: add Reward Zones. Scripts: AddReward(r), EndEpisode().");
+			}
+		});
+
+		DrawComponent<RaySensorComponent>("Ray Sensor", entity, [](RaySensorComponent& component){
+			ImGui::SliderInt("Rays", &component.rays, 1, 32);
+			ImGui::SliderFloat("Field of View", &component.fov, 0.0f, 360.0f, "%.0f deg");
+			ImGui::DragFloat("Length", &component.length, 0.1f, 0.5f, 200.0f, "%.1f m");
+			ImGui::DragFloat("Height Offset", &component.heightOffset, 0.02f, -10.0f, 10.0f, "%.2f m");
+
+			ImGui::TextDisabled("Detectable tags (one-hot per ray)");
+			for (size_t i = 0; i < component.detectableTags.size(); i++){
+				ImGui::PushID((int)i);
+				// Tag chip in its overlay colour, with a remove button.
+				ImVec2 p = ImGui::GetCursorScreenPos();
+				ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(p.x + 6.0f, p.y + ImGui::GetFrameHeight() * 0.5f), 4.0f, EditorUI::CategoryColor((int)i));
+				ImGui::SetCursorScreenPos(ImVec2(p.x + 16.0f, p.y));
+				char buf[64];
+				std::strncpy(buf, component.detectableTags[i].c_str(), sizeof(buf) - 1);
+				buf[sizeof(buf) - 1] = 0;
+				ImGui::SetNextItemWidth(-ImGui::GetFrameHeight() - ImGui::GetStyle().ItemSpacing.x);
+				if (ImGui::InputText("##tag", buf, sizeof(buf))) { component.detectableTags[i] = buf; }
+				ImGui::SameLine();
+				bool remove = EditorUI::IconButton("##remove", EditorUI::Icon::Close, ImVec2(ImGui::GetFrameHeight(), ImGui::GetFrameHeight()), false, "Remove tag");
+				ImGui::PopID();
+				if (remove){ component.detectableTags.erase(component.detectableTags.begin() + i); break; }
+			}
+			if (ImGui::SmallButton("+ Add Tag")) { component.detectableTags.push_back("Tag"); }
+			ImGui::TextDisabled("%d values (%d rays x %d)", component.rays * component.ValuesPerRay(), component.rays, component.ValuesPerRay());
+		});
+
+		DrawComponent<RewardZoneComponent>("Reward Zone", entity, [](RewardZoneComponent& component){
+			// Presets for the common cases.
+			ImGui::TextDisabled("Preset");
+			ImGui::SameLine();
+			if (ImGui::SmallButton("Goal"))       { component.reward = 1.0f;  component.trigger = RewardZoneComponent::Trigger::OnEnter;     component.endEpisode = true; }
+			ImGui::SameLine();
+			if (ImGui::SmallButton("Hazard"))     { component.reward = -1.0f; component.trigger = RewardZoneComponent::Trigger::OnEnter;     component.endEpisode = true; }
+			ImGui::SameLine();
+			if (ImGui::SmallButton("Checkpoint")) { component.reward = 0.2f;  component.trigger = RewardZoneComponent::Trigger::OnEnter;     component.endEpisode = false; }
+			ImGui::SameLine();
+			if (ImGui::SmallButton("Area"))       { component.reward = 0.1f;  component.trigger = RewardZoneComponent::Trigger::WhileInside; component.endEpisode = false; }
+
+			ImGui::DragFloat3("Half Extents", glm::value_ptr(component.halfExtents), 0.05f, 0.01f, 1000.0f, "%.2f");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Local size; multiplied by the entity's scale.");
+			ImVec4 color = component.reward >= 0.0f ? ImVec4(0.36f, 0.85f, 0.5f, 1.0f) : ImVec4(0.95f, 0.4f, 0.4f, 1.0f);
+			ImGui::PushStyleColor(ImGuiCol_Text, color);
+			ImGui::DragFloat("Reward", &component.reward, 0.01f, -100.0f, 100.0f, "%+.3f");
+			ImGui::PopStyleColor();
+			const char* triggers[] = { "On enter (once)", "While inside (per second)" };
+			int trigger = (int)component.trigger;
+			if (ImGui::Combo("Trigger", &trigger, triggers, IM_ARRAYSIZE(triggers)))
+				component.trigger = (RewardZoneComponent::Trigger)trigger;
+			ImGui::Checkbox("Ends Episode", &component.endEpisode);
+			char tag[64];
+			std::strncpy(tag, component.agentTag.c_str(), sizeof(tag) - 1);
+			tag[sizeof(tag) - 1] = 0;
+			if (ImGui::InputTextWithHint("Only Agent", "any agent", tag, sizeof(tag))) { component.agentTag = tag; }
+			ImGui::Checkbox("Visible to Ray Sensors", &component.visibleToRays);
+		});
+
+		DrawComponent<RandomizerComponent>("Spawn Randomizer", entity, [](RandomizerComponent& component){
+			ImGui::DragFloat3("Position Range", glm::value_ptr(component.positionRange), 0.05f, 0.0f, 1000.0f, "+/-%.2f");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Each episode starts at the edit-time position plus a uniform random offset.");
+			ImGui::Checkbox("Random Heading", &component.randomYaw);
+			ImGui::TextDisabled("Applied on every episode reset (domain randomization).");
+		});
+
 		DrawComponent<LuaScriptComponent>("Lua Script", entity, [this](LuaScriptComponent& component){
 			ImGui::TextWrapped("%d chars. Edit in the Script Editor window (syntax-coloured).",
 				(int)component.source.size());
@@ -1263,6 +1490,14 @@ namespace Phoenix{
 				ImGui::BulletText("RayCast(ox,oy,oz, dx,dy,dz, maxDist)\n-> tag, hx, hy, hz (or nil)");
 				ImGui::BulletText("OnCollisionEnter(otherTag) -- callback");
 				ImGui::BulletText("OnCollisionExit(otherTag)  -- callback");
+				ImGui::Separator();
+				ImGui::TextDisabled("RL environment (on an Agent entity):");
+				ImGui::BulletText("AddReward(r) / EndEpisode()");
+				ImGui::BulletText("GetEpisodeStep() / GetCumulativeReward() / GetEpisode()");
+				ImGui::BulletText("OnEpisodeBegin()  -- callback after each reset");
+				ImGui::BulletText("CollectObservations() + AddObservation(v, ...)");
+				ImGui::BulletText("OnAction(actions)  -- Custom control, 1-based table");
+				ImGui::BulletText("Heuristic() -> values  -- Keyboard policy, Custom");
 				ImGui::TreePop();
 			}
 		});

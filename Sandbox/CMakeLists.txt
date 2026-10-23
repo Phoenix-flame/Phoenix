@@ -3,6 +3,8 @@ add_executable(Sandbox
     main.cpp
     MainLayer.cpp
     Panels/SceneEditor.cpp
+    Panels/AIPanels.cpp
+    AIPrefabs.cpp
 )
 target_include_directories(Sandbox PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}

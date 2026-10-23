@@ -136,12 +136,14 @@ namespace Phoenix{
         props.gravityFactor = rb.gravityFactor;
         props.continuousCollision = rb.continuousCollision;
         props.isSensor = rb.isSensor;
+        props.lockTilt = rb.lockTilt;
         props.initialVelocity = rb.initialVelocity;
         return props;
     }
 
     void Scene::OnRuntimeStart(){
         m_PhysicsWorld = CreateScope<PhysicsWorld>();
+        m_SimTime = 0.0f;
         m_BodyToEntity.clear();
 
         // One body per rigid-body entity. Shape priority: explicit primitive colliders
@@ -469,8 +471,20 @@ namespace Phoenix{
     }
 
     void Scene::OnUpdate(EditorCamera& editorCamera, Timestep ts, Entity selectedEntity){
+        if (IsRunning())
+            StepSimulation((float)ts);
+        OnRender(editorCamera, ts, selectedEntity);
+    }
 
-        m_Time += (float)ts; // drives water animation (advances in edit + play)
+    LuaScript* Scene::FindScript(entt::entity entity){
+        for (auto& script : m_Scripts)
+            if ((entt::entity)script->GetEntity() == entity) { return script.get(); }
+        return nullptr;
+    }
+
+    void Scene::StepSimulation(float dt){
+        Timestep ts = dt;
+        m_SimTime += dt;
 
         // Lua scripts run while playing (they may move/recolour their entities).
         if (!m_Scripts.empty()){
@@ -593,6 +607,11 @@ namespace Phoenix{
                 m_PhysicsWorld->ConsumeContactEvents(); // keep the queue drained
             }
         }
+
+    }
+
+    void Scene::OnRender(EditorCamera& editorCamera, Timestep ts, Entity selectedEntity){
+        m_Time += (float)ts; // drives water animation (advances in edit + play)
 
         {
 			m_Registry.view<NativeScriptComponent>().each([=](auto entity, auto& nsc)
@@ -1027,6 +1046,22 @@ namespace Phoenix{
 
     template<>
 	void Scene::OnComponentAdded<TransformComponent>(Entity entity, TransformComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<AgentComponent>(Entity entity, AgentComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<RaySensorComponent>(Entity entity, RaySensorComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<RewardZoneComponent>(Entity entity, RewardZoneComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<RandomizerComponent>(Entity entity, RandomizerComponent& component){
 	}
 
     template<>

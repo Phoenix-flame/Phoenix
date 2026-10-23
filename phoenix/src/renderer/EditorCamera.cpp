@@ -5,6 +5,7 @@
 #include <Phoenix/event/event.h>
 #include <Phoenix/core/Input.h>
 #include <glm/gtc/matrix_transform.hpp>
+#include <algorithm>
 
 namespace Phoenix{
     void EditorCamera::OnUpdate(Timestep ts){
@@ -40,10 +41,24 @@ namespace Phoenix{
 		UpdateProjection(m_FOV, m_AspectRatio, m_NearClip, m_FarClip);
     }
 
+    static constexpr float kMinRadius = 1.0f, kMaxRadius = 150.0f;
+
     void EditorCamera::SetRadius(float radius){
-        if (m_Radius >= 1.0f && m_Radius <= 45.0f){ m_Radius -= radius; }
-        if (m_Radius <= 1.0f) { m_Radius = 1.0f; }
-        else if (m_Radius >= 45.0f) { m_Radius = 45.0f; }
+        // Zoom proportionally so the wheel feels the same close up and far away.
+        m_Radius -= radius * std::max(1.0f, m_Radius * 0.2f);
+        m_Radius = std::clamp(m_Radius, kMinRadius, kMaxRadius);
+        RecalculateViewMatrix();
+    }
+
+    void EditorCamera::Focus(const glm::vec3& target, float radius){
+        Focus(target, radius, m_Yaw, m_Pitch);
+    }
+
+    void EditorCamera::Focus(const glm::vec3& target, float radius, float yawDegrees, float pitchDegrees){
+        m_Target = target;
+        m_Radius = std::clamp(radius, kMinRadius, kMaxRadius);
+        m_Yaw = yawDegrees;
+        m_Pitch = std::clamp(pitchDegrees, -89.0f, 89.0f);
         RecalculateViewMatrix();
     }
 

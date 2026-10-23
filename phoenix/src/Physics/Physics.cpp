@@ -19,6 +19,7 @@
 #include <Jolt/Physics/Collision/ContactListener.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyLockMulti.h>
+#include <Jolt/Physics/Body/BodyFilter.h>
 #include <Jolt/Physics/Constraints/PointConstraint.h>
 #include <Jolt/Physics/Constraints/DistanceConstraint.h>
 #include <Jolt/Physics/Constraints/HingeConstraint.h>
@@ -238,6 +239,9 @@ namespace Phoenix{
         settings.mGravityFactor = props.gravityFactor;
         settings.mIsSensor = props.isSensor;
         if (props.continuousCollision) { settings.mMotionQuality = EMotionQuality::LinearCast; }
+        if (props.lockTilt && motion == EMotionType::Dynamic)
+            settings.mAllowedDOFs = EAllowedDOFs::TranslationX | EAllowedDOFs::TranslationY
+                                  | EAllowedDOFs::TranslationZ | EAllowedDOFs::RotationY;
         settings.mLinearVelocity = Vec3(props.initialVelocity.x, props.initialVelocity.y, props.initialVelocity.z);
 
         BodyID id = system.GetBodyInterface().CreateAndAddBody(settings,
@@ -454,15 +458,33 @@ namespace Phoenix{
     }
 
     bool PhysicsWorld::RayCast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
-                               uint32_t& outBody, glm::vec3& outPoint) const{
+                               uint32_t& outBody, glm::vec3& outPoint, uint32_t ignoreBody) const{
         using namespace JPH;
         glm::vec3 d = direction * maxDistance;
         RRayCast ray{ RVec3(origin.x, origin.y, origin.z), Vec3(d.x, d.y, d.z) };
         RayCastResult hit;
-        if (!m_Impl->physicsSystem.GetNarrowPhaseQuery().CastRay(ray, hit)) { return false; }
+        IgnoreSingleBodyFilter ignore(ignoreBody == InvalidBody ? BodyID() : BodyID(ignoreBody));
+        BodyFilter all;
+        const BodyFilter& filter = ignoreBody == InvalidBody ? all : static_cast<const BodyFilter&>(ignore);
+        if (!m_Impl->physicsSystem.GetNarrowPhaseQuery().CastRay(ray, hit, {}, {}, filter)) { return false; }
         outBody = hit.mBodyID.GetIndexAndSequenceNumber();
         outPoint = origin + d * hit.mFraction;
         return true;
+    }
+
+    void PhysicsWorld::ResetBody(uint32_t bodyID, const glm::vec3& position, const glm::vec3& rotationEuler){
+        using namespace JPH;
+        if (bodyID == InvalidBody) { return; }
+        BodyInterface& bi = m_Impl->physicsSystem.GetBodyInterface();
+        BodyID id(bodyID);
+        glm::quat q = EulerXYZToQuat(rotationEuler);
+        RVec3 p(position.x, position.y, position.z);
+        if (bi.GetMotionType(id) == EMotionType::Static){
+            bi.SetPositionAndRotation(id, p, Quat(q.x, q.y, q.z, q.w), EActivation::DontActivate);
+            return;
+        }
+        bi.SetPositionRotationAndVelocity(id, p, Quat(q.x, q.y, q.z, q.w), Vec3::sZero(), Vec3::sZero());
+        bi.ActivateBody(id);
     }
 
     std::vector<PhysicsWorld::ContactEvent> PhysicsWorld::ConsumeContactEvents(){

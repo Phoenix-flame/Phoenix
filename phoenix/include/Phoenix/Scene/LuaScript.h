@@ -3,6 +3,7 @@
 #include <Phoenix/Scene/Entity.h>
 #include <string>
 #include <unordered_set>
+#include <vector>
 
 struct lua_State;
 struct lua_Debug;
@@ -28,6 +29,18 @@ namespace Phoenix{
         // if defined (fired by the Scene when this entity's body starts/stops touching).
         void OnCollision(const std::string& otherTag, bool entered);
 
+        // ---- RL hooks (called by the Environment) ----
+        // OnEpisodeBegin() when an episode starts (after the reset/randomization).
+        void OnEpisodeBegin();
+        // OnAction(actions) for Custom-control agents: a 1-based table of numbers
+        // (discrete: { index }; continuous: values in [-1, 1]).
+        void OnAction(const std::vector<float>& action);
+        // CollectObservations(), in which the script calls AddObservation(...).
+        void CollectObservations();
+        // Heuristic() for Custom agents under the Heuristic policy; returns false when
+        // the script defines none. Its return values become the action.
+        bool Heuristic(std::vector<float>& outAction);
+
         Entity GetEntity() const { return m_Entity; }
 
         // Keyboard queries for scripts. KeyDown = held this frame; KeyPressed = the
@@ -39,7 +52,7 @@ namespace Phoenix{
         // Pops the function + nargs arguments already pushed and calls it under the
         // instruction budget. On error logs it (prefixed with `what`) and disables the
         // script. Returns false on error.
-        bool ProtectedCall(int nargs, const char* what);
+        bool ProtectedCall(int nargs, const char* what, int nresults = 0);
         // Count hook: aborts a call that runs past the instruction budget, so an
         // infinite loop in a script can't freeze the editor.
         static void InstructionHook(lua_State* L, lua_Debug* ar);

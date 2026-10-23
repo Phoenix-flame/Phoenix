@@ -13,6 +13,9 @@
 #include <Phoenix/Scene/Scene.h>
 #include <Phoenix/event/keyEvent.h>
 #include "Panels/SceneEditor.h"
+#include "Panels/AIPanels.h"
+#include <Phoenix/AI/Bridge.h>
+#include <Phoenix/AI/Environment.h>
 
 
 using namespace Phoenix;
@@ -93,6 +96,14 @@ private:
     void BuildMultiShadowShowcase();
     // Populate m_Scene with the physics playground (joints, materials, triggers, cannon).
     void BuildPhysicsShowcase();
+    // RL: four parallel arenas where walker agents learn to find a randomized goal.
+    void BuildAIGoalShowcase();
+    // RL: rolling balls learn to push themselves onto a target without falling off.
+    void BuildAIRollerShowcase();
+
+    // Runs the RL environment (fixed steps, time scale, Python bridge) for this frame.
+    void UpdateSimulation(float frameSeconds);
+    AIPanelContext MakeAIContext();
 
     // Terrain sculpting: raycast to the terrain plane and raise/lower/smooth heights.
     void SculptTerrain(TerrainComponent& terrain, const glm::vec3& terrainPos,
@@ -155,6 +166,21 @@ private:
 
     // Edit-time scene captured on Run, restored on Stop.
     std::string m_RuntimeSnapshot;
+
+    // RL environment API: the environment exists while playing; the episode log and
+    // the bridge persist across Play sessions. Learning happens in the client.
+    Scope<Environment> m_Environment;
+    EpisodeLog m_EpisodeLog;
+    Bridge m_Bridge;
+    AIPanels m_AIPanels;
+    bool m_BridgeEnabled = false;
+    int m_BridgePort = 5555;
+    int m_BridgeFailedPort = 0; // don't retry a port that failed to bind every frame
+    float m_TimeScale = 1.0f;
+    bool m_MaxSpeed = false;
+    bool m_RenderAtMaxSpeed = true;
+    bool m_Paused = false;
+    bool m_OpenGuide = false;
 
     // Bloom post-processing.
     Bloom m_Bloom;

@@ -1,9 +1,10 @@
 # Phoenix Engine
 
-A real-time 3D game engine written in modern C++17, built for learning the internals
-of a renderer/ECS/physics stack — inspired by [Hazel](https://github.com/TheCherno/Hazel).
-It ships with **Sandbox**, a full editor application (ImGui-based) for building, editing,
-playing, and serializing scenes.
+An **AI sandbox for designing reinforcement-learning environments**, built on a real-time
+3D engine written in modern C++17 (inspired by [Hazel](https://github.com/TheCherno/Hazel)).
+Its editor, **Sandbox**, lets you build physics worlds, add agents with sensors, rewards
+and domain randomization, and expose them to your own RL code in Python through a
+Gymnasium-compatible API. Phoenix provides the environment; the learning algorithm is yours.
 
 > :warning: This project is under active development.
 
@@ -14,6 +15,7 @@ playing, and serializing scenes.
 ## Table of Contents
 
 - [Highlights](#highlights)
+- [AI Sandbox (Reinforcement Learning)](#ai-sandbox-reinforcement-learning)
 - [Feature Reference](#feature-reference)
   - [Entity Component System](#entity-component-system)
   - [Rendering](#rendering)
@@ -40,6 +42,12 @@ playing, and serializing scenes.
 
 ## Highlights
 
+- **RL environment design**: agents with discrete or continuous actions, ray sensors,
+  reward zones, step/approach/fall rewards, episode limits and domain randomization.
+- **Environment API for Python**: a lockstep Gymnasium bridge (single- and multi-agent)
+  that any RL library can train against (Stable-Baselines3, CleanRL, RLlib, ...).
+- **Fixed-timestep simulation** with time scaling, max-speed fast-forward, pause and
+  single-step, reproducible seeds, and an Agent Monitor for live observations/actions.
 - **Entity Component System** powered by [EnTT](https://github.com/skypjack/entt).
 - **Forward renderer** (OpenGL 4.5 with GLSL ES 3.00 shaders) with a geometry-agnostic
   submission API.
@@ -57,8 +65,116 @@ playing, and serializing scenes.
 - **Animated transparent water** surfaces for lakes/oceans.
 - **Lua scripting** with an in-editor, syntax-highlighted code editor that runs while playing.
 - **Scene serialization** (YAML) plus snapshot-based **undo/redo**.
-- **Full editor**: hierarchy, properties inspector, gizmos, click-to-pick, play/stop,
+- **Full editor**: hierarchy, properties inspector, gizmos, click-to-pick, play/pause/step,
   animation timeline, asset import.
+
+---
+
+## AI Sandbox (Reinforcement Learning)
+
+Phoenix doubles as a sandbox for **designing environments for RL algorithms**: build a
+world in the editor, drop in agents with sensors and rewards, and drive them from
+**Python** with any Gymnasium-compatible library. The engine implements no learning
+algorithm: it is the environment, your code is the agent.
+
+![Four walker agents in parallel arenas: ray sensors, goal and hazard zones, the Training panel and the Agent Monitor](images/ai-sandbox.png)
+
+### Building blocks
+
+| Component | What it does |
+| --- | --- |
+| `AgentComponent` | Makes an entity a learning agent: **policy** (Keyboard / Random / Python), **control** scheme, **action space** (discrete or continuous), **observations**, **rewards** and episode limits. |
+| `RaySensorComponent` | A fan of rays in the agent's plane. Each ray reports the free distance and a one-hot of the tag it hit (e.g. `Goal`, `Wall`, `Hazard`). Sees physics bodies and Reward Zones. |
+| `RewardZoneComponent` | A box volume that rewards or penalises agents **on enter** or **per second inside**, and can end the episode (goals, hazards, checkpoints, areas). No collider needed. |
+| `RandomizerComponent` | **Domain randomization**: every episode the entity respawns at its edit-time pose plus a random offset (and optional random heading). |
+| `RigidBodyComponent` → *Upright* | Locks tilt so walking agents never fall over. |
+
+**Control schemes** (`AgentComponent::Control`)
+
+| Control | Discrete actions | Continuous actions (in [-1, 1]) |
+| --- | --- | --- |
+| **Move** — walk + turn (upright body or transform) | Idle, Forward, Back, Turn left, Turn right | Move, Turn |
+| **Force** — push in world X/Z (rolling balls) | None, -Z, +Z, -X, +X | Force X, Force Z |
+| **Custom** — your Lua `OnAction(actions)` | N choices | N values |
+
+**Observations** (all roughly in [-1, 1]): velocity in the agent's frame, heading
+(sin/cos), position, the offset and distance to the **nearest entity tagged as the
+target** (so parallel arenas each track their own goal), every ray sensor value, and any
+number of values the script adds in `CollectObservations()`. The inspector lists the
+exact layout of the observation vector.
+
+**Rewards**: a per-decision step reward, potential-based *approach* shaping toward the
+target, Reward Zones, a fall-off height, and `AddReward(r)` / `EndEpisode()` from Lua.
+Episodes also end at **Max Steps** (reported as *truncated*).
+
+### Simulation & episodes
+
+While playing, the scene runs as an environment:
+
+- Physics steps at a **fixed rate** (Settings > Simulation, default 60 Hz); each agent
+  decides every **Decision Period** steps and holds its action in between.
+- **Time control**: 0.25x to 16x, or **Max** (as many steps as fit in each frame, with
+  an option to stop drawing the viewport for even more speed), plus **Pause** (`F6`) and
+  **Step one decision** (`F7`).
+- When every agent is done, the scene **resets in place**: bodies teleport back to the
+  edit-time layout plus randomization, scripts get `OnEpisodeBegin()`. A **seed** makes
+  runs reproducible.
+
+### Inspecting an environment
+
+The **Training** panel shows run controls, the Python bridge, KPIs (episodes, mean and
+best return, episode length) and return / length curves of whatever drives the agents,
+exportable as CSV. The **Agent Monitor** shows one agent live: policy, episode progress, return trace,
+the chosen action, a top-down **ray radar**, and every observation as a labelled bar.
+The **viewport overlay** (eye button) draws ray hits coloured by tag, reward zones
+(they light up when occupied), spawn ranges, headings, and each agent's running return.
+
+### Training from Python
+
+1. Set the agent's policy to **Python** and tick *Training > Python Bridge > Listen for
+   a Python client* (port 5555, localhost only).
+2. Run a client. A client's `reset()` starts Play automatically; the scene then advances
+   **in lockstep** with `step()` calls, so the trainer sets the pace.
+
+```python
+import sys; sys.path.insert(0, "python")
+from phoenix_env import PhoenixEnv          # Gymnasium Env (works without gymnasium too)
+
+env = PhoenixEnv(port=5555)                 # first Python-policy agent
+obs, info = env.reset(seed=0)
+obs, reward, terminated, truncated, info = env.step(env.action_space.sample())
+```
+
+- `python/phoenix_env.py` — `PhoenixEnv` (single agent, passes Gymnasium's `check_env`)
+  and `PhoenixMultiAgentEnv` (all Python agents, lists in/out).
+- `python/examples/random_agent.py` — smoke test, needs only numpy.
+- `python/examples/train_sb3.py` — Stable-Baselines3 PPO training + evaluation.
+
+The protocol is newline-delimited JSON over TCP (`hello`, `reset`, `step`, `close`),
+documented in [`Bridge.h`](phoenix/include/Phoenix/AI/Bridge.h), so clients in other
+languages are easy to write.
+
+### Scripting agents in Lua
+
+| Function | Purpose |
+| --- | --- |
+| `AddReward(r)`, `EndEpisode()` | Shape rewards and terminate from game logic |
+| `GetEpisodeStep()`, `GetCumulativeReward()`, `GetEpisode()` | Episode state |
+| `OnEpisodeBegin()` | Callback after each reset (re-initialise script state) |
+| `CollectObservations()` + `AddObservation(v, ...)` | Extra observation values (set *Custom Values* on the agent) |
+| `OnAction(actions)` | Custom control: a 1-based table (discrete `{index}` or continuous values) |
+| `Heuristic()` → values | Keyboard policy for Custom agents |
+
+### Building an environment
+
+1. **Create > AI > Training Arena** for a walled floor; add walls, a **Goal Zone** and
+   **Hazard Zones**.
+2. **Create > AI > Agent**; configure control, observations and rewards in Properties.
+3. Add **Spawn Randomizers** to the agent and goal so the policy has to generalise.
+4. Test with the **Keyboard** policy (WASD) or **Random**, then connect your RL code
+   with the **Python** policy.
+
+**Help > AI Sandbox Guide** walks through the same steps inside the editor.
 
 ---
 
@@ -249,9 +365,9 @@ The Sandbox app provides:
   logo, **File / Edit / Tools / View / Help** menus, a centred **Play / Stop** button, the
   current scene name and minimize / maximize / close controls. Drag the bar to move the
   window, double-click it to maximize, and drag any window edge to resize.
-- **Hierarchy** panel — searchable entity list with type icons and Lua / Physics badges;
-  create entities from the **+** button or the right-click menu (lights, terrain, water,
-  shapes).
+- **Hierarchy** panel — searchable entity list with type icons and policy / reward /
+  Lua / Physics badges; create entities from the **+** button or the right-click menu
+  (AI building blocks, lights, terrain, water, shapes).
 - **Properties** inspector — collapsible per-component sections with live editing and a
   grouped **Add Component** menu (components the entity already has are greyed out).
 - **Viewport** — ImGuizmo transform gizmos with an on-image tool strip (select / move /
@@ -260,10 +376,12 @@ The Sandbox app provides:
 - **Timeline** — pick a clip, play/pause/stop, loop mode, speed, and scrub the selected
   entity's animation, with its event markers on the ruler (events are added in the
   Animation component's properties).
+- **Training** and **Agent Monitor** panels — see [AI Sandbox](#ai-sandbox-reinforcement-learning).
 - **Script Editor**, **Textures**, **Shader Library**, **Profiler** panels.
-- **Settings** — environment (background, ambient), rendering (linear lighting,
+- **Settings** — simulation (physics rate, seed), environment (background, ambient), rendering (linear lighting,
   bloom/exposure, vsync) and the terrain sculpt brush.
-- **Status bar** — edit/play state, entity count, current selection, undo depth and FPS.
+- **Status bar** — edit/play state, entity count, selection, episode / generation, Python
+  connection, simulation speed and FPS.
 
 Every panel can be toggled from **View**, and **View → Reset Layout** restores the default
 docking layout. **Help → Keyboard Shortcuts** (`F1`) lists the bindings below.
@@ -284,6 +402,9 @@ docking layout. **Help → Keyboard Shortcuts** (`F1`) lists the bindings below.
 | Undo / Redo | `Ctrl+Z` / `Ctrl+Shift+Z` |
 | New / Import / Export scene | `Ctrl+N` / `Ctrl+O` / `Ctrl+S` |
 | Play / Stop | `F5` or the title-bar button |
+| Pause / Step one decision | `F6` / `F7` |
+| Frame selection | `F` |
+| Drive a Keyboard-policy agent | `WASD` / arrow keys |
 
 ---
 
@@ -291,7 +412,12 @@ docking layout. **Help → Keyboard Shortcuts** (`F1`) lists the bindings below.
 
 Open via **File → Showcases**:
 
-- **Bloom & Shadows** (loaded at startup) — bloom, neon glow, emissive lighting, environment reflection,
+- **AI: Find the Goal** (loaded at startup) — four parallel arenas; walker agents with
+  7-ray sensors must reach a randomized goal while avoiding a randomized hazard
+  (discrete actions; four agents for the multi-agent API).
+- **AI: Roller Ball** — balls must use continuous force control to reach a target on a
+  platform without rolling off.
+- **Bloom & Shadows** — bloom, neon glow, emissive lighting, environment reflection,
   shadows, a textured backpack dropping with a convex collider, and a Lua-scripted cube.
 - **Water** — a sculpted terrain lake basin filled with animated water and
   glowing buoys.
@@ -344,6 +470,10 @@ in [`Sandbox/assets/models/README.txt`](Sandbox/assets/models/README.txt).
 | `WaterComponent` | Animated transparent water surface |
 | `WireframeComponent` | Draw the entity as wireframe |
 | `LuaScriptComponent` | Lua script run while playing |
+| `AgentComponent` | RL agent: policy, control, action space, observations, rewards |
+| `RaySensorComponent` | Ray fan observation (distance + tag one-hot per ray) |
+| `RewardZoneComponent` | Reward / penalty volume, optionally ending the episode |
+| `RandomizerComponent` | Per-episode spawn randomization |
 | `NativeScriptComponent` | C++ scriptable entity |
 
 ---
@@ -393,16 +523,20 @@ the next launch. The engine's own runtime assets (its shaders and the UI fonts) 
 Phoenix/
 ├── phoenix/                  # the engine (static library)
 │   ├── include/Phoenix/      # public headers
-│   │   ├── core/  event/  renderer/  Scene/  Physics/  imGui/  Math/  opengl/
-│   ├── src/                  # implementation (renderer, Scene, Physics, ...)
+│   │   ├── core/  event/  renderer/  Scene/  Physics/  AI/  imGui/  Math/  opengl/
+│   ├── src/                  # implementation (renderer, Scene, Physics, AI, ...)
+│   │   └── AI/               # Environment (episodes, rewards, resets), Bridge (Python API)
 │   └── assets/               # engine shaders + UI fonts (copied next to every app)
 ├── Sandbox/                  # the editor application
 │   ├── MainLayer.cpp         # title bar, menus, viewport, showcases, gizmos, undo/redo
 │   ├── Panels/SceneEditor.*  # hierarchy, properties, timeline, Lua editor panels
-│   ├── Panels/EditorUI.h     # vector icons + small widgets shared by the editor UI
+│   ├── Panels/AIPanels.*     # Training dashboard, Agent Monitor, viewport AI overlays
+│   ├── Panels/EditorUI.h     # vector icons, charts and widgets shared by the editor UI
+│   ├── AIPrefabs.*           # agent / goal / hazard / wall / arena building blocks
 │   ├── assets/               # showcase models, textures, extra shaders
 │   └── backpack/             # textured backpack model for the main showcase
 ├── Example/                  # minimal app: a lit cube through the Renderer API
+├── python/                   # Gymnasium client for the bridge + examples
 ├── third_party/entt/         # vendored EnTT single header
 ├── images/                   # screenshots
 └── CMakeLists.txt
@@ -424,6 +558,7 @@ Phoenix/
 | Serialization | yaml-cpp |
 | UI | Dear ImGui + ImGuizmo (vendored) |
 | Logging | spdlog / fmt |
+| RL bridge | POSIX TCP sockets, newline-delimited JSON (Python: `phoenix_env.py`) |
 
 ---
 

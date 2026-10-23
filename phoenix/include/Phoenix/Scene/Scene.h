@@ -17,12 +17,27 @@ namespace Phoenix{
     class SceneEditor;
     class PhysicsWorld;
     class LuaScript;
+    class Environment;
+
+    // Scene-level simulation settings (serialized with the scene).
+    struct SimulationSettings{
+        float fixedTimestep = 1.0f / 60.0f; // seconds per physics step while playing
+        int seed = 0;                       // episode randomization seed (0 = random each run)
+    };
+
     class Scene{
     public:
         Scene();
         ~Scene();
 
+        // Simulate (when running) and render one frame.
         void OnUpdate(EditorCamera& editorCamera, Timestep ts, Entity selectedEntity);
+        // The two halves of OnUpdate, for callers that drive the simulation themselves
+        // (the Environment runs fixed physics steps, many per frame when fast-forwarding).
+        // StepSimulation runs Lua OnUpdate, physics and contact callbacks; OnRender
+        // advances animation/water and draws.
+        void StepSimulation(float dt);
+        void OnRender(EditorCamera& editorCamera, Timestep ts, Entity selectedEntity);
         Entity CreateEntity(const std::string& name);
         Entity CreatePointLightEntity(const std::string& name);
         Entity CreateDirLightEntity(const std::string& name);
@@ -58,6 +73,17 @@ namespace Phoenix{
         // Entity owning the given runtime physics body (empty if unknown).
         Entity FindEntityByBodyID(uint32_t bodyID);
 
+        // The running Lua script of an entity (null when not playing / no script).
+        LuaScript* FindScript(entt::entity entity);
+
+        // The RL environment driving this scene while playing (set by its owner).
+        void SetEnvironment(Environment* environment) { m_Environment = environment; }
+        Environment* GetEnvironment() { return m_Environment; }
+
+        SimulationSettings& Simulation() { return m_Simulation; }
+        // Seconds simulated since play started.
+        float GetSimulationTime() const { return m_SimTime; }
+
         // View/projection the last OnUpdate rendered with: the primary scene camera if
         // there is one, else the editor camera. Editor tools (gizmo, picking, sculpting)
         // use these so they line up with the image on screen.
@@ -75,10 +101,15 @@ namespace Phoenix{
         friend class Entity;
         friend class SceneEditor;
         friend class SceneSerializer;
+        friend class Environment;
+        friend class AIPanels;
     
     private:
         glm::vec3 m_AmbientColor = glm::vec3(0.1f);
         float m_Time = 0.0f; // accumulated seconds (drives water animation)
+        float m_SimTime = 0.0f;
+        SimulationSettings m_Simulation;
+        Environment* m_Environment = nullptr;
         glm::mat4 m_ActiveView{ 1.0f }, m_ActiveProjection{ 1.0f };
 
         Scope<PhysicsWorld> m_PhysicsWorld;

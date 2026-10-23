@@ -23,6 +23,12 @@ namespace Phoenix{
         return { node[0].as<float>(fallback.x), node[1].as<float>(fallback.y), node[2].as<float>(fallback.z) };
     }
 
+    static void ReadSimulation(const YAML::Node& node, SimulationSettings& sim){
+        const SimulationSettings def{};
+        sim.fixedTimestep = (node && node["FixedTimestep"]) ? node["FixedTimestep"].as<float>(def.fixedTimestep) : def.fixedTimestep;
+        sim.seed = (node && node["Seed"]) ? node["Seed"].as<int>(def.seed) : def.seed;
+    }
+
     static void SerializeMaterial(YAML::Emitter& out, const Material& material){
         out << YAML::Key << "Material" << YAML::Value << YAML::BeginMap;
         out << YAML::Key << "ambient"   << YAML::Value << material.ambient;
@@ -151,6 +157,7 @@ namespace Phoenix{
             out << YAML::Key << "GravityFactor" << YAML::Value << rb.gravityFactor;
             out << YAML::Key << "ContinuousCollision" << YAML::Value << rb.continuousCollision;
             out << YAML::Key << "IsSensor" << YAML::Value << rb.isSensor;
+            out << YAML::Key << "LockTilt" << YAML::Value << rb.lockTilt;
             out << YAML::Key << "InitialVelocity" << YAML::Value << rb.initialVelocity;
             out << YAML::EndMap;
         }
@@ -273,6 +280,64 @@ namespace Phoenix{
             out << YAML::EndMap;
         }
 
+        if (entity.HasComponent<AgentComponent>()){
+            auto& a = entity.GetComponent<AgentComponent>();
+            out << YAML::Key << "AgentComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "Behavior" << YAML::Value << a.behavior;
+            out << YAML::Key << "Policy" << YAML::Value << (int)a.policy;
+            out << YAML::Key << "Control" << YAML::Value << (int)a.control;
+            out << YAML::Key << "ActionType" << YAML::Value << (int)a.actionType;
+            out << YAML::Key << "CustomActionSize" << YAML::Value << a.customActionSize;
+            out << YAML::Key << "MoveSpeed" << YAML::Value << a.moveSpeed;
+            out << YAML::Key << "TurnSpeed" << YAML::Value << a.turnSpeed;
+            out << YAML::Key << "Force" << YAML::Value << a.force;
+            out << YAML::Key << "DecisionPeriod" << YAML::Value << a.decisionPeriod;
+            out << YAML::Key << "MaxSteps" << YAML::Value << a.maxSteps;
+            out << YAML::Key << "ObservePosition" << YAML::Value << a.observePosition;
+            out << YAML::Key << "ObserveVelocity" << YAML::Value << a.observeVelocity;
+            out << YAML::Key << "ObserveHeading" << YAML::Value << a.observeHeading;
+            out << YAML::Key << "ObserveTarget" << YAML::Value << a.observeTarget;
+            out << YAML::Key << "TargetTag" << YAML::Value << a.targetTag;
+            out << YAML::Key << "ObservationScale" << YAML::Value << a.observationScale;
+            out << YAML::Key << "CustomObservationSize" << YAML::Value << a.customObservationSize;
+            out << YAML::Key << "StepReward" << YAML::Value << a.stepReward;
+            out << YAML::Key << "ApproachReward" << YAML::Value << a.approachReward;
+            out << YAML::Key << "FallHeight" << YAML::Value << a.fallHeight;
+            out << YAML::Key << "FallReward" << YAML::Value << a.fallReward;
+            out << YAML::EndMap;
+        }
+
+        if (entity.HasComponent<RaySensorComponent>()){
+            auto& r = entity.GetComponent<RaySensorComponent>();
+            out << YAML::Key << "RaySensorComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "Rays" << YAML::Value << r.rays;
+            out << YAML::Key << "Fov" << YAML::Value << r.fov;
+            out << YAML::Key << "Length" << YAML::Value << r.length;
+            out << YAML::Key << "HeightOffset" << YAML::Value << r.heightOffset;
+            out << YAML::Key << "DetectableTags" << YAML::Value << YAML::Flow << r.detectableTags;
+            out << YAML::EndMap;
+        }
+
+        if (entity.HasComponent<RewardZoneComponent>()){
+            auto& z = entity.GetComponent<RewardZoneComponent>();
+            out << YAML::Key << "RewardZoneComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "HalfExtents" << YAML::Value << z.halfExtents;
+            out << YAML::Key << "Reward" << YAML::Value << z.reward;
+            out << YAML::Key << "Trigger" << YAML::Value << (int)z.trigger;
+            out << YAML::Key << "EndEpisode" << YAML::Value << z.endEpisode;
+            out << YAML::Key << "AgentTag" << YAML::Value << z.agentTag;
+            out << YAML::Key << "VisibleToRays" << YAML::Value << z.visibleToRays;
+            out << YAML::EndMap;
+        }
+
+        if (entity.HasComponent<RandomizerComponent>()){
+            auto& r = entity.GetComponent<RandomizerComponent>();
+            out << YAML::Key << "RandomizerComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "PositionRange" << YAML::Value << r.positionRange;
+            out << YAML::Key << "RandomYaw" << YAML::Value << r.randomYaw;
+            out << YAML::EndMap;
+        }
+
         if (entity.HasComponent<LuaScriptComponent>()){
             out << YAML::Key << "LuaScriptComponent" << YAML::Value << YAML::BeginMap;
             out << YAML::Key << "Source" << YAML::Value << entity.GetComponent<LuaScriptComponent>().source;
@@ -287,6 +352,10 @@ namespace Phoenix{
         out << YAML::BeginMap;
         out << YAML::Key << "Scene" << YAML::Value << "Untitled";
         out << YAML::Key << "Ambient" << YAML::Value << m_Scene->AmbientColor();
+        out << YAML::Key << "Simulation" << YAML::Value << YAML::BeginMap;
+        out << YAML::Key << "FixedTimestep" << YAML::Value << m_Scene->Simulation().fixedTimestep;
+        out << YAML::Key << "Seed" << YAML::Value << m_Scene->Simulation().seed;
+        out << YAML::EndMap;
         out << YAML::Key << "Entities" << YAML::Value << YAML::BeginSeq;
 
         for (auto entityID : m_Scene->m_Registry.storage<entt::entity>()){
@@ -428,6 +497,7 @@ namespace Phoenix{
             rb.gravityFactor = n["GravityFactor"] ? n["GravityFactor"].as<float>() : 1.0f;
             rb.continuousCollision = n["ContinuousCollision"] ? n["ContinuousCollision"].as<bool>() : false;
             rb.isSensor = n["IsSensor"] ? n["IsSensor"].as<bool>() : false;
+            rb.lockTilt = n["LockTilt"] ? n["LockTilt"].as<bool>() : false;
             rb.initialVelocity = n["InitialVelocity"] ? ReadVec3(n["InitialVelocity"]) : glm::vec3(0.0f);
         }
         else if (entity.HasComponent<RigidBodyComponent>()) entity.RemoveComponent<RigidBodyComponent>();
@@ -559,6 +629,64 @@ namespace Phoenix{
         }
         else if (entity.HasComponent<PrimitiveComponent>()) entity.RemoveComponent<PrimitiveComponent>();
 
+        if (auto n = node["AgentComponent"]){
+            auto& a = entity.HasComponent<AgentComponent>() ? entity.GetComponent<AgentComponent>() : entity.AddComponent<AgentComponent>();
+            const AgentComponent def{}; // fallbacks for keys missing from the file
+            a.behavior = n["Behavior"].as<std::string>(def.behavior);
+            a.policy = (AgentComponent::Policy)n["Policy"].as<int>((int)def.policy);
+            a.control = (AgentComponent::Control)n["Control"].as<int>((int)def.control);
+            a.actionType = (AgentComponent::ActionType)n["ActionType"].as<int>((int)def.actionType);
+            a.customActionSize = n["CustomActionSize"].as<int>(def.customActionSize);
+            a.moveSpeed = n["MoveSpeed"].as<float>(def.moveSpeed);
+            a.turnSpeed = n["TurnSpeed"].as<float>(def.turnSpeed);
+            a.force = n["Force"].as<float>(def.force);
+            a.decisionPeriod = n["DecisionPeriod"].as<int>(def.decisionPeriod);
+            a.maxSteps = n["MaxSteps"].as<int>(def.maxSteps);
+            a.observePosition = n["ObservePosition"].as<bool>(def.observePosition);
+            a.observeVelocity = n["ObserveVelocity"].as<bool>(def.observeVelocity);
+            a.observeHeading = n["ObserveHeading"].as<bool>(def.observeHeading);
+            a.observeTarget = n["ObserveTarget"].as<bool>(def.observeTarget);
+            a.targetTag = n["TargetTag"].as<std::string>(def.targetTag);
+            a.observationScale = n["ObservationScale"].as<float>(def.observationScale);
+            a.customObservationSize = n["CustomObservationSize"].as<int>(def.customObservationSize);
+            a.stepReward = n["StepReward"].as<float>(def.stepReward);
+            a.approachReward = n["ApproachReward"].as<float>(def.approachReward);
+            a.fallHeight = n["FallHeight"].as<float>(def.fallHeight);
+            a.fallReward = n["FallReward"].as<float>(def.fallReward);
+        }
+        else if (entity.HasComponent<AgentComponent>()) entity.RemoveComponent<AgentComponent>();
+
+        if (auto n = node["RaySensorComponent"]){
+            auto& r = entity.HasComponent<RaySensorComponent>() ? entity.GetComponent<RaySensorComponent>() : entity.AddComponent<RaySensorComponent>();
+            const RaySensorComponent def{}; // fallbacks for keys missing from the file
+            r.rays = n["Rays"].as<int>(def.rays);
+            r.fov = n["Fov"].as<float>(def.fov);
+            r.length = n["Length"].as<float>(def.length);
+            r.heightOffset = n["HeightOffset"].as<float>(def.heightOffset);
+            r.detectableTags = n["DetectableTags"] ? n["DetectableTags"].as<std::vector<std::string>>() : def.detectableTags;
+        }
+        else if (entity.HasComponent<RaySensorComponent>()) entity.RemoveComponent<RaySensorComponent>();
+
+        if (auto n = node["RewardZoneComponent"]){
+            auto& z = entity.HasComponent<RewardZoneComponent>() ? entity.GetComponent<RewardZoneComponent>() : entity.AddComponent<RewardZoneComponent>();
+            const RewardZoneComponent def{}; // fallbacks for keys missing from the file
+            z.halfExtents = n["HalfExtents"] ? ReadVec3(n["HalfExtents"]) : def.halfExtents;
+            z.reward = n["Reward"].as<float>(def.reward);
+            z.trigger = (RewardZoneComponent::Trigger)n["Trigger"].as<int>((int)def.trigger);
+            z.endEpisode = n["EndEpisode"].as<bool>(def.endEpisode);
+            z.agentTag = n["AgentTag"].as<std::string>(def.agentTag);
+            z.visibleToRays = n["VisibleToRays"].as<bool>(def.visibleToRays);
+        }
+        else if (entity.HasComponent<RewardZoneComponent>()) entity.RemoveComponent<RewardZoneComponent>();
+
+        if (auto n = node["RandomizerComponent"]){
+            auto& r = entity.HasComponent<RandomizerComponent>() ? entity.GetComponent<RandomizerComponent>() : entity.AddComponent<RandomizerComponent>();
+            const RandomizerComponent def{}; // fallbacks for keys missing from the file
+            r.positionRange = n["PositionRange"] ? ReadVec3(n["PositionRange"]) : def.positionRange;
+            r.randomYaw = n["RandomYaw"].as<bool>(def.randomYaw);
+        }
+        else if (entity.HasComponent<RandomizerComponent>()) entity.RemoveComponent<RandomizerComponent>();
+
         if (auto n = node["LuaScriptComponent"]){
             auto& s = entity.HasComponent<LuaScriptComponent>() ? entity.GetComponent<LuaScriptComponent>() : entity.AddComponent<LuaScriptComponent>();
             const LuaScriptComponent def{}; // fallbacks for keys missing from the file
@@ -588,6 +716,7 @@ namespace Phoenix{
         }
 
         if (data["Ambient"]) m_Scene->AmbientColor() = ReadVec3(data["Ambient"]);
+        ReadSimulation(data["Simulation"], m_Scene->Simulation());
 
         for (auto entityNode : data["Entities"]){
             std::string name;
@@ -617,6 +746,7 @@ namespace Phoenix{
         }
 
         if (root["Ambient"]) m_Scene->AmbientColor() = ReadVec3(root["Ambient"]);
+        ReadSimulation(root["Simulation"], m_Scene->Simulation());
 
         auto& registry = m_Scene->m_Registry;
         const YAML::Node entities = root["Entities"];
