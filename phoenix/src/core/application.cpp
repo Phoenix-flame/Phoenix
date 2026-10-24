@@ -6,12 +6,15 @@ namespace Phoenix{
     Application* Application::s_Instance = nullptr;
 
     std::map<std::string, int> Application::s_TimeContainer;
-    Application::Application(const std::string name) {
-        this->_name = name;
+    Application::Application(const std::string name)
+        : Application(WindowProperties(name)) {}
+
+    Application::Application(const WindowProperties& props) {
+        this->_name = props.title;
 
         PHX_CORE_ASSERT(!s_Instance, "Application already exists!");
 		s_Instance = this;
-        this->_window = std::make_unique<Window>(WindowProperties(this->_name));
+        this->_window = std::make_unique<Window>(props);
         this->_window->SetEventCallback(BIND_EVENT_FN(Application::OnEvent));
         
         Renderer::Init();

@@ -38,6 +38,9 @@ namespace Phoenix{
 
         void SetRadius(float radius);
         void Rotate(float xoffset, float yoffset);
+        // Orbit `target` at `radius`; pass yaw/pitch (degrees) or keep the current angles.
+        void Focus(const glm::vec3& target, float radius);
+        void Focus(const glm::vec3& target, float radius, float yawDegrees, float pitchDegrees);
         void Pan(float xoffset, float yoffset);
         const glm::mat4& GetViewProjectionMatrix() const { return m_ViewProjectionMatrix; }
         

@@ -16,14 +16,18 @@
 
 namespace Phoenix{
     struct WindowProperties{
-        WindowProperties(std::string name){
+        WindowProperties(std::string name, int width = 1280, int height = 720, bool customTitleBar = false){
             this->title = name;
-            this->width = 1280;
-            this->height = 720;
+            this->width = width;
+            this->height = height;
+            this->customTitleBar = customTitleBar;
         }
         std::string title;
         int width;
         int height;
+        // Undecorated OS window: the app draws its own title bar (drag, min/max/close)
+        // and resize edges, using the window-control methods below.
+        bool customTitleBar;
     };
 
 
@@ -43,6 +47,18 @@ namespace Phoenix{
 
         virtual void* GetNativeWindow() const { return _window; }
 
+        // Window controls for apps that draw their own title bar.
+        bool HasCustomTitleBar() const { return _data.CustomTitleBar; }
+        void Minimize();
+        void Maximize();
+        void Restore();
+        bool IsMaximized() const;
+        glm::ivec2 GetPosition() const;
+        void SetPosition(int x, int y);
+        void SetSize(int width, int height);
+        // Cursor position in desktop coordinates (window position + cursor offset).
+        glm::vec2 GetCursorScreenPosition() const;
+
     private:
         virtual void Init(const WindowProperties& props);
         virtual void Shutdown();
@@ -55,6 +71,7 @@ namespace Phoenix{
             std::string Title;
             unsigned int Width, Height;
             bool VSync;
+            bool CustomTitleBar = false;
             std::function<void(Event&)> EventCallback;
         };
 
