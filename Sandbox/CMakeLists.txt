@@ -7,6 +7,7 @@ add_executable(Sandbox
     Panels/CodeEditor.cpp
     Panels/AIPanels.cpp
     AIPrefabs.cpp
+    Panels/PhysicsPanel.cpp
 )
 target_include_directories(Sandbox PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}

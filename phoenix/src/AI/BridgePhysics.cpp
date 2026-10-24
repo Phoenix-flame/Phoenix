@@ -179,8 +179,10 @@ namespace Phoenix{
                     entt::entity e = Resolve(registry, msg["ignore"]);
                     if (e != entt::null) { ignore = BodyOf(registry, e); }
                 }
-                PhysicsWorld::RayHit hit;
-                if (!physics->RayCast(origin, glm::normalize(direction), std::max(0.0f, maxDistance), hit, ignore)){
+                PhysicsWorld::Hit hit;
+                PhysicsWorld::QueryFilter filter;
+                filter.ignoreBody = ignore;
+                if (!physics->RayCast(origin, glm::normalize(direction), std::max(0.0f, maxDistance), hit, filter)){
                     reply = "{\"ok\":true,\"hit\":false}";
                     return true;
                 }

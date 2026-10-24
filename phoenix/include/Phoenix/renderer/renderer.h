@@ -239,6 +239,10 @@ namespace Phoenix{
 		// Draw an arrow showing a directional light's aim (the transform's -Z).
 		static void DrawDirLightGizmo(const glm::mat4& transform, const glm::vec3& color);
 
+		// Draw world-space line segments (pairs of points) in one flat colour. With
+		// onTop the lines ignore depth (debug overlays such as physics colliders).
+		static void DrawLines(const std::vector<glm::vec3>& points, const glm::vec3& color, bool onTop = true);
+
 		// Water surface render inputs (Gerstner waves + optional dynamic ripple texture).
 		struct WaterParams{
 			glm::vec3 color = glm::vec3(0.05f, 0.22f, 0.35f);

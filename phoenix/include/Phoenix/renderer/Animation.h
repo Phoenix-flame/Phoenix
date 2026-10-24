@@ -147,6 +147,11 @@ namespace Phoenix{
         void SetSpeed(float speed) { m_Speed = speed; }
 
         const std::vector<glm::mat4>& GetFinalBoneMatrices() const { return m_FinalBoneMatrices; }
+        // Physics ragdolls pose the skeleton themselves: they read the model-space node
+        // transforms of the last pose (per node of GetCurrentAnimation(), before the
+        // clip's global inverse transform) and write the final matrices directly.
+        const std::vector<glm::mat4>& GetNodeGlobals() const { return m_Globals; }
+        std::vector<glm::mat4>& GetFinalBoneMatricesMutable() { return m_FinalBoneMatrices; }
         Animation* GetCurrentAnimation() const { return m_CurrentAnimation; }
         float GetCurrentTime() const { return m_CurrentTime; }      // ticks (legacy)
         float GetCurrentSeconds() const;

@@ -548,6 +548,39 @@ namespace Phoenix{
         s_OutlineShader->Unbind();
     }
 
+    void Renderer::DrawLines(const std::vector<glm::vec3>& points, const glm::vec3& color, bool onTop){
+        if (points.size() < 2) { return; }
+        // One streamed buffer shared by every call (debug geometry changes each frame).
+        static uint32_t vao = 0, vbo = 0;
+        if (!vao){
+            glGenVertexArrays(1, &vao);
+            glGenBuffers(1, &vbo);
+            glBindVertexArray(vao);
+            glBindBuffer(GL_ARRAY_BUFFER, vbo);
+            glEnableVertexAttribArray(0);
+            glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+        }
+        glBindVertexArray(vao);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER, points.size() * sizeof(glm::vec3), points.data(), GL_STREAM_DRAW);
+
+        s_OutlineShader->Bind();
+        s_OutlineShader->SetMat4("view", s_SceneData->ViewMatrix);
+        s_OutlineShader->SetMat4("projection", s_SceneData->ProjectionMatrix);
+        s_OutlineShader->SetMat4("model", glm::mat4(1.0f));
+        s_OutlineShader->SetFloat3("u_Color", ToLinear(color));
+        s_OutlineShader->SetInt("u_Animated", 0); // DrawOutline may have left skinning on
+
+        GLboolean depthWasOn = glIsEnabled(GL_DEPTH_TEST);
+        if (onTop) { glDisable(GL_DEPTH_TEST); }
+        glLineWidth(1.5f);
+        glDrawArrays(GL_LINES, 0, (GLsizei)(points.size() & ~(size_t)1));
+        if (onTop && depthWasOn) { glEnable(GL_DEPTH_TEST); }
+
+        glBindVertexArray(0);
+        s_OutlineShader->Unbind();
+    }
+
     void Renderer::SubmitWater(const Ref<VertexArray>& vertexArray, const glm::mat4& transform,
             const WaterParams& params){
         glEnable(GL_BLEND);

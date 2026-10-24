@@ -1,10 +1,20 @@
 #pragma once
 #include <Phoenix/core/base.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <cstdint>
 #include <vector>
 
 namespace Phoenix{
+
+    // Query filtering: skip one body (usually the caster) and/or limit to layers.
+    // Sensors are never hit unless includeSensors is set. (Declared outside
+    // PhysicsWorld so it can be used as a default argument inside it.)
+    struct PhysicsQueryFilter{
+        uint32_t ignoreBody = 0xffffffff; // PhysicsWorld::InvalidBody
+        uint16_t layerMask = 0xffff;      // PhysicsWorld::AllLayers
+        bool includeSensors = false;
+    };
 
     // Thin wrapper around a Jolt PhysicsSystem. All Jolt types are hidden behind a
     // pimpl so the rest of the engine never includes Jolt headers.
@@ -13,100 +23,241 @@ namespace Phoenix{
         enum class BodyType { Static = 0, Dynamic = 1, Kinematic = 2 };
 
         static constexpr uint32_t InvalidBody = 0xffffffff;
+        static constexpr uint32_t InvalidJoint = 0xffffffff;
+        static constexpr uint32_t InvalidCharacter = 0xffffffff;
+        static constexpr uint32_t InvalidVehicle = 0xffffffff;
+
+        // User collision layers. Each body is on one layer; layerMasks[i] bit j says
+        // whether layer i collides with layer j (both directions must agree).
+        static constexpr int MaxLayers = 16;
+        static constexpr uint16_t AllLayers = 0xffff;
+
+        // World-wide settings, fixed when the world is created.
+        struct Settings{
+            glm::vec3 gravity = { 0.0f, -9.81f, 0.0f };
+            int velocitySteps = 10;   // solver iterations; raise for stiffer stacks/chains
+            int positionSteps = 2;
+            float maxSubstepRate = 60.0f; // collision steps per second (Step splits dt)
+            uint16_t layerMasks[MaxLayers];
+            Settings() { for (auto& m : layerMasks) { m = AllLayers; } }
+        };
+
+        // One collision shape of a body, in the body's local space. A body made of
+        // several shapes (or one with an offset) becomes a compound shape.
+        struct ShapeDesc{
+            enum class Type { Box = 0, Sphere, Capsule, Cylinder, ConvexHull, TriangleMesh };
+            Type type = Type::Box;
+            glm::vec3 halfExtents = { 0.5f, 0.5f, 0.5f }; // box
+            float radius = 0.5f;                          // sphere / capsule / cylinder
+            float halfHeight = 0.5f;                      // capsule / cylinder (Y axis)
+            glm::vec3 offset = { 0.0f, 0.0f, 0.0f };      // local position in the body
+            glm::vec3 rotation = { 0.0f, 0.0f, 0.0f };    // local XYZ Euler (radians)
+            std::vector<glm::vec3> points;                // hull / mesh vertices
+            std::vector<uint32_t> indices;                // mesh triangles (static bodies only)
+        };
 
         // Surface/mass properties applied when a body is created.
         struct BodyProps{
             float friction = 0.5f;
             float restitution = 0.0f;        // bounciness (0 = dead, 1 = superball)
             float density = 1000.0f;         // kg/m^3 (mass follows from the shape volume)
+            float mass = 0.0f;               // kg; > 0 overrides the density-derived mass
+            glm::vec3 centerOfMassOffset = { 0.0f, 0.0f, 0.0f }; // shifts the COM (local)
             float linearDamping = 0.05f;
             float angularDamping = 0.05f;
             float gravityFactor = 1.0f;      // 0 floats, 1 normal, >1 sinks fast
             bool  continuousCollision = false; // for fast movers (bullets) so they don't tunnel
             bool  isSensor = false;          // detects contacts but has no collision response
             bool  lockTilt = false;          // dynamic body may only rotate about Y (stays upright)
+            bool  allowSleeping = true;      // resting bodies stop simulating until touched
+            bool  startAsleep = false;       // frozen until something touches it (dynamic)
+            bool  lockPosition[3] = { false, false, false }; // world X/Y/Z translation
+            bool  lockRotation[3] = { false, false, false }; // world X/Y/Z rotation
+            int   layer = 0;                 // collision layer (0..MaxLayers-1)
             glm::vec3 initialVelocity = { 0.0f, 0.0f, 0.0f };
+            glm::vec3 initialAngularVelocity = { 0.0f, 0.0f, 0.0f };
         };
 
         // A begin/end contact between two bodies, drained once per step by the Scene.
+        // Point/normal/speed are only filled for `entered` events. The normal points
+        // from bodyA towards bodyB; speed is the approach speed along it (m/s).
         struct ContactEvent{
             uint32_t bodyA;
             uint32_t bodyB;
             bool entered; // true = contact added, false = contact removed
+            bool sensor;  // one of the bodies is a sensor (trigger)
+            glm::vec3 point = { 0.0f, 0.0f, 0.0f };
+            glm::vec3 normal = { 0.0f, 0.0f, 0.0f };
+            float speed = 0.0f;
         };
 
-        PhysicsWorld();
+        // Result of a ray / shape cast.
+        struct Hit{
+            uint32_t body = InvalidBody;
+            glm::vec3 point = { 0.0f, 0.0f, 0.0f };
+            glm::vec3 normal = { 0.0f, 1.0f, 0.0f };
+            float distance = 0.0f;
+        };
+
+        using QueryFilter = PhysicsQueryFilter;
+
+        enum class JointType { Fixed = 0, Point = 1, Distance = 2, Hinge = 3, Slider = 4, Cone = 5, SwingTwist = 6 };
+        enum class MotorMode { Off = 0, Velocity = 1, Position = 2 };
+
+        // A constraint between two bodies. Anchors/axes are in WORLD space of the
+        // starting layout; the joint keeps the bodies' current relative pose.
+        struct JointDesc{
+            JointType type = JointType::Point;
+            glm::vec3 pointA = { 0.0f, 0.0f, 0.0f }; // pivot (and distance anchor on body A)
+            glm::vec3 pointB = { 0.0f, 0.0f, 0.0f }; // distance anchor on body B
+            glm::vec3 axis = { 0.0f, 0.0f, 1.0f };   // hinge / slider / cone twist axis
+            // Hinge: angle limits (radians). Slider: position limits (m). Cone: maxLimit
+            // is the half cone angle (radians).
+            bool  limited = false;
+            float minLimit = 0.0f;
+            float maxLimit = 0.0f;
+            // Distance: [min, max] range (-1 = starting distance) and an optional soft
+            // spring on the limits (frequency 0 = rigid).
+            float minDistance = -1.0f;
+            float maxDistance = -1.0f;
+            float springFrequency = 0.0f; // Hz
+            float springDamping = 0.5f;   // 0 = bouncy .. 1 = critically damped
+            // Hinge / slider motor: target velocity (rad/s, m/s) or position (rad, m).
+            MotorMode motorMode = MotorMode::Off;
+            float motorTarget = 0.0f;
+            float motorMaxForce = 0.0f;   // N or N·m; 0 = unlimited
+            float friction = 0.0f;        // hinge / slider resisting force/torque
+            float breakForce = 0.0f;      // N; joint snaps above this (0 = unbreakable)
+            bool  collideConnected = false; // let the two jointed bodies collide
+            // SwingTwist (ragdoll joints): swing limits around the two axes
+            // perpendicular to `axis` (planeAxis and axis x planeAxis) and a twist range
+            // around `axis` (radians).
+            glm::vec3 planeAxis = { 0.0f, 1.0f, 0.0f };
+            float normalHalfCone = 0.5f;
+            float planeHalfCone = 0.5f;
+            float twistMin = -0.3f;
+            float twistMax = 0.3f;
+        };
+
+        // A four-wheeled car on Jolt's wheeled vehicle constraint (raycast-free
+        // cylinder casts for wheels, suspension springs, engine, auto gearbox,
+        // differentials, anti-roll bars). Everything is in the chassis body's local
+        // space in meters; the vehicle drives towards local -Z with +Y up.
+        struct VehicleDesc{
+            glm::vec3 wheelPositions[4] = { { -0.9f, -0.1f, -1.3f }, { 0.9f, -0.1f, -1.3f },   // FL, FR
+                                            { -0.9f, -0.1f,  1.3f }, { 0.9f, -0.1f,  1.3f } }; // RL, RR
+            float wheelRadius = 0.4f;
+            float wheelWidth = 0.3f;
+            float suspensionMinLength = 0.2f;
+            float suspensionMaxLength = 0.5f;
+            float suspensionFrequency = 1.5f; // Hz (stiffness)
+            float suspensionDamping = 0.5f;
+            float maxSteerAngle = 0.52f;      // radians, front wheels
+            float engineTorque = 500.0f;      // N.m
+            float maxRPM = 6000.0f;
+            float brakeTorque = 1500.0f;      // N.m per wheel
+            float handBrakeTorque = 4000.0f;  // N.m, rear wheels
+            int   drive = 2;                  // 0 front, 1 rear, 2 all-wheel
+            bool  antiRollBars = true;
+            float maxPitchRoll = 3.1416f;     // radians; < pi keeps it from flipping over
+        };
+
+        // Kinematic capsule character (walks, climbs steps, slides off steep slopes,
+        // pushes dynamic bodies). Moved by SetCharacterInput, updated inside Step.
+        struct CharacterDesc{
+            float radius = 0.3f;
+            float halfHeight = 0.6f;     // cylindrical part; total = 2*(halfHeight+radius)
+            float maxSlopeAngle = 0.87f; // radians (~50 deg)
+            float stepHeight = 0.35f;    // stairs it can walk up (0 = off)
+            float stickToFloor = 0.5f;   // snap down this far when walking down slopes
+            float mass = 70.0f;          // kg, for pushing bodies
+            float maxStrength = 100.0f;  // N, max push force
+            float gravityFactor = 1.0f;
+            float airControl = 0.3f;     // 0..1 how much input steers while airborne
+            int   layer = 0;
+        };
+
+        explicit PhysicsWorld(const Settings& settings = Settings());
         ~PhysicsWorld();
 
-        // ---- Body creation (returns a runtime body id; InvalidBody on failure) ----
+        // ---- Bodies (returns a runtime body id; InvalidBody on failure) ----
 
-        uint32_t CreateBox(const glm::vec3& position, const glm::vec3& rotationEuler,
-                           const glm::vec3& halfExtents, BodyType type, const BodyProps& props);
+        // Create a body from one or more shapes. Triangle meshes are only valid on
+        // static bodies (they are turned into convex hulls otherwise).
+        uint32_t CreateBody(const std::vector<ShapeDesc>& shapes, const glm::vec3& position,
+                            const glm::vec3& rotationEuler, BodyType type, const BodyProps& props);
 
-        uint32_t CreateSphere(const glm::vec3& position, const glm::vec3& rotationEuler,
-                              float radius, BodyType type, const BodyProps& props);
-
-        // Total height = 2 * (halfHeight + radius); halfHeight is the cylindrical part.
-        uint32_t CreateCapsule(const glm::vec3& position, const glm::vec3& rotationEuler,
-                               float halfHeight, float radius, BodyType type, const BodyProps& props);
-
-        uint32_t CreateCylinder(const glm::vec3& position, const glm::vec3& rotationEuler,
-                                float halfHeight, float radius, BodyType type, const BodyProps& props);
-
-        // Create a convex-hull body from a point cloud (works for any body type).
-        uint32_t CreateConvexHull(const std::vector<glm::vec3>& points,
-                                  const glm::vec3& position, const glm::vec3& rotationEuler,
-                                  BodyType type, const BodyProps& props);
-
-        // Create a STATIC triangle-mesh body (accurate concave collision; static only).
-        uint32_t CreateMesh(const std::vector<glm::vec3>& points, const std::vector<uint32_t>& indices,
-                            const glm::vec3& position, const glm::vec3& rotationEuler,
-                            const BodyProps& props);
-
-        // Removes and destroys a body, along with any constraints attached to it.
+        // Removes and destroys a body, along with any joints attached to it.
         void RemoveBody(uint32_t bodyID);
 
-        // ---- Constraints (pass InvalidBody as `other` to anchor to the world) ----
-        // Constraints live as long as this world (they are torn down with the run).
+        // ---- Joints (pass InvalidBody as bodyB to anchor to the world) ----
 
-        // Ball-and-socket: the two bodies stay pinned together at a world-space point.
-        void AddPointConstraint(uint32_t body, uint32_t other, const glm::vec3& worldPoint);
+        uint32_t AddJoint(uint32_t bodyA, uint32_t bodyB, const JointDesc& desc);
+        void RemoveJoint(uint32_t joint);
+        bool IsJointAlive(uint32_t joint) const;
+        // Hinge/slider motor control at runtime.
+        void SetJointMotor(uint32_t joint, MotorMode mode, float target);
+        // Hinge angle (rad) / slider position (m) / distance (m); 0 for other types.
+        float GetJointValue(uint32_t joint) const;
+        // Joints that snapped (break force exceeded) since the last call.
+        std::vector<uint32_t> ConsumeBrokenJoints();
 
-        // Keeps the distance between two world-space attachment points within
-        // [minDistance, maxDistance]. Pass -1 for either to use the starting distance.
-        void AddDistanceConstraint(uint32_t body, uint32_t other,
-                                   const glm::vec3& worldPointOnBody, const glm::vec3& worldPointOnOther,
-                                   float minDistance = -1.0f, float maxDistance = -1.0f);
+        // ---- Characters ----
 
-        // Rotation around a world-space axis through a world-space pivot (doors,
-        // seesaws). Optional angle limits in radians around the resting pose.
-        void AddHingeConstraint(uint32_t body, uint32_t other,
-                                const glm::vec3& worldPivot, const glm::vec3& worldAxis,
-                                bool limited = false, float minAngle = 0.0f, float maxAngle = 0.0f);
+        uint32_t CreateCharacter(const CharacterDesc& desc, const glm::vec3& position, float yaw);
+        void RemoveCharacter(uint32_t character);
+        // Desired horizontal velocity (m/s, world space; Y ignored) and a jump request
+        // (applied only when grounded) for the next Step.
+        void SetCharacterInput(uint32_t character, const glm::vec3& velocity, bool jump, float jumpSpeed);
+        void SetCharacterPosition(uint32_t character, const glm::vec3& position);
+        glm::vec3 GetCharacterPosition(uint32_t character) const;
+        glm::vec3 GetCharacterVelocity(uint32_t character) const;
+        bool IsCharacterGrounded(uint32_t character) const;
+        glm::vec3 GetCharacterGroundNormal(uint32_t character) const;
+        // The kinematic body that represents the character for raycasts/sensors/contacts.
+        uint32_t GetCharacterBody(uint32_t character) const;
+
+        // ---- Vehicles ----
+
+        // Turns a dynamic body into a car. Removed with the body.
+        uint32_t CreateVehicle(uint32_t bodyID, const VehicleDesc& desc);
+        void RemoveVehicle(uint32_t vehicle);
+        // forward/right in [-1, 1] (right > 0 steers right), brake/handBrake in [0, 1].
+        void SetVehicleInput(uint32_t vehicle, float forward, float right, float brake, float handBrake);
+        float GetVehicleSpeed(uint32_t vehicle) const;  // m/s along the car's forward axis
+        float GetVehicleRPM(uint32_t vehicle) const;
+        int GetVehicleGear(uint32_t vehicle) const;
+        // World pose of wheel 0..3 for a model whose axle is its local Y axis (the
+        // built-in cylinder primitive); false if the vehicle doesn't exist.
+        bool GetWheelPose(uint32_t vehicle, int wheel, glm::vec3& outPosition, glm::quat& outRotation) const;
+        bool IsWheelGrounded(uint32_t vehicle, int wheel) const;
+
+        // Never let these two bodies collide (ragdoll parts, jointed assemblies).
+        void DisableCollisionBetween(uint32_t bodyA, uint32_t bodyB);
 
         // ---- Dynamics ----
 
         void ApplyImpulse(uint32_t bodyID, const glm::vec3& impulse);          // kg m/s, at center of mass
+        void ApplyImpulseAtPoint(uint32_t bodyID, const glm::vec3& impulse, const glm::vec3& worldPoint);
+        void ApplyAngularImpulse(uint32_t bodyID, const glm::vec3& impulse);   // kg m^2/s
         void ApplyForce(uint32_t bodyID, const glm::vec3& force);              // applied for the next step
+        void ApplyForceAtPoint(uint32_t bodyID, const glm::vec3& force, const glm::vec3& worldPoint);
+        void ApplyTorque(uint32_t bodyID, const glm::vec3& torque);            // applied for the next step
         void SetLinearVelocity(uint32_t bodyID, const glm::vec3& velocity);
         glm::vec3 GetLinearVelocity(uint32_t bodyID) const;
         void SetAngularVelocity(uint32_t bodyID, const glm::vec3& velocity);
         glm::vec3 GetAngularVelocity(uint32_t bodyID) const;
-
-        // Force / impulse at a world-space point (adds torque), and pure rotation.
-        void ApplyForceAtPoint(uint32_t bodyID, const glm::vec3& force, const glm::vec3& worldPoint);
-        void ApplyImpulseAtPoint(uint32_t bodyID, const glm::vec3& impulse, const glm::vec3& worldPoint);
-        void ApplyTorque(uint32_t bodyID, const glm::vec3& torque);                 // N m, for the next step
-        void ApplyAngularImpulse(uint32_t bodyID, const glm::vec3& angularImpulse);
-
-        // Mass in kg (0 for static / kinematic bodies).
-        float GetMass(uint32_t bodyID) const;
-        bool IsDynamic(uint32_t bodyID) const;
-
-        // Move a body without changing its velocity (wakes it up).
-        void SetBodyTransform(uint32_t bodyID, const glm::vec3& position, const glm::vec3& rotationEuler);
+        float GetMass(uint32_t bodyID) const;                                  // 0 for static/kinematic
+        void SetGravityFactor(uint32_t bodyID, float factor);
         void SetFriction(uint32_t bodyID, float friction);
         void SetRestitution(uint32_t bodyID, float restitution);
+        // Teleport (no velocity change); wakes the body.
+        void SetBodyTransform(uint32_t bodyID, const glm::vec3& position, const glm::vec3& rotationEuler);
+        void SetBodyPose(uint32_t bodyID, const glm::vec3& position, const glm::quat& rotation);
+        void WakeUp(uint32_t bodyID);
+        bool IsAwake(uint32_t bodyID) const;
+        bool IsSensor(uint32_t bodyID) const;
+        bool IsDynamic(uint32_t bodyID) const;
 
         glm::vec3 GetGravity() const;
         void SetGravity(const glm::vec3& gravity);
@@ -122,19 +273,20 @@ namespace Phoenix{
         bool ApplyBuoyancy(uint32_t bodyID, const glm::vec3& surfacePoint, const glm::vec3& surfaceNormal,
                            float buoyancy, float linearDrag, float angularDrag, float dt);
 
-        // First body hit along origin + direction * [0, maxDistance], or false.
-        // ignoreBody (e.g. the caster's own body) is skipped.
-        bool RayCast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
-                     uint32_t& outBody, glm::vec3& outPoint, uint32_t ignoreBody = InvalidBody) const;
+        // ---- Queries (direction need not be normalized) ----
 
-        // Like RayCast, but also reports the surface normal and hit distance.
-        struct RayHit{
-            uint32_t body = InvalidBody;
-            glm::vec3 point{ 0.0f }, normal{ 0.0f, 1.0f, 0.0f };
-            float distance = 0.0f;
-        };
+        // First body hit along origin + normalize(direction) * [0, maxDistance].
         bool RayCast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
-                     RayHit& outHit, uint32_t ignoreBody = InvalidBody) const;
+                     Hit& outHit, const QueryFilter& filter = QueryFilter()) const;
+        // Sweep a sphere along the ray; first body it touches.
+        bool SphereCast(const glm::vec3& origin, const glm::vec3& direction, float radius, float maxDistance,
+                        Hit& outHit, const QueryFilter& filter = QueryFilter()) const;
+        // All bodies overlapping a sphere / an oriented box.
+        std::vector<uint32_t> OverlapSphere(const glm::vec3& center, float radius,
+                                            const QueryFilter& filter = QueryFilter()) const;
+        std::vector<uint32_t> OverlapBox(const glm::vec3& center, const glm::vec3& halfExtents,
+                                         const glm::vec3& rotationEuler,
+                                         const QueryFilter& filter = QueryFilter()) const;
 
         // Teleport a body to a pose and stop it (episode resets).
         void ResetBody(uint32_t bodyID, const glm::vec3& position, const glm::vec3& rotationEuler);
@@ -150,13 +302,22 @@ namespace Phoenix{
         // runs in slow motion instead of letting bodies tunnel or joints explode.
         static constexpr float MaxStep = 0.1f;
 
-        // Advances the simulation by dt (clamped to MaxStep), split into collision
-        // steps of at most 1/60 s as Jolt recommends for stability.
+        // Advances characters and the simulation by dt (clamped to MaxStep), split into
+        // collision steps of at most 1/maxSubstepRate s for stability. With the same
+        // sequence of dt values and inputs the result is deterministic (the Scene
+        // calls this with a fixed dt when its fixed timestep is on).
         void Step(float dt);
 
         // Reads back a body's world transform. Rotation is XYZ Euler in radians; pass the
         // entity's current rotation in so the returned angles stay continuous with it.
         void GetBodyTransform(uint32_t bodyID, glm::vec3& outPosition, glm::vec3& inOutRotationEuler) const;
+        // Same as a quaternion (for interpolation and ragdoll bone posing).
+        void GetBodyPose(uint32_t bodyID, glm::vec3& outPosition, glm::quat& outRotation) const;
+
+        const Settings& GetSettings() const;
+        uint32_t GetBodyCount() const;
+        uint32_t GetActiveBodyCount() const;
+        uint32_t GetJointCount() const; // alive joints
 
         // Global Jolt setup/teardown. Init is idempotent and called lazily.
         static void Init();

@@ -116,6 +116,9 @@ private:
     // shadows falling on other objects, and two orbiting point lights with cube shadows.
     void BuildShadowShowcase();
 
+    // Populate m_Scene with the vehicle test track (car, ramp, cones, crates, ragdoll dummies).
+    void BuildVehicleShowcase();
+
     // Terrain sculpting: raycast to the terrain plane and raise/lower/smooth heights.
     void SculptTerrain(TerrainComponent& terrain, const glm::vec3& terrainPos,
                        const glm::vec3& terrainScale, const glm::vec3& rayOrigin,

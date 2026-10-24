@@ -26,6 +26,7 @@ namespace Phoenix{
             ScriptEditorPanel();
             TimelinePanel();
             TexturePanel();
+            PhysicsPanel();
         }
 
         void ScenePanel();
@@ -33,6 +34,10 @@ namespace Phoenix{
         void ScriptEditorPanel();
         void TimelinePanel();
         void TexturePanel();
+        // Physics settings, collision layers, debug draw and live stats (PhysicsPanel.cpp).
+        void PhysicsPanel();
+        // Hierarchy context menu: one-click rigid bodies, joints, triggers, characters.
+        void CreatePhysicsObjectMenu();
         void EntityNode(Entity entity);
         // Entity-creation items shared by the "+" button and the right-click menu.
         void CreateEntityMenu();
@@ -43,6 +48,7 @@ namespace Phoenix{
         bool& ShowTimeline() { return m_ShowTimeline; }
         bool& ShowScriptEditor() { return m_ShowScriptEditor; }
         bool& ShowTextures() { return m_ShowTextures; }
+        bool& ShowPhysics() { return m_ShowPhysics; }
 
     private:
         void DrawComponents(Entity entity);
@@ -53,6 +59,7 @@ namespace Phoenix{
         Phoenix::ScriptEditorPanel m_ScriptPanel;
         bool m_ShowTimeline = true;
         bool m_ShowTextures = true;
+        bool m_ShowPhysics = true;
 
         // Texture palette: paths loaded via the Textures panel, assignable to materials.
         std::vector<std::string> m_LoadedTextures;

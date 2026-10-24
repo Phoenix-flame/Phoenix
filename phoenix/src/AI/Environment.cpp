@@ -320,11 +320,12 @@ namespace Phoenix{
             for (size_t r = 0; r < dirs.size(); r++){
                 float best = 1.0f;
                 int tag = -1;
-                uint32_t hitBody;
-                glm::vec3 hitPoint;
-                if (physics && physics->RayCast(origin, dirs[r], length, hitBody, hitPoint, body)){
-                    best = glm::length(hitPoint - origin) / length;
-                    Entity hit = m_Scene->FindEntityByBodyID(hitBody);
+                PhysicsWorld::Hit rayHit;
+                PhysicsWorld::QueryFilter filter;
+                filter.ignoreBody = body;
+                if (physics && physics->RayCast(origin, dirs[r], length, rayHit, filter)){
+                    best = rayHit.distance / length;
+                    Entity hit = m_Scene->FindEntityByBodyID(rayHit.body);
                     tag = hit ? tagIndex((entt::entity)hit) : -1;
                 }
                 for (auto zone : zones){

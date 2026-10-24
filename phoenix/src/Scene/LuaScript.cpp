@@ -177,16 +177,17 @@ namespace Phoenix{
     }
 
     // ---- Physics ----
-    // These act on the script entity's runtime rigid body; they are no-ops in edit
-    // mode or when the entity has no body.
+    // These act on the script entity's runtime body (rigid body or character
+    // capsule); they are no-ops in edit mode or when the entity has no body.
 
     static PhysicsWorld* ScriptPhysics(lua_State* L, uint32_t& outBodyID){
         Entity e = ScriptEntity(L);
-        outBodyID = 0xffffffff;
-        if (!e.GetScene() || !e.HasComponent<RigidBodyComponent>()) { return nullptr; }
-        outBodyID = e.GetComponent<RigidBodyComponent>().runtimeBodyID;
-        if (outBodyID == 0xffffffff) { return nullptr; }
-        return e.GetScene()->GetPhysicsWorld();
+        outBodyID = PhysicsWorld::InvalidBody;
+        Scene* scene = e.GetScene();
+        if (!scene || !scene->GetPhysicsWorld()) { return nullptr; }
+        outBodyID = scene->GetEntityBody(e);
+        if (outBodyID == PhysicsWorld::InvalidBody) { return nullptr; }
+        return scene->GetPhysicsWorld();
     }
 
     static glm::vec3 CheckVec3(lua_State* L, int first){
@@ -194,54 +195,296 @@ namespace Phoenix{
                  (float)luaL_checknumber(L, first + 2) };
     }
 
-    static int l_ApplyImpulse(lua_State* L){
-        uint32_t body;
-        if (auto* pw = ScriptPhysics(L, body)) { pw->ApplyImpulse(body, CheckVec3(L, 1)); }
-        return 0;
-    }
-    static int l_ApplyForce(lua_State* L){
-        uint32_t body;
-        if (auto* pw = ScriptPhysics(L, body)) { pw->ApplyForce(body, CheckVec3(L, 1)); }
-        return 0;
-    }
-    static int l_SetVelocity(lua_State* L){
-        uint32_t body;
-        if (auto* pw = ScriptPhysics(L, body)) { pw->SetLinearVelocity(body, CheckVec3(L, 1)); }
-        return 0;
-    }
-    static int l_GetVelocity(lua_State* L){
-        uint32_t body;
-        glm::vec3 v(0.0f);
-        if (auto* pw = ScriptPhysics(L, body)) { v = pw->GetLinearVelocity(body); }
+    static int PushVec3(lua_State* L, const glm::vec3& v){
         lua_pushnumber(L, v.x); lua_pushnumber(L, v.y); lua_pushnumber(L, v.z);
         return 3;
     }
-    static int l_SetAngularVelocity(lua_State* L){
+
+    static CharacterControllerComponent* ScriptCharacter(lua_State* L){
+        Entity e = ScriptEntity(L);
+        return e.HasComponent<CharacterControllerComponent>() ? &e.GetComponent<CharacterControllerComponent>() : nullptr;
+    }
+
+    // Body-only helpers: f(world, body, L) for the script entity's body.
+    template<typename F>
+    static int WithBody(lua_State* L, F f){
         uint32_t body;
-        if (auto* pw = ScriptPhysics(L, body)) { pw->SetAngularVelocity(body, CheckVec3(L, 1)); }
+        if (auto* pw = ScriptPhysics(L, body)) { f(*pw, body); }
         return 0;
     }
-    // RayCast(ox,oy,oz, dx,dy,dz, maxDist) -> hitTag (or nil), hitX, hitY, hitZ
-    static int l_RayCast(lua_State* L){
+
+    static int l_ApplyImpulse(lua_State* L){ return WithBody(L, [&](PhysicsWorld& pw, uint32_t b){ pw.ApplyImpulse(b, CheckVec3(L, 1)); }); }
+    static int l_ApplyImpulseAtPoint(lua_State* L){ return WithBody(L, [&](PhysicsWorld& pw, uint32_t b){ pw.ApplyImpulseAtPoint(b, CheckVec3(L, 1), CheckVec3(L, 4)); }); }
+    static int l_ApplyAngularImpulse(lua_State* L){ return WithBody(L, [&](PhysicsWorld& pw, uint32_t b){ pw.ApplyAngularImpulse(b, CheckVec3(L, 1)); }); }
+    static int l_ApplyForce(lua_State* L){ return WithBody(L, [&](PhysicsWorld& pw, uint32_t b){ pw.ApplyForce(b, CheckVec3(L, 1)); }); }
+    static int l_ApplyForceAtPoint(lua_State* L){ return WithBody(L, [&](PhysicsWorld& pw, uint32_t b){ pw.ApplyForceAtPoint(b, CheckVec3(L, 1), CheckVec3(L, 4)); }); }
+    static int l_ApplyTorque(lua_State* L){ return WithBody(L, [&](PhysicsWorld& pw, uint32_t b){ pw.ApplyTorque(b, CheckVec3(L, 1)); }); }
+    static int l_SetVelocity(lua_State* L){ return WithBody(L, [&](PhysicsWorld& pw, uint32_t b){ pw.SetLinearVelocity(b, CheckVec3(L, 1)); }); }
+    static int l_SetAngularVelocity(lua_State* L){ return WithBody(L, [&](PhysicsWorld& pw, uint32_t b){ pw.SetAngularVelocity(b, CheckVec3(L, 1)); }); }
+    static int l_SetGravityFactor(lua_State* L){ return WithBody(L, [&](PhysicsWorld& pw, uint32_t b){ pw.SetGravityFactor(b, (float)luaL_checknumber(L, 1)); }); }
+    static int l_SetFriction(lua_State* L){ return WithBody(L, [&](PhysicsWorld& pw, uint32_t b){ pw.SetFriction(b, (float)luaL_checknumber(L, 1)); }); }
+    static int l_SetRestitution(lua_State* L){ return WithBody(L, [&](PhysicsWorld& pw, uint32_t b){ pw.SetRestitution(b, (float)luaL_checknumber(L, 1)); }); }
+    static int l_WakeUp(lua_State* L){ return WithBody(L, [&](PhysicsWorld& pw, uint32_t b){ pw.WakeUp(b); }); }
+
+    static int l_GetVelocity(lua_State* L){
+        if (auto* cc = ScriptCharacter(L)) { return PushVec3(L, cc->velocity); }
+        uint32_t body;
+        glm::vec3 v(0.0f);
+        if (auto* pw = ScriptPhysics(L, body)) { v = pw->GetLinearVelocity(body); }
+        return PushVec3(L, v);
+    }
+    static int l_GetAngularVelocity(lua_State* L){
+        uint32_t body;
+        glm::vec3 v(0.0f);
+        if (auto* pw = ScriptPhysics(L, body)) { v = pw->GetAngularVelocity(body); }
+        return PushVec3(L, v);
+    }
+    static int l_GetMass(lua_State* L){
+        uint32_t body;
+        float m = 0.0f;
+        if (auto* pw = ScriptPhysics(L, body)) { m = pw->GetMass(body); }
+        lua_pushnumber(L, m);
+        return 1;
+    }
+    static int l_IsSleeping(lua_State* L){
+        uint32_t body;
+        auto* pw = ScriptPhysics(L, body);
+        lua_pushboolean(L, pw && !pw->IsAwake(body));
+        return 1;
+    }
+
+    // Teleport(x,y,z [, rx,ry,rz]): move the entity AND its body/character (a plain
+    // SetTranslation on a dynamic body is overwritten by the simulation next step).
+    static int l_Teleport(lua_State* L){
         Entity e = ScriptEntity(L);
-        Scene* scene = e.GetScene();
+        if (!e.HasComponent<TransformComponent>()) { return 0; }
+        auto& t = e.GetComponent<TransformComponent>();
+        t.Translation = CheckVec3(L, 1);
+        if (lua_gettop(L) >= 6) { t.Rotation = CheckVec3(L, 4); }
+        PhysicsWorld* pw = e.GetScene() ? e.GetScene()->GetPhysicsWorld() : nullptr;
+        if (!pw) { return 0; }
+        if (auto* cc = ScriptCharacter(L)) { pw->SetCharacterPosition(cc->runtimeCharacterID, t.Translation); }
+        else if (e.HasComponent<RigidBodyComponent>()) { pw->SetBodyTransform(e.GetComponent<RigidBodyComponent>().runtimeBodyID, t.Translation, t.Rotation); }
+        return 0;
+    }
+
+    // ---- Queries ----
+
+    static PhysicsWorld::QueryFilter ScriptQueryFilter(lua_State* L, int maskArg){
+        PhysicsWorld::QueryFilter filter;
+        Entity e = ScriptEntity(L);
+        if (e.GetScene()) { filter.ignoreBody = e.GetScene()->GetEntityBody(e); } // never hit yourself
+        if (lua_gettop(L) >= maskArg && lua_isinteger(L, maskArg)) { filter.layerMask = (uint16_t)lua_tointeger(L, maskArg); }
+        return filter;
+    }
+
+    static std::string TagOfBody(Scene* scene, uint32_t body){
+        Entity hit = scene->FindEntityByBodyID(body);
+        return (hit && hit.HasComponent<TagComponent>()) ? hit.GetComponent<TagComponent>().Tag : "";
+    }
+
+    static int PushHit(lua_State* L, Scene* scene, const PhysicsWorld::Hit& hit){
+        lua_pushstring(L, TagOfBody(scene, hit.body).c_str());
+        PushVec3(L, hit.point);
+        Entity e = scene->FindEntityByBodyID(hit.body);
+        if (e) { lua_pushinteger(L, (lua_Integer)(uint32_t)e); } else { lua_pushnil(L); }
+        PushVec3(L, hit.normal);
+        lua_pushnumber(L, hit.distance);
+        return 9;
+    }
+
+    // RayCast(ox,oy,oz, dx,dy,dz, maxDist [, layerMask])
+    //   -> hitTag (or nil), hitX, hitY, hitZ, hitId, normalX, normalY, normalZ, distance
+    static int l_RayCast(lua_State* L){
+        Scene* scene = ScriptEntity(L).GetScene();
         PhysicsWorld* pw = scene ? scene->GetPhysicsWorld() : nullptr;
-        if (!pw) { lua_pushnil(L); return 1; }
-        glm::vec3 origin = CheckVec3(L, 1);
-        glm::vec3 dir = CheckVec3(L, 4);
-        float maxDist = (float)luaL_checknumber(L, 7);
-        float len = glm::length(dir);
-        uint32_t hitBody; glm::vec3 hitPoint;
-        if (len < 1e-6f || !pw->RayCast(origin, dir / len, maxDist, hitBody, hitPoint)){
+        PhysicsWorld::Hit hit;
+        if (!pw || !pw->RayCast(CheckVec3(L, 1), CheckVec3(L, 4), (float)luaL_checknumber(L, 7), hit, ScriptQueryFilter(L, 8))){
             lua_pushnil(L);
             return 1;
         }
-        Entity hit = scene->FindEntityByBodyID(hitBody);
-        std::string tag = (hit && hit.HasComponent<TagComponent>()) ? hit.GetComponent<TagComponent>().Tag : "";
-        lua_pushstring(L, tag.c_str());
-        lua_pushnumber(L, hitPoint.x); lua_pushnumber(L, hitPoint.y); lua_pushnumber(L, hitPoint.z);
-        if (hit) { lua_pushinteger(L, (lua_Integer)(uint32_t)hit); } else { lua_pushnil(L); }
-        return 5;
+        return PushHit(L, scene, hit);
+    }
+
+    // SphereCast(ox,oy,oz, dx,dy,dz, radius, maxDist [, layerMask]) -> same as RayCast
+    static int l_SphereCast(lua_State* L){
+        Scene* scene = ScriptEntity(L).GetScene();
+        PhysicsWorld* pw = scene ? scene->GetPhysicsWorld() : nullptr;
+        PhysicsWorld::Hit hit;
+        if (!pw || !pw->SphereCast(CheckVec3(L, 1), CheckVec3(L, 4), (float)luaL_checknumber(L, 7),
+                                   (float)luaL_checknumber(L, 8), hit, ScriptQueryFilter(L, 9))){
+            lua_pushnil(L);
+            return 1;
+        }
+        return PushHit(L, scene, hit);
+    }
+
+    static int PushTagList(lua_State* L, Scene* scene, const std::vector<uint32_t>& bodies){
+        lua_createtable(L, (int)bodies.size(), 0);
+        int i = 1;
+        for (uint32_t body : bodies){
+            lua_pushstring(L, TagOfBody(scene, body).c_str());
+            lua_rawseti(L, -2, i++);
+        }
+        return 1;
+    }
+
+    // OverlapSphere(x,y,z, radius [, layerMask]) -> { tags of bodies inside }
+    static int l_OverlapSphere(lua_State* L){
+        Scene* scene = ScriptEntity(L).GetScene();
+        PhysicsWorld* pw = scene ? scene->GetPhysicsWorld() : nullptr;
+        if (!pw) { lua_newtable(L); return 1; }
+        return PushTagList(L, scene, pw->OverlapSphere(CheckVec3(L, 1), (float)luaL_checknumber(L, 4), ScriptQueryFilter(L, 5)));
+    }
+
+    // OverlapBox(x,y,z, hx,hy,hz [, layerMask]) -> { tags of bodies inside } (axis aligned)
+    static int l_OverlapBox(lua_State* L){
+        Scene* scene = ScriptEntity(L).GetScene();
+        PhysicsWorld* pw = scene ? scene->GetPhysicsWorld() : nullptr;
+        if (!pw) { lua_newtable(L); return 1; }
+        return PushTagList(L, scene, pw->OverlapBox(CheckVec3(L, 1), CheckVec3(L, 4), glm::vec3(0.0f), ScriptQueryFilter(L, 7)));
+    }
+
+    // ---- Character controller ----
+
+    // Move(vx, vz): desired horizontal velocity (m/s, world space) until changed.
+    static int l_Move(lua_State* L){
+        if (auto* cc = ScriptCharacter(L))
+            cc->desiredVelocity = { (float)luaL_checknumber(L, 1), 0.0f, (float)luaL_checknumber(L, 2) };
+        return 0;
+    }
+    // Jump([speed]): jumps on the next step if standing on the ground.
+    static int l_Jump(lua_State* L){
+        if (auto* cc = ScriptCharacter(L)){
+            if (lua_gettop(L) >= 1) { cc->jumpSpeed = (float)luaL_checknumber(L, 1); }
+            cc->jumpRequested = true;
+        }
+        return 0;
+    }
+    static int l_IsGrounded(lua_State* L){
+        auto* cc = ScriptCharacter(L);
+        lua_pushboolean(L, cc && cc->grounded);
+        return 1;
+    }
+
+    // ---- Joints (the script entity's JointComponent) ----
+    // Every function takes an optional joint number (1-based, default 1) as its last
+    // argument, for entities with several joints.
+
+    static JointComponent::Joint* ScriptJoint(lua_State* L, PhysicsWorld*& outWorld, int indexArg){
+        Entity e = ScriptEntity(L);
+        outWorld = e.GetScene() ? e.GetScene()->GetPhysicsWorld() : nullptr;
+        if (!e.HasComponent<JointComponent>()) { return nullptr; }
+        auto& joints = e.GetComponent<JointComponent>().joints;
+        int index = (lua_gettop(L) >= indexArg && lua_isinteger(L, indexArg)) ? (int)lua_tointeger(L, indexArg) - 1 : 0;
+        return (index >= 0 && index < (int)joints.size()) ? &joints[index] : nullptr;
+    }
+
+    // SetMotor(mode, target [, joint]): mode "off" | "velocity" | "position" (or 0/1/2).
+    static int l_SetMotor(lua_State* L){
+        PhysicsWorld* pw;
+        JointComponent::Joint* j = ScriptJoint(L, pw, 3);
+        if (!j) { return 0; }
+        int mode = 0;
+        if (lua_isnumber(L, 1)) { mode = (int)lua_tointeger(L, 1); }
+        else{
+            std::string m = luaL_checkstring(L, 1);
+            mode = m == "velocity" ? 1 : m == "position" ? 2 : 0;
+        }
+        j->motor = (JointComponent::Motor)std::clamp(mode, 0, 2);
+        if (lua_gettop(L) >= 2) { j->motorTarget = (float)luaL_checknumber(L, 2); }
+        if (pw) { pw->SetJointMotor(j->runtimeJointID, (PhysicsWorld::MotorMode)(int)j->motor, j->motorTarget); }
+        return 0;
+    }
+    static int l_SetMotorTarget(lua_State* L){
+        PhysicsWorld* pw;
+        JointComponent::Joint* j = ScriptJoint(L, pw, 2);
+        if (!j) { return 0; }
+        j->motorTarget = (float)luaL_checknumber(L, 1);
+        if (pw) { pw->SetJointMotor(j->runtimeJointID, (PhysicsWorld::MotorMode)(int)j->motor, j->motorTarget); }
+        return 0;
+    }
+    // Hinge angle (rad) / slider position (m) / distance (m).
+    static int l_GetJointValue(lua_State* L){
+        PhysicsWorld* pw;
+        JointComponent::Joint* j = ScriptJoint(L, pw, 1);
+        lua_pushnumber(L, (j && pw) ? pw->GetJointValue(j->runtimeJointID) : 0.0f);
+        return 1;
+    }
+    static int l_BreakJoint(lua_State* L){
+        PhysicsWorld* pw;
+        JointComponent::Joint* j = ScriptJoint(L, pw, 1);
+        if (j && pw){
+            pw->RemoveJoint(j->runtimeJointID);
+            j->runtimeJointID = PhysicsWorld::InvalidJoint;
+        }
+        return 0;
+    }
+    static int l_IsJointBroken(lua_State* L){
+        PhysicsWorld* pw;
+        JointComponent::Joint* j = ScriptJoint(L, pw, 1);
+        lua_pushboolean(L, j && pw && !pw->IsJointAlive(j->runtimeJointID));
+        return 1;
+    }
+    static int l_GetJointCount(lua_State* L){
+        Entity e = ScriptEntity(L);
+        lua_pushinteger(L, e.HasComponent<JointComponent>() ? (lua_Integer)e.GetComponent<JointComponent>().joints.size() : 0);
+        return 1;
+    }
+
+    // ---- Ragdoll ----
+
+    static RagdollComponent* ScriptRagdoll(lua_State* L){
+        Entity e = ScriptEntity(L);
+        return e.HasComponent<RagdollComponent>() ? &e.GetComponent<RagdollComponent>() : nullptr;
+    }
+    // SetRagdoll(on): go limp (bodies from the current pose) or back to animation.
+    static int l_SetRagdoll(lua_State* L){
+        if (auto* rd = ScriptRagdoll(L)) { rd->request = lua_toboolean(L, 1) ? 1 : 0; }
+        return 0;
+    }
+    static int l_IsRagdoll(lua_State* L){
+        auto* rd = ScriptRagdoll(L);
+        lua_pushboolean(L, rd && (rd->active || rd->request == 1));
+        return 1;
+    }
+    // RagdollImpulse(vx,vy,vz): velocity change (m/s) for every part (a hit, a blast).
+    static int l_RagdollImpulse(lua_State* L){
+        auto* rd = ScriptRagdoll(L);
+        PhysicsWorld* pw = ScriptEntity(L).GetScene() ? ScriptEntity(L).GetScene()->GetPhysicsWorld() : nullptr;
+        if (!rd || !pw) { return 0; }
+        glm::vec3 dv = CheckVec3(L, 1);
+        for (const auto& part : rd->parts) { pw->ApplyImpulse(part.body, dv * pw->GetMass(part.body)); }
+        return 0;
+    }
+
+    // ---- Vehicle ----
+
+    static VehicleComponent* ScriptVehicle(lua_State* L){
+        Entity e = ScriptEntity(L);
+        return e.HasComponent<VehicleComponent>() ? &e.GetComponent<VehicleComponent>() : nullptr;
+    }
+    // SetVehicleInput(forward, right [, brake, handbrake]): forward/right in -1..1
+    // (forward < 0 reverses), brake/handbrake in 0..1. Kept until changed.
+    static int l_SetVehicleInput(lua_State* L){
+        if (auto* v = ScriptVehicle(L)){
+            v->forward = (float)luaL_checknumber(L, 1);
+            v->right = (float)luaL_checknumber(L, 2);
+            v->brake = lua_gettop(L) >= 3 ? (float)luaL_checknumber(L, 3) : 0.0f;
+            v->handBrake = lua_gettop(L) >= 4 ? (float)luaL_checknumber(L, 4) : 0.0f;
+        }
+        return 0;
+    }
+    static int l_GetVehicleSpeed(lua_State* L){
+        auto* v = ScriptVehicle(L);
+        lua_pushnumber(L, v ? v->speed : 0.0f);
+        return 1;
+    }
+    static int l_GetEngineRPM(lua_State* L){
+        auto* v = ScriptVehicle(L);
+        lua_pushnumber(L, v ? v->rpm : 0.0f);
+        lua_pushinteger(L, v ? v->gear : 0);
+        return 2;
     }
 
     // ---- Reinforcement learning ----
@@ -507,8 +750,11 @@ namespace Phoenix{
     };
     static const LuaBinding s_Bindings[] = {
         { "OnUpdate",         nullptr, "Callbacks", "function OnUpdate(dt)", "Called every frame while playing; dt is the frame time in seconds." },
-        { "OnCollisionEnter", nullptr, "Callbacks", "function OnCollisionEnter(otherTag, otherId)", "Called when this entity's body starts touching another (needs a Rigid Body)." },
+        { "OnCollisionEnter", nullptr, "Callbacks", "function OnCollisionEnter(otherTag, otherId, px, py, pz, nx, ny, nz, speed)", "Called when this entity's body starts touching another (needs a Rigid Body): contact point, normal (towards the other body) and impact speed." },
         { "OnCollisionExit",  nullptr, "Callbacks", "function OnCollisionExit(otherTag, otherId)", "Called when this entity's body stops touching another." },
+        { "OnTriggerEnter",   nullptr, "Callbacks", "function OnTriggerEnter(otherTag, otherId)", "Called when a sensor body starts overlapping another (falls back to OnCollisionEnter if undefined)." },
+        { "OnTriggerExit",    nullptr, "Callbacks", "function OnTriggerExit(otherTag, otherId)", "Called when a sensor overlap ends." },
+        { "OnJointBreak",     nullptr, "Callbacks", "function OnJointBreak(otherTag)", "Called when a breakable joint on or to this entity snaps." },
         { "OnMessage",        nullptr, "Callbacks", "function OnMessage(name, ...)", "Called when another script uses Send(id, name, ...); the last argument is the sender's id." },
         { "OnAnimationEvent", nullptr, "Callbacks", "function OnAnimationEvent(name)", "Called when the playing clip crosses an animation event (Timeline panel)." },
 
@@ -539,12 +785,46 @@ namespace Phoenix{
         { "GetAnimationName",     l_GetAnimationName,     "Animation", "GetAnimationName() -> name", "Name of the current clip." },
         { "HasAnimation",         l_HasAnimation,         "Animation", "HasAnimation(clip) -> bool", "Whether the model has a clip with this index or name." },
 
-        { "ApplyImpulse",       l_ApplyImpulse,       "Physics", "ApplyImpulse(x, y, z)", "Instant change of momentum (needs a Rigid Body, while playing)." },
-        { "ApplyForce",         l_ApplyForce,         "Physics", "ApplyForce(x, y, z)", "Continuous force for this step." },
-        { "SetVelocity",        l_SetVelocity,        "Physics", "SetVelocity(x, y, z)", "Sets the linear velocity." },
-        { "GetVelocity",        l_GetVelocity,        "Physics", "GetVelocity() -> x, y, z", "Current linear velocity." },
-        { "SetAngularVelocity", l_SetAngularVelocity, "Physics", "SetAngularVelocity(x, y, z)", "Sets the spin (radians/second)." },
-        { "RayCast",            l_RayCast,            "Physics", "RayCast(ox, oy, oz, dx, dy, dz, maxDist) -> tag, hx, hy, hz, id", "Casts a ray; returns the hit entity's tag, point and id, or nil." },
+        { "ApplyImpulse",        l_ApplyImpulse,        "Physics", "ApplyImpulse(x, y, z)", "Instant change of momentum at the centre of mass (needs a Rigid Body, while playing)." },
+        { "ApplyImpulseAtPoint", l_ApplyImpulseAtPoint, "Physics", "ApplyImpulseAtPoint(x, y, z, px, py, pz)", "Impulse at a world point (also spins the body)." },
+        { "ApplyAngularImpulse", l_ApplyAngularImpulse, "Physics", "ApplyAngularImpulse(x, y, z)", "Instant change of angular momentum." },
+        { "ApplyForce",          l_ApplyForce,          "Physics", "ApplyForce(x, y, z)", "Continuous force for this step." },
+        { "ApplyForceAtPoint",   l_ApplyForceAtPoint,   "Physics", "ApplyForceAtPoint(x, y, z, px, py, pz)", "Force at a world point for this step." },
+        { "ApplyTorque",         l_ApplyTorque,         "Physics", "ApplyTorque(x, y, z)", "Torque (N m) for this step." },
+        { "SetVelocity",         l_SetVelocity,         "Physics", "SetVelocity(x, y, z)", "Sets the linear velocity." },
+        { "GetVelocity",         l_GetVelocity,         "Physics", "GetVelocity() -> x, y, z", "Current linear velocity." },
+        { "SetAngularVelocity",  l_SetAngularVelocity,  "Physics", "SetAngularVelocity(x, y, z)", "Sets the spin (radians/second)." },
+        { "GetAngularVelocity",  l_GetAngularVelocity,  "Physics", "GetAngularVelocity() -> x, y, z", "Current spin (radians/second)." },
+        { "GetMass",             l_GetMass,             "Physics", "GetMass() -> kg", "Mass of a dynamic body (0 otherwise)." },
+        { "SetGravityFactor",    l_SetGravityFactor,    "Physics", "SetGravityFactor(factor)", "0 floats, 1 normal, >1 falls faster." },
+        { "SetFriction",         l_SetFriction,         "Physics", "SetFriction(value)", "Surface friction." },
+        { "SetRestitution",      l_SetRestitution,      "Physics", "SetRestitution(value)", "Bounciness (0 dead .. 1 superball)." },
+        { "WakeUp",              l_WakeUp,              "Physics", "WakeUp()", "Wakes a sleeping body." },
+        { "IsSleeping",          l_IsSleeping,          "Physics", "IsSleeping() -> bool", "True while the body is asleep (at rest)." },
+        { "Teleport",            l_Teleport,            "Physics", "Teleport(x, y, z [, rx, ry, rz])", "Moves the entity and its body/character (SetTranslation on a dynamic body is overwritten by the simulation)." },
+        { "RayCast",             l_RayCast,             "Physics", "RayCast(ox, oy, oz, dx, dy, dz, maxDist [, layerMask]) -> tag, hx, hy, hz, id, nx, ny, nz, dist", "First body along the ray (never the caller or sensors), or nil." },
+        { "SphereCast",          l_SphereCast,          "Physics", "SphereCast(ox, oy, oz, dx, dy, dz, radius, maxDist [, layerMask]) -> same as RayCast", "Sweeps a sphere along the ray." },
+        { "OverlapSphere",       l_OverlapSphere,       "Physics", "OverlapSphere(x, y, z, r [, layerMask]) -> { tags }", "Tags of the bodies inside a sphere." },
+        { "OverlapBox",          l_OverlapBox,          "Physics", "OverlapBox(x, y, z, hx, hy, hz [, layerMask]) -> { tags }", "Tags of the bodies inside an axis-aligned box." },
+
+        { "Move",       l_Move,       "Character", "Move(vx, vz)", "Desired horizontal velocity (m/s, world space) of the Character Controller until changed." },
+        { "Jump",       l_Jump,       "Character", "Jump([speed])", "Jumps on the next step if grounded." },
+        { "IsGrounded", l_IsGrounded, "Character", "IsGrounded() -> bool", "True while standing on something." },
+
+        { "SetMotor",       l_SetMotor,       "Joints", "SetMotor(mode, target [, joint])", "mode \"off\" | \"velocity\" | \"position\" for a hinge/slider joint (joint number is 1-based)." },
+        { "SetMotorTarget", l_SetMotorTarget, "Joints", "SetMotorTarget(target [, joint])", "Changes the motor's target velocity/position." },
+        { "GetJointValue",  l_GetJointValue,  "Joints", "GetJointValue([joint]) -> value", "Hinge angle (rad), slider position or distance (m)." },
+        { "BreakJoint",     l_BreakJoint,     "Joints", "BreakJoint([joint])", "Removes the joint." },
+        { "IsJointBroken",  l_IsJointBroken,  "Joints", "IsJointBroken([joint]) -> bool", "True once the joint has snapped or been broken." },
+        { "GetJointCount",  l_GetJointCount,  "Joints", "GetJointCount() -> n", "Number of joints on this entity." },
+
+        { "SetVehicleInput", l_SetVehicleInput, "Vehicle", "SetVehicleInput(forward, right [, brake, handbrake])", "forward/right in -1..1, brakes in 0..1; kept until changed." },
+        { "GetVehicleSpeed", l_GetVehicleSpeed, "Vehicle", "GetVehicleSpeed() -> m/s", "Speed along the car's forward axis." },
+        { "GetEngineRPM",    l_GetEngineRPM,    "Vehicle", "GetEngineRPM() -> rpm, gear", "Engine speed and current gear." },
+
+        { "SetRagdoll",     l_SetRagdoll,     "Ragdoll", "SetRagdoll(on)", "Go limp from the current pose, or back to animation." },
+        { "IsRagdoll",      l_IsRagdoll,      "Ragdoll", "IsRagdoll() -> bool", "True while ragdolling." },
+        { "RagdollImpulse", l_RagdollImpulse, "Ragdoll", "RagdollImpulse(vx, vy, vz)", "Velocity change for every ragdoll part (a hit, a blast)." },
 
         { "OnEpisodeBegin",      nullptr, "Callbacks", "function OnEpisodeBegin()", "RL agents: called when an episode starts; reset the agent and its goal here." },
         { "CollectObservations", nullptr, "Callbacks", "function CollectObservations()", "RL agents: called each decision step; report the state with AddObservation." },
@@ -587,9 +867,10 @@ namespace Phoenix{
             { "Space", Key::Space }, { "Enter", Key::Enter }, { "Escape", Key::Escape }, { "Tab", Key::Tab },
             { "LeftShift", Key::LeftShift }, { "RightShift", Key::RightShift },
             { "LeftControl", Key::LeftControl }, { "RightControl", Key::RightControl },
-            { "W", Key::W }, { "A", Key::A }, { "S", Key::S }, { "D", Key::D },
-            { "Q", Key::Q }, { "E", Key::E }, { "R", Key::R }, { "F", Key::F },
         };
+        static const char* letters[] = { "A","B","C","D","E","F","G","H","I","J","K","L","M",
+                                         "N","O","P","Q","R","S","T","U","V","W","X","Y","Z" };
+        for (int i = 0; i < 26; i++) { keys.push_back({ letters[i], Key::A + i }); }
         static const char* digits[] = { "0", "1", "2", "3", "4", "5", "6", "7", "8", "9" };
         for (int i = 0; i <= 9; i++) { keys.push_back({ digits[i], Key::D0 + i }); }
         return keys;
@@ -774,17 +1055,44 @@ namespace Phoenix{
         }
     }
 
-    void LuaScript::OnCollision(const std::string& otherTag, bool entered, Entity other){
+    bool LuaScript::PushCallback(const char* name){
+        lua_getglobal(m_L, name);
+        if (lua_isfunction(m_L, -1)) { return true; }
+        lua_pop(m_L, 1);
+        return false;
+    }
+
+    void LuaScript::OnCollision(const std::string& otherTag, bool entered, Entity other,
+                                const glm::vec3& point, const glm::vec3& normal, float speed){
         if (!m_Valid) { return; }
-        lua_getglobal(m_L, entered ? "OnCollisionEnter" : "OnCollisionExit");
-        if (lua_isfunction(m_L, -1)){
-            lua_pushstring(m_L, otherTag.c_str());
-            PushEntityId(m_L, other);
-            ProtectedCall(2, entered ? "OnCollisionEnter" : "OnCollisionExit");
+        const char* name = entered ? "OnCollisionEnter" : "OnCollisionExit";
+        if (!PushCallback(name)) { return; }
+        lua_pushstring(m_L, otherTag.c_str());
+        PushEntityId(m_L, other);
+        if (!entered) { ProtectedCall(2, name); return; }
+        PushVec3(m_L, point);
+        PushVec3(m_L, normal);
+        lua_pushnumber(m_L, speed);
+        ProtectedCall(9, name);
+    }
+
+    void LuaScript::OnTrigger(const std::string& otherTag, bool entered, Entity other){
+        if (!m_Valid) { return; }
+        const char* name = entered ? "OnTriggerEnter" : "OnTriggerExit";
+        // Scripts written before triggers existed handle them in OnCollisionEnter/Exit.
+        if (!PushCallback(name)){
+            name = entered ? "OnCollisionEnter" : "OnCollisionExit";
+            if (!PushCallback(name)) { return; }
         }
-        else{
-            lua_pop(m_L, 1);
-        }
+        lua_pushstring(m_L, otherTag.c_str());
+        PushEntityId(m_L, other);
+        ProtectedCall(2, name);
+    }
+
+    void LuaScript::OnJointBreak(const std::string& otherTag){
+        if (!m_Valid || !PushCallback("OnJointBreak")) { return; }
+        lua_pushstring(m_L, otherTag.c_str());
+        ProtectedCall(1, "OnJointBreak");
     }
 
     void LuaScript::OnMessage(const std::string& name, const std::vector<ScriptValue>& args, Entity sender){

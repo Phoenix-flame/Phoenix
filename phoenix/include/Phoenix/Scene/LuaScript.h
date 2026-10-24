@@ -2,6 +2,7 @@
 #include <Phoenix/core/base.h>
 #include <Phoenix/Scene/Entity.h>
 #include <Phoenix/Scene/Scene.h>
+#include <glm/glm.hpp>
 #include <string>
 #include <vector>
 #include <unordered_set>
@@ -42,9 +43,18 @@ namespace Phoenix{
         // Calls the script's global OnAnimationEvent(name) if defined (fired by the Scene
         // when an animation event time is crossed).
         void OnAnimationEvent(const std::string& name);
-        // Calls the script's global OnCollisionEnter(otherTag) / OnCollisionExit(otherTag)
-        // if defined (fired by the Scene when this entity's body starts/stops touching).
-        void OnCollision(const std::string& otherTag, bool entered, Entity other = {});
+        // Calls the script's global OnCollisionEnter(otherTag, otherId, px,py,pz, nx,ny,nz, speed)
+        // / OnCollisionExit(otherTag, otherId) if defined (fired by the Scene when this
+        // entity's body starts/stops touching another). The normal points from this
+        // entity towards the other one; speed is the impact speed along it (m/s).
+        void OnCollision(const std::string& otherTag, bool entered, Entity other,
+                         const glm::vec3& point = glm::vec3(0.0f), const glm::vec3& normal = glm::vec3(0.0f),
+                         float speed = 0.0f);
+        // Calls OnTriggerEnter(otherTag, otherId) / OnTriggerExit(otherTag, otherId) when a
+        // sensor is involved (falls back to OnCollisionEnter/Exit for older scripts).
+        void OnTrigger(const std::string& otherTag, bool entered, Entity other);
+        // Calls OnJointBreak(otherTag) when a breakable joint on/to this entity snaps.
+        void OnJointBreak(const std::string& otherTag);
         // Calls the script's global OnMessage(name, args..., senderId) if defined
         // (another script used Send(id, name, ...)).
         void OnMessage(const std::string& name, const std::vector<ScriptValue>& args, Entity sender);
@@ -93,6 +103,8 @@ namespace Phoenix{
         bool ProtectedCall(int nargs, const char* what, int nresults = 0);
         // Records the error, logs it to the scene's script console and stops the script.
         void Fail(const char* what, const std::string& error);
+        // Pushes the named global if it is a function (returns true), else pushes nothing.
+        bool PushCallback(const char* name);
         // Count hook: aborts a call that runs past the instruction budget, so an
         // infinite loop in a script can't freeze the editor.
         static void InstructionHook(lua_State* L, lua_Debug* ar);
