@@ -2511,6 +2511,11 @@ void MainLayer::BuildSponzaShowcase() {
         dl.shadow.softness = 0.6f;
     }
 
+    // A gradient sky (with the sun disc) through the open roof.
+    m_Scene->Sky().mode = SkySettings::Mode::Gradient;
+    m_Scene->Sky().zenith = glm::vec3(0.22f, 0.45f, 0.85f);
+    m_Scene->Sky().horizon = glm::vec3(0.70f, 0.78f, 0.88f);
+
     // Eye level at the east end, looking down the atrium toward the lion relief, as in the
     // classic screenshots; orbiting swings around the middle of the atrium. Press Play to
     // fly through it (free flight).
@@ -2931,7 +2936,7 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
         // Render the scene to the HDR target, then bloom + composite into m_Framebuffer.
         m_Bloom.Resize((uint32_t)m_ViewportSize.x, (uint32_t)m_ViewportSize.y, (uint32_t)m_MSAASamples);
         m_Bloom.BindHDRTarget();
-        Phoenix::RenderCommand::SetClearColor(glm::vec4(Phoenix::Renderer::ToLinear(m_BackgroundColor), 1.0));
+        Phoenix::RenderCommand::SetClearColor(glm::vec4(Phoenix::Renderer::ToLinear(m_Scene->Sky().color), 1.0));
         Phoenix::RenderCommand::Clear();
         {
             PHX_PROFILE("Scene Update");
@@ -2942,7 +2947,7 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
     }
     else{
         m_Framebuffer->Bind();
-        Phoenix::RenderCommand::SetClearColor(glm::vec4(m_BackgroundColor, 1.0));
+        Phoenix::RenderCommand::SetClearColor(glm::vec4(m_Scene->Sky().color, 1.0));
         Phoenix::RenderCommand::Clear();
         {
             PHX_PROFILE("Scene Update");
@@ -3757,7 +3762,48 @@ void MainLayer::DrawSettingsPanel(){
     }
 
     if (ImGui::CollapsingHeader("Environment", ImGuiTreeNodeFlags_DefaultOpen)){
-        ImGui::ColorEdit3("Background", glm::value_ptr(m_BackgroundColor));
+        SkySettings& sky = m_Scene->Sky();
+        const char* modes[] = { "Color", "Gradient Sky", "Panorama" };
+        int mode = (int)sky.mode;
+        if (ImGui::Combo("Background", &mode, modes, IM_ARRAYSIZE(modes)))
+            sky.mode = (SkySettings::Mode)mode;
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("What fills the view behind the scene. Reflective materials and water\n"
+                              "mirror the panorama in Panorama mode, else the gradient.");
+        if (sky.mode == SkySettings::Mode::Color){
+            ImGui::ColorEdit3("Color", glm::value_ptr(sky.color));
+        }
+        if (sky.mode == SkySettings::Mode::Gradient || sky.mode == SkySettings::Mode::Color){
+            // In Color mode the gradient still feeds reflections.
+            ImGui::ColorEdit3("Zenith", glm::value_ptr(sky.zenith));
+            ImGui::ColorEdit3("Horizon", glm::value_ptr(sky.horizon));
+            ImGui::ColorEdit3("Ground", glm::value_ptr(sky.ground));
+        }
+        if (sky.mode == SkySettings::Mode::Gradient){
+            ImGui::Checkbox("Sun Disc", &sky.sunDisc);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Drawn where the first directional light shines from, in its colour.");
+            if (sky.sunDisc)
+                ImGui::SliderFloat("Sun Size", &sky.sunSize, 0.2f, 8.0f, "%.1f deg");
+        }
+        if (sky.mode == SkySettings::Mode::Panorama){
+            char path[512];
+            std::snprintf(path, sizeof(path), "%s", sky.panorama.c_str());
+            ImGui::PushItemWidth(-130.0f - 34.0f);
+            if (ImGui::InputText("##Panorama", path, sizeof(path)))
+                sky.panorama = path;
+            ImGui::PopItemWidth();
+            ImGui::SameLine(0.0f, 4.0f);
+            if (ImGui::Button("...", ImVec2(30.0f, 0.0f))) { m_OpenSkyPanorama = true; }
+            ImGui::SameLine();
+            ImGui::TextUnformatted("Image");
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Equirectangular (2:1) panorama: .jpg, .png or .hdr.\nRelative paths start at the executable.");
+            ImGui::SliderFloat("Rotation", &sky.rotation, -180.0f, 180.0f, "%.0f deg");
+        }
+        if (sky.mode != SkySettings::Mode::Color)
+            ImGui::DragFloat("Sky Intensity", &sky.intensity, 0.01f, 0.0f, 8.0f, "%.2f");
+        ImGui::Spacing();
         ImGui::ColorEdit3("Ambient Light", glm::value_ptr(m_Scene->AmbientColor()));
         ImGui::Spacing();
     }
@@ -3907,6 +3953,7 @@ void MainLayer::DrawShaderLibraryPanel(){
 void MainLayer::DrawHelpPopups(){
     // Opened from the menus / shortcuts via flags: OpenPopup must run in this ID scope.
     if (m_OpenImportShader){ ImGui::OpenPopup("Import Shader"); m_OpenImportShader = false; }
+    if (m_OpenSkyPanorama) { ImGui::OpenPopup("Open Sky Panorama"); m_OpenSkyPanorama = false; }
     if (m_OpenShortcuts)   { ImGui::OpenPopup("Keyboard Shortcuts"); m_OpenShortcuts = false; }
     if (m_OpenAbout)       { ImGui::OpenPopup("About Phoenix"); m_OpenAbout = false; }
     if (m_OpenGuide)       { ImGui::OpenPopup("AI Sandbox Guide"); m_OpenGuide = false; }
@@ -3914,6 +3961,12 @@ void MainLayer::DrawHelpPopups(){
     if (file_dialog.showFileDialog("Import Shader", imgui_addons::ImGuiFileBrowser::DialogMode::OPEN, ImVec2(700, 310), ".glsl"))
     {
         m_ShaderLibrary->Add(Shader::Create(file_dialog.selected_path));
+    }
+    if (file_dialog.showFileDialog("Open Sky Panorama", imgui_addons::ImGuiFileBrowser::DialogMode::OPEN, ImVec2(700, 310),
+            ".jpg,.jpeg,.png,.hdr,.tga"))
+    {
+        m_Scene->Sky().panorama = file_dialog.selected_path;
+        m_Scene->Sky().mode = SkySettings::Mode::Panorama;
     }
 
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();

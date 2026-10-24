@@ -124,9 +124,7 @@ uniform vec3 cameraPos;
 uniform Material material;
 
 // Linear lighting (Renderer::SetLinearLighting): colour uniforms and diffuse maps arrive
-// already linear; the constants authored in this file are sRGB and get converted here.
-uniform bool u_LinearLighting;
-vec3 SrgbToLinear(vec3 c) { return u_LinearLighting ? pow(c, vec3(2.2)) : c; }
+// already linear.
 
 // Global ambient light, applied to every fragment regardless of light sources.
 uniform vec3 u_Ambient;
@@ -174,15 +172,26 @@ vec3 PerturbNormal(vec3 N, vec2 uv)
     return normalize(TBN * mapN);
 }
 
-// Procedural environment: a sky gradient above the horizon, dim ground below.
+// The scene's sky (Renderer::SetSky), mirrored by reflections: its panorama in Panorama
+// mode, else its gradient. Colours arrive already linear when linear lighting is on.
+uniform vec3 u_SkyZenith;
+uniform vec3 u_SkyHorizon;
+uniform vec3 u_SkyGround;
+uniform float u_SkyIntensity;
+uniform sampler2D u_SkyPanorama;
+uniform bool u_SkyHasPanorama;
+uniform float u_SkyRotation; // radians
+
 vec3 SampleEnvironment(vec3 dir)
 {
+    if (u_SkyHasPanorama){
+        float u = atan(dir.x, -dir.z) / 6.2831853 + 0.5 + u_SkyRotation / 6.2831853;
+        float v = asin(clamp(dir.y, -1.0, 1.0)) / 3.14159265 + 0.5;
+        return textureLod(u_SkyPanorama, vec2(u, v), 0.0).rgb * u_SkyIntensity;
+    }
     float t = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
-    vec3 horizon = vec3(0.55, 0.60, 0.70);
-    vec3 zenith  = vec3(0.15, 0.35, 0.75);
-    vec3 ground  = vec3(0.10, 0.10, 0.12);
-    vec3 sky = mix(horizon, zenith, smoothstep(0.5, 1.0, t));
-    return SrgbToLinear(mix(ground, sky, smoothstep(0.45, 0.55, t)));
+    vec3 sky = mix(u_SkyHorizon, u_SkyZenith, smoothstep(0.5, 1.0, t));
+    return mix(u_SkyGround, sky, smoothstep(0.45, 0.55, t)) * u_SkyIntensity;
 }
 
 // ---- Soft shadows (PCSS) ------------------------------------------------------------

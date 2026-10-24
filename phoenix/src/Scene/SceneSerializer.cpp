@@ -32,6 +32,38 @@ namespace Phoenix{
         sim.gravity = (node && node["Gravity"]) ? ReadVec3(node["Gravity"], def.gravity) : def.gravity;
     }
 
+    static void WriteSky(YAML::Emitter& out, const SkySettings& sky){
+        out << YAML::Key << "Sky" << YAML::Value << YAML::BeginMap;
+        out << YAML::Key << "Mode" << YAML::Value << (int)sky.mode;
+        out << YAML::Key << "Color" << YAML::Value << sky.color;
+        out << YAML::Key << "Zenith" << YAML::Value << sky.zenith;
+        out << YAML::Key << "Horizon" << YAML::Value << sky.horizon;
+        out << YAML::Key << "Ground" << YAML::Value << sky.ground;
+        out << YAML::Key << "SunDisc" << YAML::Value << sky.sunDisc;
+        out << YAML::Key << "SunSize" << YAML::Value << sky.sunSize;
+        out << YAML::Key << "Panorama" << YAML::Value << sky.panorama;
+        out << YAML::Key << "Rotation" << YAML::Value << sky.rotation;
+        out << YAML::Key << "Intensity" << YAML::Value << sky.intensity;
+        out << YAML::EndMap;
+    }
+
+    // Missing (older scenes) -> defaults: a black backdrop, as before skies existed.
+    static void ReadSky(const YAML::Node& node, SkySettings& sky){
+        const SkySettings def{};
+        sky = def;
+        if (!node) { return; }
+        sky.mode = (SkySettings::Mode)std::clamp(node["Mode"].as<int>((int)def.mode), 0, 2);
+        if (node["Color"])   sky.color = ReadVec3(node["Color"], def.color);
+        if (node["Zenith"])  sky.zenith = ReadVec3(node["Zenith"], def.zenith);
+        if (node["Horizon"]) sky.horizon = ReadVec3(node["Horizon"], def.horizon);
+        if (node["Ground"])  sky.ground = ReadVec3(node["Ground"], def.ground);
+        sky.sunDisc = node["SunDisc"].as<bool>(def.sunDisc);
+        sky.sunSize = node["SunSize"].as<float>(def.sunSize);
+        sky.panorama = node["Panorama"].as<std::string>(def.panorama);
+        sky.rotation = node["Rotation"].as<float>(def.rotation);
+        sky.intensity = node["Intensity"].as<float>(def.intensity);
+    }
+
     static void WriteBool3(YAML::Emitter& out, const bool v[3]){
         out << YAML::Flow << YAML::BeginSeq << v[0] << v[1] << v[2] << YAML::EndSeq;
     }
@@ -616,6 +648,7 @@ namespace Phoenix{
         out << YAML::BeginMap;
         out << YAML::Key << "Scene" << YAML::Value << "Untitled";
         out << YAML::Key << "Ambient" << YAML::Value << m_Scene->AmbientColor();
+        WriteSky(out, m_Scene->Sky());
         out << YAML::Key << "Simulation" << YAML::Value << YAML::BeginMap;
         out << YAML::Key << "FixedTimestep" << YAML::Value << m_Scene->Simulation().fixedTimestep;
         out << YAML::Key << "Seed" << YAML::Value << m_Scene->Simulation().seed;
@@ -1118,6 +1151,7 @@ namespace Phoenix{
         }
 
         if (data["Ambient"]) m_Scene->AmbientColor() = ReadVec3(data["Ambient"]);
+        ReadSky(data["Sky"], m_Scene->Sky());
         ReadSimulation(data["Simulation"], m_Scene->Simulation());
         ReadPhysicsSettings(data["Physics"], m_Scene->PhysicsSettings(), data["Simulation"] ? nullptr : &m_Scene->Simulation());
 
@@ -1149,6 +1183,7 @@ namespace Phoenix{
         }
 
         if (root["Ambient"]) m_Scene->AmbientColor() = ReadVec3(root["Ambient"]);
+        ReadSky(root["Sky"], m_Scene->Sky());
         ReadSimulation(root["Simulation"], m_Scene->Simulation());
         ReadPhysicsSettings(root["Physics"], m_Scene->PhysicsSettings(), root["Simulation"] ? nullptr : &m_Scene->Simulation());
 

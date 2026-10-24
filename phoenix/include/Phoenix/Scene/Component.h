@@ -11,6 +11,7 @@
 #include <Phoenix/renderer/Mesh.h>
 #include <Phoenix/renderer/WaterRipples.h>
 #include <Phoenix/Scene/ScriptableEntity.h>
+#include <Phoenix/Scene/Sky.h>
 #include <string>
 #include <vector>
 namespace Phoenix{

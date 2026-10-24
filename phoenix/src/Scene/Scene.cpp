@@ -1696,8 +1696,11 @@ namespace Phoenix{
 
         {
             PHX_PROFILE("Scene Components");
+            // The sun disc sits where the first directional light shines from.
+            Renderer::SetSky(m_Sky, numDirLights > 0, -lightDir, numDirLights > 0 ? dirLightComp[0].diffuse : glm::vec3(0.0f));
             Renderer::BeginScene(sceneCameraProjection, sceneCameraView, cameraPos);
             Renderer::SetLights(m_AmbientColor, dirLightComp, dirLightDir, numDirLights, pLightComponent, pointLightPos, numPointLight);
+            Renderer::DrawSky();
             auto view = m_Registry.view<CubeComponent, TransformComponent>();
             for (auto entity : view) {
                 auto cube = view.get<CubeComponent>(entity);

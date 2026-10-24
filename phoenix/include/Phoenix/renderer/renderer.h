@@ -265,6 +265,14 @@ namespace Phoenix{
 			uint32_t rippleTexture = 0; // R32F heightfield; 0 = no dynamic ripples
 		};
 
+		// The scene's sky, before BeginScene: lit materials and water reflect it, and
+		// DrawSky paints it behind the scene. sunDir points towards the sun (the disc);
+		// hasSun false hides the disc.
+		static void SetSky(const SkySettings& sky, bool hasSun, const glm::vec3& sunDir, const glm::vec3& sunColor);
+		// Fill the background with the sky (Gradient / Panorama modes; Color mode is the
+		// clear colour). Call right after BeginScene, before any geometry.
+		static void DrawSky();
+
 		// Draw an animated transparent water surface (flat grid displaced in the shader).
 		// Call after the opaque scene; uses the camera state from the last BeginScene.
 		static void SubmitWater(const Ref<VertexArray>& vertexArray, const glm::mat4& transform,
@@ -328,5 +336,13 @@ namespace Phoenix{
         static int s_PrevFBO;
         static int s_PrevViewport[4];
         static bool s_LinearLighting;
+
+        static void BindSkyUniforms(const Ref<Shader>& shader);
+        static Ref<Shader> s_SkyShader;
+        static uint32_t s_SkyVAO; // empty: the sky triangle comes from gl_VertexID
+        static SkySettings s_Sky;
+        static Ref<Texture2D> s_SkyPanorama; // null unless Panorama mode with a loadable image
+        static bool s_HasSun;
+        static glm::vec3 s_SunDir, s_SunColor;
 	};
 }

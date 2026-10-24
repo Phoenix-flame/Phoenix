@@ -136,7 +136,6 @@ private:
     bool m_ViewportFocused = false, m_ViewportHovered = false;
     glm::vec2 m_ViewportSize = { 0.0f, 0.0f };
     
-    glm::vec3 m_BackgroundColor = { 0.0, 0.0, 0.0 };
     EditorCamera m_MainCamera;
     Ref<Phoenix::SceneEditor> m_SceneEditor;
     Ref<Phoenix::Scene> m_Scene;
@@ -168,6 +167,7 @@ private:
     bool m_ShowProfiler = true;
     bool m_ShowShaderLibrary = true;
     bool m_OpenImportShader = false;
+    bool m_OpenSkyPanorama = false;
     bool m_OpenShortcuts = false;
     bool m_OpenAbout = false;
 

@@ -20,6 +20,7 @@ Gymnasium-compatible API. Phoenix provides the environment; the learning algorit
   - [Entity Component System](#entity-component-system)
   - [Rendering](#rendering)
   - [Lighting & Shadows](#lighting--shadows)
+  - [Sky & Background](#sky--background)
   - [Post-Processing (Bloom / Glow)](#post-processing-bloom--glow)
   - [Linear Lighting (sRGB)](#linear-lighting-srgb)
   - [Mesh Loading](#mesh-loading)
@@ -313,6 +314,22 @@ for (int face = 0; face < 6; face++){                          // point light j
     Renderer::EndShadowPass();
 }
 ```
+
+### Sky & Background
+
+Each scene has a **sky** ([`Sky.h`](phoenix/include/Phoenix/Scene/Sky.h),
+[`sky.glsl`](phoenix/assets/shaders/sky.glsl)), saved with the scene and edited under
+*Settings → Environment*:
+
+- **Color**: a flat backdrop (the default, black).
+- **Gradient Sky**: zenith / horizon / ground colours plus a glowing **sun disc** placed
+  where the first directional light shines from, tinted by its colour (it blooms).
+- **Panorama**: any equirectangular (2:1) image, `.jpg`, `.png` or `.hdr`, with a
+  rotation and an intensity.
+
+The sky is a fullscreen pass drawn behind the scene, so it costs one triangle.
+Reflective materials and water mirror the same sky: the panorama in Panorama mode,
+otherwise the gradient. From code: `scene->Sky().mode = SkySettings::Mode::Gradient;`.
 
 ### Post-Processing (Bloom / Glow)
 
@@ -621,7 +638,7 @@ Open via **File → Showcases**:
 ![Contact-hardening sun shadows (left) and coloured point-light shadows (right)](images/soft-shadows.png)
 - **Sponza** — the Crytek Sponza atrium (glTF: 262k triangles, 69 textures) with
   normal-mapped stone, cloth banners and alpha-tested foliage, sunlit through the open
-  roof with soft shadows. Press **Play** to fly through it: free flight is on, so **WASD**
+  roof with soft shadows under a gradient sky. Press **Play** to fly through it: free flight is on, so **WASD**
   flies, **E / Space** rises, **Q** sinks, hold the **right mouse** button to look,
   **Shift** goes 4x faster and the wheel sets the speed. The paper-plane button in the
   viewport tool strip (or *View → Free Flight*) turns free flight on for any scene that
