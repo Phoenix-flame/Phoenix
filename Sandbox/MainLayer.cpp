@@ -1,4 +1,7 @@
 #include "MainLayer.h"
+#include <Phoenix/Compute/Compute.h>
+#include <Phoenix/renderer/WaterRipples.h>
+#include <Phoenix/Scene/TerrainGenerator.h>
 #include <Phoenix/Scene/PhysicsPrefabs.h>
 
 #include <Phoenix/core/base.h>
@@ -3681,23 +3684,45 @@ void MainLayer::DrawSettingsPanel(){
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("Seeds episode randomization (spawn randomizers, random policies). 0 = different every run.");
         ImGui::EndDisabled();
+        ImGui::Spacing();
+    }
 
-        ImGui::BeginDisabled(!Phoenix::RayBatchCaster::OpenCLCompiled());
-        ImGui::Checkbox("GPU Ray Sensors", &m_GpuRaySensors);
-        ImGui::EndDisabled();
+    // OpenCL offloads. Each has a CPU path with identical results, so these trade
+    // speed only; they are off by default and only kick in for large enough work.
+    if (ImGui::CollapsingHeader("OpenCL")){
+        const bool compiled = Phoenix::Compute::Compiled();
+        if (compiled && !m_ComputeStatusQueried){
+            // Setting up the device can take a moment: only once the section is opened.
+            Phoenix::Compute::Available();
+            m_ComputeStatusQueried = true;
+        }
+        ImGui::TextDisabled("Device: %s", compiled ? Phoenix::Compute::Status().c_str() : "none (build with -DPHOENIX_OPENCL=ON)");
+        ImGui::BeginDisabled(!compiled);
+        ImGui::Checkbox("Ray Sensors", &m_GpuRaySensors);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip(Phoenix::RayBatchCaster::OpenCLCompiled()
-                ? "Cast Ray Sensors on an OpenCL device, batched over all agents: Reward Zones, and\n"
-                  "physics bodies with box/sphere/capsule/cylinder shapes (mirrored from Jolt, which\n"
-                  "keeps meshes and hulls). Pays off with many agents, rays and shapes; small batches,\n"
-                  "or machines without a device, run the same casts on the CPU with the same results.\n"
-                  "Distances to bodies can differ from Jolt's in the last float bits."
-                : "Needs an engine built with -DPHOENIX_OPENCL=ON.");
+            ImGui::SetTooltip("Cast Ray Sensors in one batch over all agents: Reward Zones, and physics bodies\n"
+                              "with box/sphere/capsule/cylinder shapes (mirrored from Jolt, which keeps meshes\n"
+                              "and hulls). Pays off with many agents, rays and shapes; small batches, or machines\n"
+                              "without a device, run the same casts on the CPU with the same results.\n"
+                              "Distances to bodies can differ from Jolt's in the last float bits.");
         if (m_GpuRaySensors && m_Environment){
             const auto& caster = m_Environment->RayCaster();
-            ImGui::TextDisabled("%s; last batch: %zu rays, %zu mirrored shapes, on the %s", caster.Status().c_str(),
+            ImGui::TextDisabled("  last batch: %zu rays, %zu mirrored shapes, on the %s",
                 m_Environment->LastRayBatch(), m_Environment->LastMirroredShapes(), caster.LastCastOnDevice() ? "device" : "CPU");
         }
+        bool ripples = Phoenix::WaterRipples::UsesOpenCL();
+        if (ImGui::Checkbox("Water Ripples", &ripples)) { Phoenix::WaterRipples::SetUseOpenCL(ripples); }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Step ripple grids of %d x %d cells or more on the device (Water > Ripple\n"
+                              "Resolution). Smaller grids are faster on the CPU. Same waves either way.",
+                              Phoenix::WaterRipples::minDeviceResolution, Phoenix::WaterRipples::minDeviceResolution);
+        bool terrain = Phoenix::TerrainGenerator::UsesOpenCL();
+        if (ImGui::Checkbox("Terrain Generation", &terrain)) { Phoenix::TerrainGenerator::SetUseOpenCL(terrain); }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Generate noise terrain of %d x %d vertices or more on the device (Terrain >\n"
+                              "Generate, and per-episode randomization). Same heights either way.",
+                              Phoenix::TerrainGenerator::minDeviceResolution, Phoenix::TerrainGenerator::minDeviceResolution);
+        ImGui::EndDisabled();
         ImGui::Spacing();
     }
 

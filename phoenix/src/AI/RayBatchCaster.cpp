@@ -1,20 +1,9 @@
 #include <Phoenix/AI/RayBatchCaster.h>
+#include <Phoenix/Compute/Compute.h>
+#include "../Compute/ComputeCL.h"
+#include "../Compute/SharedSource.h"
 #include <algorithm>
-#include <cfloat>
-#include <cmath>
 #include <cstring>
-
-#ifdef PHOENIX_OPENCL
-#define CL_TARGET_OPENCL_VERSION 120
-#ifdef __APPLE__
-#include <OpenCL/opencl.h>
-#else
-#include <CL/cl.h>
-#endif
-#endif
-
-// Keep a * b + c as two roundings (as the kernel does), even where FMA is available.
-#pragma STDC FP_CONTRACT OFF
 
 namespace Phoenix{
 
@@ -25,16 +14,10 @@ namespace Phoenix{
     // Rays: origin xyz, delta xyz, then ignore and group index as int bits.
     static constexpr int RAY_FLOATS = 8;
 
-    static float phx_sqrt(float x) { return std::sqrt(x); }
-    static float phx_abs(float x) { return std::fabs(x); }
-
-    // The per-shape ray tests, compiled as C++ here and handed to OpenCL as source (the
-    // macro also stringifies them), so both backends run the same code. They stick to
-    // what C++ and OpenCL C share: floats, pointers to private memory, phx_sqrt/phx_abs
-    // and FLT_MAX. The Box/Sphere/Capsule/Cylinder tests follow Jolt's RayAABox,
-    // RaySphere, RayCapsule and RayCylinder, so mirrored bodies hit like Jolt's.
-#define PHX_RAY_SHARED(...) __VA_ARGS__ [[maybe_unused]] static const char* s_SharedSource = #__VA_ARGS__;
-    PHX_RAY_SHARED(
+    // The per-shape ray tests, shared with the kernel (see SharedSource.h). The
+    // Box/Sphere/Capsule/Cylinder tests follow Jolt's RayAABox, RaySphere, RayCapsule
+    // and RayCylinder, so mirrored bodies hit like Jolt's.
+    PHX_SHARED_SOURCE(s_SharedSource,
     static int phx_find_root(float a, float b, float c, float* x1, float* x2){
         if (a == 0.0f){
             if (b == 0.0f) { return 0; }
@@ -153,7 +136,6 @@ namespace Phoenix{
         return FLT_MAX;
     }
     )
-#undef PHX_RAY_SHARED
 
     static void PackShapes(const std::vector<RayBatchCaster::Shape>& shapes, std::vector<float>& out){
         out.resize(shapes.size() * SHAPE_FLOATS);
@@ -327,14 +309,8 @@ namespace Phoenix{
     }
 
 #ifdef PHOENIX_OPENCL
-    // One work-item per ray, looping over its group's candidate shapes; s_SharedSource sits between the
-    // prelude and the kernel. Contraction into FMA is off, as on the CPU.
-    static const char* s_KernelPrelude = R"CLC(
-#pragma OPENCL FP_CONTRACT OFF
-#define phx_sqrt(x) sqrt(x)
-#define phx_abs(x) fabs(x)
-)CLC";
-
+    // One work-item per ray, looping over its group's candidate shapes (built after
+    // s_SharedSource).
     static const char* s_KernelMain = R"CLC(
 __kernel void ray_batch(__global const float* shapes, __global const int* candidates,
                         __global const int* ranges, __global const float* rays, int rayCount,
@@ -365,8 +341,6 @@ __kernel void ray_batch(__global const float* shapes, __global const int* candid
 )CLC";
 
     struct RayBatchCaster::Device{
-        cl_context context = nullptr;
-        cl_command_queue queue = nullptr;
         cl_program program = nullptr;
         cl_kernel kernel = nullptr;
         cl_mem shapes = nullptr, candidates = nullptr, ranges = nullptr, rays = nullptr, outT = nullptr, outShape = nullptr;
@@ -378,73 +352,21 @@ __kernel void ray_batch(__global const float* shapes, __global const int* candid
             for (cl_mem m : { shapes, candidates, ranges, rays, outT, outShape }) { if (m) { clReleaseMemObject(m); } }
             if (kernel) { clReleaseKernel(kernel); }
             if (program) { clReleaseProgram(program); }
-            if (queue) { clReleaseCommandQueue(queue); }
-            if (context) { clReleaseContext(context); }
         }
 
-        // Grows a buffer to hold at least `count` elements (doubling, so it settles quickly).
-        bool Reserve(cl_mem& buffer, size_t& capacity, size_t count, size_t elementSize, cl_mem_flags flags){
-            if (buffer && capacity >= count) { return true; }
-            size_t size = std::max<size_t>(count, std::max<size_t>(64, capacity * 2));
-            if (buffer) { clReleaseMemObject(buffer); }
-            cl_int err;
-            buffer = clCreateBuffer(context, flags, size * elementSize, nullptr, &err);
-            capacity = buffer ? size : 0;
-            return err == CL_SUCCESS;
-        }
-
-        // Prefers a GPU, then any other device (a CPU runtime such as PoCL still works).
         bool Init(std::string& status){
-            cl_uint platformCount = 0;
-            if (clGetPlatformIDs(0, nullptr, &platformCount) != CL_SUCCESS || platformCount == 0){
-                status = "no OpenCL platform found";
-                return false;
-            }
-            std::vector<cl_platform_id> platforms(platformCount);
-            clGetPlatformIDs(platformCount, platforms.data(), nullptr);
-            cl_device_id device = nullptr;
-            for (cl_device_type type : { (cl_device_type)CL_DEVICE_TYPE_GPU, (cl_device_type)CL_DEVICE_TYPE_ALL }){
-                for (cl_platform_id p : platforms)
-                    if (clGetDeviceIDs(p, type, 1, &device, nullptr) == CL_SUCCESS) { break; }
-                if (device) { break; }
-            }
-            if (!device) { status = "no OpenCL device found"; return false; }
-
-            char name[256] = {};
-            clGetDeviceInfo(device, CL_DEVICE_NAME, sizeof(name) - 1, name, nullptr);
+            program = Compute::BuildProgram({ s_SharedSource, s_KernelMain }, status);
+            if (!program) { return false; }
             cl_int err;
-            context = clCreateContext(nullptr, 1, &device, nullptr, nullptr, &err);
-            if (err != CL_SUCCESS) { status = "clCreateContext failed (" + std::to_string(err) + ")"; return false; }
-            queue = clCreateCommandQueue(context, device, 0, &err);
-            if (err != CL_SUCCESS) { status = "clCreateCommandQueue failed (" + std::to_string(err) + ")"; return false; }
-            const char* sources[3] = { s_KernelPrelude, s_SharedSource, s_KernelMain };
-            program = clCreateProgramWithSource(context, 3, sources, nullptr, &err);
-            if (err != CL_SUCCESS) { status = "clCreateProgramWithSource failed (" + std::to_string(err) + ")"; return false; }
-
-            // Correctly rounded division and square root keep hits identical to the CPU.
-            cl_device_fp_config fp = 0;
-            clGetDeviceInfo(device, CL_DEVICE_SINGLE_FP_CONFIG, sizeof(fp), &fp, nullptr);
-            const char* options = (fp & CL_FP_CORRECTLY_ROUNDED_DIVIDE_SQRT) ? "-cl-fp32-correctly-rounded-divide-sqrt" : "";
-            if (clBuildProgram(program, 1, &device, options, nullptr, nullptr) != CL_SUCCESS){
-                size_t length = 0;
-                clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, 0, nullptr, &length);
-                std::string log(length, '\0');
-                clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, length, log.data(), nullptr);
-                status = "kernel build failed: " + log;
-                return false;
-            }
             kernel = clCreateKernel(program, "ray_batch", &err);
             if (err != CL_SUCCESS) { status = "clCreateKernel failed (" + std::to_string(err) + ")"; return false; }
-            status = name;
+            status = Compute::Status();
             return true;
         }
 
-        // Uploads a buffer, skipping empty ones (a zero-size write is an error).
-        cl_int Write(cl_mem buffer, const void* data, size_t bytes){
-            return bytes ? clEnqueueWriteBuffer(queue, buffer, CL_FALSE, 0, bytes, data, 0, nullptr, nullptr) : CL_SUCCESS;
-        }
-
         bool Cast(const Batch& b, size_t rayCount, float maxT, std::vector<Hit>& out){
+            using Compute::Reserve;
+            using Compute::Write;
             if (!Reserve(shapes, shapeCapacity, b.shapes.size(), sizeof(float), CL_MEM_READ_ONLY)
                 || !Reserve(candidates, candidateCapacity, b.candidates.size(), sizeof(int), CL_MEM_READ_ONLY)
                 || !Reserve(ranges, rangeCapacity, b.ranges.size(), sizeof(int), CL_MEM_READ_ONLY)
@@ -453,6 +375,7 @@ __kernel void ray_batch(__global const float* shapes, __global const int* candid
                 || !Reserve(outShape, shapeOutCapacity, rayCount, sizeof(int), CL_MEM_WRITE_ONLY)) { return false; }
 
             // In-order queue: the non-blocking writes finish before the kernel runs.
+            cl_command_queue queue = Compute::GetDevice()->queue;
             cl_int err = Write(shapes, b.shapes.data(), b.shapes.size() * sizeof(float));
             err |= Write(candidates, b.candidates.data(), b.candidates.size() * sizeof(int));
             err |= Write(ranges, b.ranges.data(), b.ranges.size() * sizeof(int));
@@ -466,8 +389,7 @@ __kernel void ray_batch(__global const float* shapes, __global const int* candid
             err |= clSetKernelArg(kernel, 5, sizeof(float), &maxT);
             err |= clSetKernelArg(kernel, 6, sizeof(cl_mem), &outT);
             err |= clSetKernelArg(kernel, 7, sizeof(cl_mem), &outShape);
-            const size_t local = 64, global = (rayCount + local - 1) / local * local;
-            err |= clEnqueueNDRangeKernel(queue, kernel, 1, nullptr, &global, &local, 0, nullptr, nullptr);
+            err |= Compute::Launch(kernel, rayCount);
             tData.resize(rayCount);
             shapeIndex.resize(rayCount);
             err |= clEnqueueReadBuffer(queue, outT, CL_FALSE, 0, rayCount * sizeof(float), tData.data(), 0, nullptr, nullptr);
@@ -487,13 +409,7 @@ __kernel void ray_batch(__global const float* shapes, __global const int* candid
         : m_Status("OpenCL off") {}
     RayBatchCaster::~RayBatchCaster() = default;
 
-    bool RayBatchCaster::OpenCLCompiled(){
-#ifdef PHOENIX_OPENCL
-        return true;
-#else
-        return false;
-#endif
-    }
+    bool RayBatchCaster::OpenCLCompiled() { return Compute::Compiled(); }
 
     bool RayBatchCaster::UsingOpenCL() const { return m_Device != nullptr; }
 
@@ -506,7 +422,7 @@ __kernel void ray_batch(__global const float* shapes, __global const int* candid
         m_Device = std::move(device);
         return true;
 #else
-        m_Status = "engine built without OpenCL (configure with -DPHOENIX_OPENCL=ON)";
+        m_Status = Compute::Status();
         return false;
 #endif
     }

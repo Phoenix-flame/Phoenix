@@ -337,6 +337,16 @@ namespace Phoenix{
             if (r.randomYaw) { t.Rotation.y = std::uniform_real_distribution<float>(0.0f, glm::two_pi<float>())(m_Rng); }
         }
 
+        // Terrains that randomize get a fresh landscape (and collider) every episode.
+        for (auto entity : registry.view<TerrainComponent>()){
+            auto& terrain = registry.get<TerrainComponent>(entity);
+            if (!terrain.randomizeEachEpisode) { continue; }
+            TerrainNoise noise = terrain.noise;
+            noise.seed = (uint32_t)m_Rng();
+            TerrainGenerator::Generate(terrain.resolution, terrain.size, noise, terrain.heights);
+            m_Scene->RebuildTerrainBody(entity);
+        }
+
         // Teleport the physics bodies to match and stop them.
         if (physics){
             auto bodies = registry.view<RigidBodyComponent, TransformComponent>();

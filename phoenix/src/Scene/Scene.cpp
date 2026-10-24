@@ -398,6 +398,38 @@ namespace Phoenix{
         rb.synced = rb.runtimeBodyID != PhysicsWorld::InvalidBody;
     }
 
+    void Scene::CreateTerrainBody(entt::entity entity){
+        auto& terrain = m_Registry.get<TerrainComponent>(entity);
+        if (!terrain.generateCollider) { return; }
+        if (terrain.dirty || !terrain.mesh){
+            terrain.mesh = BuildTerrainMesh(terrain);
+            terrain.dirty = false;
+        }
+        auto& transform = m_Registry.get<TransformComponent>(entity);
+        PhysicsWorld::ShapeDesc d;
+        d.type = PhysicsWorld::ShapeDesc::Type::TriangleMesh;
+        d.points.reserve(terrain.mesh->GetPositions().size());
+        for (const auto& p : terrain.mesh->GetPositions()) { d.points.push_back(p * transform.Scale); }
+        d.indices = terrain.mesh->GetIndices();
+        PhysicsWorld::BodyProps props;
+        props.friction = 0.8f;
+        terrain.runtimeBodyID = m_PhysicsWorld->CreateBody({ d }, transform.Translation, transform.Rotation,
+            PhysicsWorld::BodyType::Static, props);
+        if (terrain.runtimeBodyID != PhysicsWorld::InvalidBody) { m_BodyToEntity[terrain.runtimeBodyID] = entity; }
+    }
+
+    void Scene::RebuildTerrainBody(entt::entity entity){
+        if (!m_PhysicsWorld || !m_Registry.all_of<TerrainComponent, TransformComponent>(entity)) { return; }
+        auto& terrain = m_Registry.get<TerrainComponent>(entity);
+        if (terrain.runtimeBodyID != PhysicsWorld::InvalidBody){
+            m_PhysicsWorld->RemoveBody(terrain.runtimeBodyID);
+            m_BodyToEntity.erase(terrain.runtimeBodyID);
+            terrain.runtimeBodyID = PhysicsWorld::InvalidBody;
+        }
+        terrain.dirty = true;
+        CreateTerrainBody(entity);
+    }
+
     void Scene::OnRuntimeStart(){
         PhysicsWorld::Settings settings;
         settings.gravity = m_Simulation.gravity;
@@ -419,26 +451,9 @@ namespace Phoenix{
         for (auto entity : bodies) { CreateRuntimeBody(entity); }
 
         // Terrain: static triangle-mesh collider from the heightfield.
-        auto terrainView = m_Registry.view<TerrainComponent, TransformComponent>();
-        for (auto entity : terrainView){
-            auto& terrain = terrainView.get<TerrainComponent>(entity);
-            if (!terrain.generateCollider) { continue; }
-            if (terrain.dirty || !terrain.mesh){
-                terrain.mesh = BuildTerrainMesh(terrain);
-                terrain.dirty = false;
-            }
-            auto& transform = terrainView.get<TransformComponent>(entity);
-            PhysicsWorld::ShapeDesc d;
-            d.type = PhysicsWorld::ShapeDesc::Type::TriangleMesh;
-            d.points.reserve(terrain.mesh->GetPositions().size());
-            for (const auto& p : terrain.mesh->GetPositions()) { d.points.push_back(p * transform.Scale); }
-            d.indices = terrain.mesh->GetIndices();
-            PhysicsWorld::BodyProps props;
-            props.friction = 0.8f;
-            terrain.runtimeBodyID = m_PhysicsWorld->CreateBody({ d }, transform.Translation, transform.Rotation,
-                PhysicsWorld::BodyType::Static, props);
-            if (terrain.runtimeBodyID != PhysicsWorld::InvalidBody) { m_BodyToEntity[terrain.runtimeBodyID] = entity; }
-        }
+        std::vector<entt::entity> terrains;
+        for (auto entity : m_Registry.view<TerrainComponent, TransformComponent>()) { terrains.push_back(entity); }
+        for (auto entity : terrains) { CreateTerrainBody(entity); }
 
         // Characters: kinematic capsules driven by input, not by the solver.
         auto characterView = m_Registry.view<CharacterControllerComponent, TransformComponent>();

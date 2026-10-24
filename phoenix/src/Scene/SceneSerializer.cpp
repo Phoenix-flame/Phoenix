@@ -477,6 +477,16 @@ namespace Phoenix{
             out << YAML::Key << "Resolution" << YAML::Value << t.resolution;
             out << YAML::Key << "Size" << YAML::Value << t.size;
             out << YAML::Key << "GenerateCollider" << YAML::Value << t.generateCollider;
+            out << YAML::Key << "Noise" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "Seed" << YAML::Value << t.noise.seed;
+            out << YAML::Key << "Frequency" << YAML::Value << t.noise.frequency;
+            out << YAML::Key << "Octaves" << YAML::Value << t.noise.octaves;
+            out << YAML::Key << "Height" << YAML::Value << t.noise.height;
+            out << YAML::Key << "Persistence" << YAML::Value << t.noise.persistence;
+            out << YAML::Key << "Lacunarity" << YAML::Value << t.noise.lacunarity;
+            out << YAML::Key << "Ridged" << YAML::Value << t.noise.ridged;
+            out << YAML::EndMap;
+            out << YAML::Key << "RandomizeEachEpisode" << YAML::Value << t.randomizeEachEpisode;
             SerializeMaterial(out, t.material);
             out << YAML::Key << "Heights" << YAML::Value << YAML::Flow << YAML::BeginSeq;
             for (float h : t.heights) { out << h; }
@@ -951,6 +961,17 @@ namespace Phoenix{
             t.resolution = n["Resolution"].as<int>(def.resolution);
             t.size = n["Size"].as<float>(def.size);
             t.generateCollider = n["GenerateCollider"].as<bool>(def.generateCollider);
+            t.noise = def.noise;
+            if (const YAML::Node noise = n["Noise"]){   // absent in older scene files
+                t.noise.seed = noise["Seed"].as<uint32_t>(def.noise.seed);
+                t.noise.frequency = noise["Frequency"].as<float>(def.noise.frequency);
+                t.noise.octaves = noise["Octaves"].as<int>(def.noise.octaves);
+                t.noise.height = noise["Height"].as<float>(def.noise.height);
+                t.noise.persistence = noise["Persistence"].as<float>(def.noise.persistence);
+                t.noise.lacunarity = noise["Lacunarity"].as<float>(def.noise.lacunarity);
+                t.noise.ridged = noise["Ridged"].as<float>(def.noise.ridged);
+            }
+            t.randomizeEachEpisode = n["RandomizeEachEpisode"].as<bool>(def.randomizeEachEpisode);
             t.material = ReadMaterial(n["Material"]);
             t.heights.clear();
             for (auto h : n["Heights"]) { t.heights.push_back(h.as<float>()); }

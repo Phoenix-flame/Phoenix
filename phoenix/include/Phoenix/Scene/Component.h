@@ -9,6 +9,7 @@
 #include <Phoenix/renderer/shader.h>
 #include <Phoenix/renderer/VertexArray.h>
 #include <Phoenix/renderer/Mesh.h>
+#include <Phoenix/Scene/TerrainGenerator.h>
 #include <Phoenix/renderer/WaterRipples.h>
 #include <Phoenix/Scene/ScriptableEntity.h>
 #include <string>
@@ -447,6 +448,12 @@ namespace Phoenix{
         Material material;
         bool generateCollider = true;
 
+        // Noise generation (Generate in the inspector), and domain randomization: with
+        // randomizeEachEpisode, every RL episode regenerates the heights from these
+        // settings with a fresh seed (Stop restores the edit-time heights).
+        TerrainNoise noise;
+        bool randomizeEachEpisode = false;
+
         Ref<Mesh> mesh;             // generated; not serialized
         bool dirty = true;
         uint32_t runtimeBodyID = 0xffffffff;
@@ -454,7 +461,8 @@ namespace Phoenix{
         TerrainComponent(){ heights.resize((size_t)resolution * resolution, 0.0f); }
         TerrainComponent(const TerrainComponent& o)
             : resolution(o.resolution), size(o.size), heights(o.heights),
-              material(o.material), generateCollider(o.generateCollider), dirty(true) {}
+              material(o.material), generateCollider(o.generateCollider),
+              noise(o.noise), randomizeEachEpisode(o.randomizeEachEpisode), dirty(true) {}
     };
 
     // An animated transparent water surface: Gerstner waves in the shader plus an

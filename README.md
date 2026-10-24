@@ -475,19 +475,26 @@ collider has a **Fit to Shape** button that sizes it to the mesh or primitive.
   points and normals.
 
 ### Terrain
-### Terrain
 
 `TerrainComponent` is an editable heightmap (resolution × resolution grid) rendered as a mesh
 with analytic normals and an optional static triangle-mesh collider. A Blender-style
 **sculpt tool** (raise / lower / smooth brush, configurable radius & strength) lets you carve
 hills, valleys, and riverbeds directly in the viewport.
 
+**Generate from Noise** (in the Terrain inspector) fills the heights with fractal Perlin noise
+(seed, frequency, octaves, height, persistence, lacunarity, and a ridged blend for sharp
+crests). With **New Terrain Every Episode**, each RL episode regenerates the landscape and its
+collider from a fresh seed drawn from the simulation seed, as domain randomization; Stop
+restores the edit-time heights. Agents keep their edit-time poses, so keep spawn areas clear
+of tall terrain.
+
 ### Water
 
 `WaterComponent` is an animated, transparent surface (a flat grid displaced by a sum-of-sines
 wave in the shader) with Fresnel environment reflection, sun specular, and configurable
 colour/alpha/amplitude/wave-scale/speed. Place one over a sculpted terrain basin to make a
-lake.
+lake. Interactive ripples (a damped wave equation on a grid of **Ripple Resolution** cells per
+side) react to bodies splashing in and moving through the water.
 
 ### Lua Scripting
 
@@ -718,24 +725,33 @@ the next launch. The engine's own runtime assets (its shaders and the UI fonts) 
 `CMakeLists.txt`, then copies its own assets on top. Apps load assets by relative path, so
 `main()` changes to the executable's directory first (see `Example/main.cpp`).
 
-### OpenCL ray sensors (optional, experimental)
+### OpenCL (optional, experimental)
 
-`-DPHOENIX_OPENCL=ON` (needs `ocl-icd-opencl-dev` and an OpenCL driver) adds **Settings >
-Simulation > GPU Ray Sensors**. With it on, every agent's Ray Sensor rays are cast in one
-batch on an OpenCL device (a GPU if one is found) against Reward Zones and against physics
-bodies made of boxes, spheres, capsules and cylinders, which are mirrored from Jolt each
-decision step (compounds and offsets included). Jolt still casts the rays that pass near
-bodies it alone can test (convex hulls, triangle meshes such as terrain).
+`-DPHOENIX_OPENCL=ON` (needs `ocl-icd-opencl-dev` and an OpenCL driver) adds a shared OpenCL
+device (a GPU if one is found) and a **Settings > OpenCL** section with three switches, all off
+by default:
 
-- Each agent's rays only test the shapes near them (a grid over their bounding spheres),
-  not every shape in the scene.
-- Small batches, or machines without a device, run the same casts on the CPU with
-  bit-identical results (on devices with correctly rounded division and square root).
-- Mirrored casts follow Jolt's own ray tests: they hit the same bodies, at distances that
-  can differ from Jolt's in the last float bits.
+- **Ray Sensors**: every agent's Ray Sensor rays are cast in one batch against Reward Zones
+  and against physics bodies made of boxes, spheres, capsules and cylinders, which are
+  mirrored from Jolt each decision step (compounds and offsets included). Jolt still casts
+  the rays that pass near bodies it alone can test (convex hulls, triangle meshes such as
+  terrain). Each agent's rays only test the shapes near them (a grid over their bounding
+  spheres). Mirrored casts follow Jolt's own ray tests: they hit the same bodies, at
+  distances that can differ from Jolt's in the last float bits.
+- **Water Ripples**: ripple grids of 512 × 512 or more step on the device; smaller ones are
+  faster on the CPU.
+- **Terrain Generation**: noise terrain (Generate, and per-episode randomization) is computed
+  on the device.
 
-`cmake --build build --target ray_batch_bench` builds a tool that checks the device against
-the CPU and the mirror against Jolt, and times them.
+Each feature keeps a CPU path that runs the same code and gives bit-identical results (on
+devices with correctly rounded division and square root): small workloads stay on the CPU,
+and a scene behaves the same with or without a device. Kernel code is written once in
+`PHX_SHARED_SOURCE` blocks (`phoenix/src/Compute/SharedSource.h`) and compiled both as C++
+and as OpenCL C.
+
+Two tools check the device against the CPU and time them:
+`cmake --build build --target ray_batch_bench` (also checks mirrored bodies against Jolt) and
+`cmake --build build --target compute_bench` (water ripples and terrain generation).
 
 ---
 

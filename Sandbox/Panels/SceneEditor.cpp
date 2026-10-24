@@ -5,6 +5,7 @@
 #include <Phoenix/imGui/ImGuiLayer.h>
 #include <Phoenix/Physics/Physics.h>
 #include <glm/gtc/type_ptr.hpp>
+#include <random>
 #include "EditorUI.h"
 #include "AIPrefabs.h"
 #include <Phoenix/AI/Environment.h>
@@ -1465,6 +1466,36 @@ namespace Phoenix{
 				std::fill(component.heights.begin(), component.heights.end(), 0.0f);
 				component.dirty = true;
 			}
+			if (ImGui::TreeNode("Generate from Noise")){
+				TerrainNoise& noise = component.noise;
+				int seed = (int)noise.seed;
+				if (ImGui::InputInt("Seed", &seed)) { noise.seed = (uint32_t)seed; }
+				ImGui::DragFloat("Frequency", &noise.frequency, 0.001f, 0.001f, 2.0f, "%.3f");
+				if (ImGui::IsItemHovered()) ImGui::SetTooltip("Features per world unit: lower = broader hills.");
+				ImGui::SliderInt("Octaves", &noise.octaves, 1, 10);
+				ImGui::DragFloat("Height", &noise.height, 0.05f, 0.0f, 200.0f, "%.2f");
+				ImGui::SliderFloat("Persistence", &noise.persistence, 0.0f, 1.0f, "%.2f");
+				if (ImGui::IsItemHovered()) ImGui::SetTooltip("How much each finer octave keeps: higher = rougher.");
+				ImGui::DragFloat("Lacunarity", &noise.lacunarity, 0.01f, 1.0f, 4.0f, "%.2f");
+				ImGui::SliderFloat("Ridged", &noise.ridged, 0.0f, 1.0f, "%.2f");
+				if (ImGui::IsItemHovered()) ImGui::SetTooltip("0 = rolling hills, 1 = sharp ridges and valleys.");
+				bool generate = ImGui::Button("Generate");
+				ImGui::SameLine();
+				if (ImGui::Button("New Seed")){
+					noise.seed = std::random_device{}();
+					generate = true;
+				}
+				if (generate){
+					TerrainGenerator::Generate(component.resolution, component.size, noise, component.heights);
+					component.dirty = true;
+				}
+				ImGui::Checkbox("New Terrain Every Episode", &component.randomizeEachEpisode);
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("Domain randomization: each RL episode regenerates the heights with a\n"
+					                  "fresh seed (from Settings > Simulation > Random Seed). Agents keep their\n"
+					                  "edit-time poses, so keep spawn areas clear of tall terrain.");
+				ImGui::TreePop();
+			}
 		});
 
 		DrawComponent<WaterComponent>("Water", entity, [](WaterComponent& component){
@@ -1479,6 +1510,19 @@ namespace Phoenix{
 			ImGui::Separator();
 			ImGui::Checkbox("Interactive Ripples", &component.interactiveRipples);
 			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Simulated splash/wake ripples from physics bodies.");
+			if (component.interactiveRipples){
+				const int sizes[] = { 64, 128, 256, 512, 1024 };
+				const char* labels[] = { "64 x 64", "128 x 128", "256 x 256", "512 x 512", "1024 x 1024" };
+				int current = 1;
+				for (int i = 0; i < 5; i++) { if (sizes[i] == component.rippleResolution) { current = i; } }
+				if (ImGui::Combo("Ripple Resolution", &current, labels, 5)){
+					component.rippleResolution = sizes[current];
+					component.ripples.reset(); // rebuilt at the new size next frame
+				}
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("Cells per side of the ripple simulation: finer wakes cost more.\n"
+					                  "512 and up can run on the GPU (Settings > OpenCL > Water Ripples).");
+			}
 			ImGui::Separator();
 			ImGui::TextDisabled("Physics coupling (while playing):");
 			ImGui::SliderFloat("Water Density", &component.buoyancy, 0.0f, 3.0f);

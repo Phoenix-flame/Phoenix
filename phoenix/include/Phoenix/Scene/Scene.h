@@ -204,6 +204,9 @@ namespace Phoenix{
 
         // Entity owning the given runtime physics body (empty if unknown).
         Entity FindEntityByBodyID(uint32_t bodyID);
+        // While playing: replace a terrain's collider after its heights changed
+        // (rebuilds the mesh too).
+        void RebuildTerrainBody(entt::entity entity);
 
         // Runtime physics body for an entity: its rigid body, terrain collider or
         // character capsule (InvalidBody if none / not running).
@@ -239,6 +242,8 @@ namespace Phoenix{
 
         // Builds the runtime physics body for one rigid-body entity (play mode).
         void CreateRuntimeBody(entt::entity entity);
+        // Builds the static triangle-mesh collider of one terrain (play mode).
+        void CreateTerrainBody(entt::entity entity);
         // Starts the entity's enabled scripts; `args` becomes their SPAWN table.
         void StartScripts(Entity entity, const ScriptArgs* args);
         // Destroys everything QueueDestroy collected.
