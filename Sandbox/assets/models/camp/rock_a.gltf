@@ -1,0 +1,195 @@
+{
+ "asset": {
+  "generator": "UnityGLTF",
+  "version": "2.0"
+ },
+ "extensionsUsed": [
+  "KHR_texture_transform"
+ ],
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0
+   ],
+   "name": "rock-a"
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 180,
+   "type": "VEC3",
+   "max": [
+    0.2551817297935486,
+    0.3926999866962433,
+    0.3244633674621582
+   ],
+   "min": [
+    -0.30000001192092896,
+    0.0,
+    -0.29711586236953735
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 180,
+   "type": "VEC3",
+   "max": [
+    0.9260776042938232,
+    1.0,
+    0.8392693400382996
+   ],
+   "min": [
+    -0.9541401267051697,
+    -1.0,
+    -0.9881306886672974
+   ]
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 180,
+   "type": "VEC4",
+   "max": [
+    1.0,
+    0.03506383299827576,
+    0.9659258127212524,
+    1.0
+   ],
+   "min": [
+    -1.0,
+    -0.017083145678043365,
+    -0.9410672187805176,
+    1.0
+   ]
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5126,
+   "count": 180,
+   "type": "VEC2",
+   "max": [
+    0.84375,
+    0.9750000238418579
+   ],
+   "min": [
+    0.21875,
+    0.7749999761581421
+   ]
+  },
+  {
+   "bufferView": 4,
+   "componentType": 5121,
+   "count": 312,
+   "type": "SCALAR",
+   "max": [
+    179.0
+   ],
+   "min": [
+    0.0
+   ]
+  }
+ ],
+ "buffers": [
+  {
+   "byteLength": 8952,
+   "uri": "rock_a.bin"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteLength": 2160,
+   "byteStride": 12,
+   "target": 34962,
+   "byteOffset": 0
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 2160,
+   "byteLength": 2160,
+   "byteStride": 12,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 4320,
+   "byteLength": 2880,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 7200,
+   "byteLength": 1440,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 8640,
+   "byteLength": 312,
+   "target": 34963
+  }
+ ],
+ "images": [
+  {
+   "uri": "kenney_survival_colormap.png",
+   "name": "colormap"
+  }
+ ],
+ "materials": [
+  {
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 0,
+     "extensions": {
+      "KHR_texture_transform": {
+       "texCoord": 0
+      }
+     }
+    },
+    "metallicFactor": 0.0
+   },
+   "doubleSided": true,
+   "name": "colormap"
+  }
+ ],
+ "meshes": [
+  {
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TANGENT": 2,
+      "TEXCOORD_0": 3
+     },
+     "indices": 4,
+     "material": 0
+    }
+   ],
+   "name": "rock-a"
+  }
+ ],
+ "nodes": [
+  {
+   "mesh": 0,
+   "name": "rock-a"
+  }
+ ],
+ "samplers": [
+  {
+   "magFilter": 9728,
+   "minFilter": 9984
+  }
+ ],
+ "textures": [
+  {
+   "sampler": 0,
+   "source": 0,
+   "name": "colormap"
+  }
+ ]
+}

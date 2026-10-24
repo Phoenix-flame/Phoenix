@@ -2794,6 +2794,212 @@ void MainLayer::BuildSponzaShowcase() {
     m_FreeFlight = true;
 }
 
+void MainLayer::BuildCampShowcase() {
+    // A camp at night, lit only by its four fires and the moon: a campfire in the middle,
+    // a torch on a pole by the path, a candle on a crate by the tent and a lantern hanging
+    // from a post (Kenney Survival and Graveyard kits, KayKit torch and candle, all CC0).
+    // Press Play: a breeze blows with a gust every twelve seconds. The campfire and the
+    // torch lean with it, the candle blows out (and is relit once the gust has passed),
+    // and the lantern swings on its chain while its flame, behind glass, stays calm and
+    // upright.
+    m_Scene->AmbientColor() = glm::vec3(0.02f, 0.025f, 0.04f);
+    SkySettings& sky = m_Scene->Sky();
+    sky.mode = SkySettings::Mode::Gradient;
+    sky.zenith = glm::vec3(0.01f, 0.015f, 0.05f);
+    sky.horizon = glm::vec3(0.05f, 0.07f, 0.13f);
+    sky.ground = glm::vec3(0.01f, 0.012f, 0.015f);
+    sky.sunDisc = true;      // the moon
+    sky.sunSize = 1.2f;
+    sky.ambient = 0.15f;
+    {
+        auto moon = m_Scene->CreateDirLightEntity("Moon");
+        auto& t = moon.GetComponent<TransformComponent>();
+        t.Translation = { 0.0f, 12.0f, -10.0f };
+        t.Rotation = AimLight(SunDirection(24.0f, 200.0f));
+        auto& dl = moon.GetComponent<DirLightComponent>();
+        dl.ambient = glm::vec3(0.0f);
+        dl.diffuse = glm::vec3(0.16f, 0.2f, 0.32f);
+        dl.specular = glm::vec3(0.1f);
+        dl.shadow.softness = 0.8f;
+    }
+
+    std::map<std::string, Ref<Model>> models;
+    auto model = [&](const std::string& path){
+        Ref<Model>& m = models[path];
+        if (!m) { m = CreateRef<Model>("assets/models/" + path + ".gltf"); }
+        return m;
+    };
+    auto prop = [&](const std::string& name, const std::string& path, const glm::vec3& position,
+                    float scale, float yawDegrees = 0.0f) -> Entity {
+        auto e = m_Scene->CreateEntity(name);
+        auto& mesh = e.AddComponent<MeshComponent>(model(path));
+        mesh.material.ambient = glm::vec3(1.0f);
+        mesh.material.diffuse = glm::vec3(1.0f);
+        mesh.material.specular = glm::vec3(0.06f);
+        mesh.material.shininess = 10.0f;
+        auto& t = e.GetComponent<TransformComponent>();
+        t.Translation = position;
+        t.Rotation.y = glm::radians(yawDegrees);
+        t.Scale = glm::vec3(scale);
+        return e;
+    };
+    auto shape = [&](const std::string& name, PrimitiveComponent::Type type, const glm::vec3& position,
+                     const glm::vec3& scale, const glm::vec3& color) -> Entity {
+        auto e = m_Scene->CreateEntity(name);
+        auto& m = e.AddComponent<PrimitiveComponent>(type).material;
+        m.ambient = color;
+        m.diffuse = color;
+        m.specular = glm::vec3(0.05f);
+        m.shininess = 8.0f;
+        e.GetComponent<TransformComponent>().Translation = position;
+        e.GetComponent<TransformComponent>().Scale = scale;
+        return e;
+    };
+    // Each fire takes the breeze the Wind entity publishes.
+    auto windScript = [](Entity e, const std::string& extra){
+        auto& script = e.AddComponent<LuaScriptComponent>().scripts[0];
+        script.name = "Wind";
+        script.source = "-- Feels the breeze published by the Wind entity.\n" + extra +
+                        "function OnUpdate(dt)\n"
+                        "    SetFireWind(GetShared('wind', 0), 0, 0)\n" + (extra.empty() ? "" : "    Watch(dt)\n") +
+                        "end\n";
+    };
+
+    // Ground: a dark meadow with tufts of grass, and its collider.
+    shape("Ground", PrimitiveComponent::Type::Cube, { 0.0f, -0.1f, 0.0f }, { 60.0f, 0.2f, 60.0f }, { 0.11f, 0.14f, 0.08f });
+    {
+        auto e = m_Scene->CreateEntity("Ground Collider");
+        e.GetComponent<TransformComponent>().Translation = { 0.0f, -0.1f, 0.0f };
+        e.AddComponent<RigidBodyComponent>().type = RigidBodyComponent::Type::Static;
+        e.AddComponent<BoxColliderComponent>().halfExtents = { 30.0f, 0.1f, 30.0f };
+    }
+    const glm::vec3 grass[] = { { -3.5f, 0.0f, 1.5f }, { 2.5f, 0.0f, -2.5f }, { 4.0f, 0.0f, 3.0f }, { -1.0f, 0.0f, 4.5f },
+                                { -5.0f, 0.0f, -4.0f }, { 1.5f, 0.0f, -6.0f } };
+    for (int i = 0; i < 6; i++) { prop("Grass", "camp/grass_large", grass[i], 2.0f, i * 70.0f); }
+
+    // Trees and rocks around the clearing.
+    const glm::vec4 trees[] = { { -7.0f, -6.0f, 4.5f, 0.0f }, { -3.0f, -9.0f, 5.0f, 1.0f }, { 3.5f, -8.5f, 4.2f, 0.0f },
+                                { 7.5f, -5.0f, 5.0f, 1.0f }, { 9.0f, 1.0f, 4.0f, 0.0f }, { -9.5f, 0.5f, 4.6f, 1.0f },
+                                { -7.5f, 6.5f, 4.0f, 0.0f }, { 8.0f, 7.0f, 4.8f, 1.0f } };
+    for (int i = 0; i < 8; i++){
+        const glm::vec4& t = trees[i];
+        prop("Tree", t.w > 0.5f ? "camp/tree_tall" : "camp/tree", { t.x, 0.0f, t.y }, t.z, i * 37.0f);
+    }
+    prop("Rock", "camp/rock_a", { -4.5f, 0.0f, -2.0f }, 2.0f, 30.0f);
+    prop("Rock", "camp/rock_b", { 5.5f, 0.0f, -3.5f }, 2.5f, 110.0f);
+    prop("Rock", "camp/rock_a", { 3.0f, 0.0f, 5.5f }, 1.4f, 200.0f);
+
+    // The campfire, with logs to sit on, a bedroll and the tent.
+    {
+        auto e = prop("Campfire", "dungeon/campfire_pit", { 0.0f, 0.03f, 0.0f }, 3.5f, 20.0f);
+        auto& fire = e.AddComponent<FireComponent>();
+        fire.ApplyPreset(FireComponent::Preset::Campfire);
+        fire.offset = { 0.0f, 0.03f, 0.0f };
+        fire.width = 1.5f;        // room downwind for the flames to lean into
+        fire.resolution = 28;
+        windScript(e, "");
+    }
+    prop("Log", "camp/tree_log", { -1.9f, 0.17f, -0.3f }, 1.5f, 10.0f);
+    prop("Log", "camp/tree_log", { 0.3f, 0.17f, 2.0f }, 1.5f, 95.0f);
+    prop("Bedroll", "camp/bedroll", { 2.2f, 0.0f, 0.6f }, 3.0f, 75.0f);
+    prop("Tent", "camp/tent_canvas", { -1.6f, 0.0f, -3.6f }, 5.0f, 15.0f);
+    prop("Barrel", "camp/barrel", { 1.2f, 0.0f, -3.4f }, 2.8f);
+    prop("Bucket", "camp/bucket", { 1.9f, 0.0f, -2.9f }, 2.5f);
+
+    // The candle, on a crate in the open by the tent. A gust blows it out (above 2 m/s);
+    // it is relit once the gust has passed.
+    prop("Crate", "camp/box", { 0.9f, 0.0f, -1.9f }, 2.6f, 20.0f);
+    {
+        auto e = prop("Candle", "dungeon/candle", { 0.9f, 0.65f, -1.9f }, 0.3f);
+        auto& fire = e.AddComponent<FireComponent>();
+        fire.ApplyPreset(FireComponent::Preset::Candle);
+        fire.offset = { 0.0f, 0.89f, 0.0f };
+        windScript(e,
+            "local out = 0.0\n"
+            "-- Relit a moment after the gust that put it out has passed.\n"
+            "function Watch(dt)\n"
+            "    if IsBurning() then out = 0.0 return end\n"
+            "    out = out + dt\n"
+            "    if out > 2.0 and GetShared('wind', 0) < 1.0 then Ignite() end\n"
+            "end\n");
+    }
+
+    // The torch, on a pole by the path, with a signpost.
+    shape("Torch Pole", PrimitiveComponent::Type::Cylinder, { 3.4f, 0.65f, 2.4f }, { 0.07f, 1.3f, 0.07f }, { 0.25f, 0.16f, 0.09f });
+    {
+        auto e = prop("Torch", "dungeon/torch", { 3.4f, 1.55f, 2.4f }, 0.7f);
+        auto& fire = e.AddComponent<FireComponent>();
+        fire.ApplyPreset(FireComponent::Preset::Torch);
+        fire.offset = { 0.0f, 0.6f, 0.0f };
+        windScript(e, "");
+    }
+    prop("Signpost", "camp/signpost_single", { 4.1f, 0.0f, 2.9f }, 3.0f, -30.0f);
+
+    // The lantern, hanging by a short chain from a post by the tent: a pendulum the gusts
+    // swing, with a candle flame behind glass.
+    const glm::vec3 hook(-2.0f, 2.05f, 1.2f);
+    shape("Lantern Post", PrimitiveComponent::Type::Cylinder, { -2.6f, 1.1f, 1.2f }, { 0.09f, 2.2f, 0.09f }, { 0.22f, 0.15f, 0.09f });
+    shape("Lantern Arm", PrimitiveComponent::Type::Cube, { -2.3f, 2.1f, 1.2f }, { 0.7f, 0.07f, 0.07f }, { 0.22f, 0.15f, 0.09f });
+    const float chain = 0.3f, lanternScale = 1.25f, lanternHeight = 0.39f * lanternScale;
+    {
+        auto e = shape("Lantern Chain", PrimitiveComponent::Type::Cylinder, hook - glm::vec3(0.0f, chain * 0.5f, 0.0f),
+                       { 0.012f, chain, 0.012f }, { 0.08f, 0.08f, 0.09f });
+        auto& rb = e.AddComponent<RigidBodyComponent>();
+        rb.mass = 0.1f;
+        rb.angularDamping = 0.3f;
+        e.AddComponent<CylinderColliderComponent>();   // the unit cylinder, scaled with the entity
+        auto& j = e.AddComponent<JointComponent>().Add(JointComponent::Type::Point);
+        j.pivot = hook;
+    }
+    {
+        auto e = prop("Lantern", "camp/lantern_candle", hook - glm::vec3(0.0f, chain + lanternHeight, 0.0f), lanternScale);
+        auto& rb = e.AddComponent<RigidBodyComponent>();
+        rb.mass = 1.2f;
+        rb.angularDamping = 0.3f;
+        auto& box = e.AddComponent<BoxColliderComponent>();
+        box.halfExtents = { 0.12f, 0.195f, 0.12f };     // the model's bounds (scaled with the entity)
+        box.offset = { 0.0f, 0.195f, 0.0f };
+        auto& j = e.AddComponent<JointComponent>().Add(JointComponent::Type::Point);
+        j.connectedTag = "Lantern Chain";
+        j.pivot = hook - glm::vec3(0.0f, chain, 0.0f);
+        auto& fire = e.AddComponent<FireComponent>();
+        fire.ApplyPreset(FireComponent::Preset::Lantern);
+        fire.offset = { 0.0f, 0.16f, 0.0f };
+        fire.lightIntensity = 1.1f;
+        auto& script = e.AddComponent<LuaScriptComponent>().scripts[0];
+        script.name = "Wind";
+        script.source =
+            "-- The breeze pushes the lantern, harder as the square of its speed; its flame,\n"
+            "-- behind glass, only feels a little of it (Wind Exposure).\n"
+            "function OnUpdate(dt)\n"
+            "    local w = GetShared('wind', 0)\n"
+            "    ApplyForce(0.4 * w * math.abs(w), 0, 0)\n"
+            "    SetFireWind(w, 0, 0)\n"
+            "end\n";
+    }
+
+    // The weather: a light breeze along +X with a gust every twelve seconds (up to about
+    // 2.4 m/s), published for the fires and the lantern.
+    {
+        auto e = m_Scene->CreateEntity("Wind");
+        auto& script = e.AddComponent<LuaScriptComponent>().scripts[0];
+        script.name = "Breeze";
+        script.source =
+            "-- A breeze with a gust every 12 s; others read it with GetShared('wind').\n"
+            "local t = 0.0\n"
+            "function OnUpdate(dt)\n"
+            "    t = t + dt\n"
+            "    local breeze = 0.35 + 0.2 * math.sin(t * 0.8)\n"
+            "    local phase = t % 12.0\n"
+            "    local gust = 0.0\n"
+            "    if phase > 5.0 then gust = 2.0 * math.sin(math.pi * (phase - 5.0) / 7.0) ^ 2 end\n"
+            "    SetShared('wind', breeze + gust)\n"
+            "end\n";
+    }
+
+    m_MainCamera.Focus({ 0.4f, 1.0f, -0.2f }, 6.0f, 190.0f, -11.0f);
+}
+
 void MainLayer::SculptTerrain(TerrainComponent& terrain, const glm::vec3& terrainPos,
                               const glm::vec3& terrainScale, const glm::vec3& rayOrigin,
                               const glm::vec3& rayDir, float dt) {
@@ -3764,6 +3970,7 @@ void MainLayer::DrawMenus(){
             if (ImGui::MenuItem("Pool"))             { LoadShowcase(&MainLayer::BuildPoolShowcase, "Pool Showcase"); }
             if (ImGui::MenuItem("Fluid"))            { LoadShowcase(&MainLayer::BuildFluidShowcase, "Fluid Showcase"); }
             if (ImGui::MenuItem("Fire"))             { LoadShowcase(&MainLayer::BuildFireShowcase, "Fire Showcase"); }
+            if (ImGui::MenuItem("Night Camp"))       { LoadShowcase(&MainLayer::BuildCampShowcase, "Night Camp"); }
             if (ImGui::MenuItem("Robot"))            { LoadShowcase(&MainLayer::BuildRobotShowcase, "Robot Showcase"); }
             if (ImGui::MenuItem("Multi-Shadow"))     { LoadShowcase(&MainLayer::BuildMultiShadowShowcase, "Multi-Shadow Showcase"); }
             if (ImGui::MenuItem("Soft Shadows"))     { LoadShowcase(&MainLayer::BuildShadowShowcase, "Shadow Showcase"); }

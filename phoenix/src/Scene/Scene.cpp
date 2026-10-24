@@ -787,6 +787,8 @@ namespace Phoenix{
                 for (auto entity : m_Registry.view<PoolComponent>()) { count(m_Registry.get<PoolComponent>(entity).sprayFluid.get()); }
                 f.doused = f.doused * std::exp(-dt * 2.0f) + (float)hits;
                 if (f.doused > 12.0f) { f.burning = false; }
+                // Blown out by the air rushing past the flame.
+                if (f.blowOut > 0.0f && glm::length((f.wind - f.sourceVelocity) * f.windExposure) > f.blowOut) { f.burning = false; }
             }
             for (Live& unlit : live){
                 if (unlit.fire->burning) { continue; }
@@ -816,7 +818,7 @@ namespace Phoenix{
                 // A fire that is out stops once its last smoke has cleared.
                 f.quietSteps = f.burning ? 0 : f.quietSteps + 1;
                 if (f.quietSteps > 240) { continue; }
-                round.push_back({ f.sim.get(), step, f.wind - f.sourceVelocity, f.burning });
+                round.push_back({ f.sim.get(), step, (f.wind - f.sourceVelocity) * f.windExposure, f.burning });
             }
             if (!round.empty()) { FireSim::StepAll(round); }
         }

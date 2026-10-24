@@ -94,6 +94,7 @@ private:
     void BuildPoolShowcase();
     void BuildFluidShowcase();
     void BuildFireShowcase();
+    void BuildCampShowcase();
     // Populate m_Scene with the skeletal-animation (walking robot) showcase.
     void BuildRobotShowcase();
     // Populate m_Scene with the multi-light shadow showcase (3 coloured suns).

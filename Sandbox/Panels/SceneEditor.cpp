@@ -113,6 +113,7 @@ namespace Phoenix{
                 { "Candle",   FireComponent::Preset::Candle,   "assets/models/dungeon/candle.gltf",        { 0.0f, 0.89f, 0.0f }, 0.3f },
                 { "Campfire", FireComponent::Preset::Campfire, "assets/models/dungeon/campfire_pit.gltf",  { 0.0f, 0.03f, 0.0f }, 3.5f },
                 { "Brazier",  FireComponent::Preset::Brazier,  "assets/models/dungeon/fire_basket.gltf",   { 0.0f, 0.1f, 0.0f },  1.6f },
+                { "Lantern",  FireComponent::Preset::Lantern,  "assets/models/camp/lantern_candle.gltf",   { 0.0f, 0.16f, 0.0f }, 1.0f },
             };
             for (const FireKind& kind : kinds){
                 if (ImGui::MenuItem(kind.label)){
@@ -1645,8 +1646,8 @@ namespace Phoenix{
 				if (ImGui::SmallButton(component.burning ? "Put Out" : "Ignite")) { component.burning = !component.burning; component.doused = 0.0f; }
 			}
 			ImGui::TextDisabled("Preset");
-			static const char* presets[] = { "Torch", "Candle", "Campfire", "Brazier" };
-			for (int i = 0; i < 4; i++){
+			static const char* presets[] = { "Torch", "Candle", "Campfire", "Brazier", "Lantern" };
+			for (int i = 0; i < 5; i++){
 				if (i > 0) { ImGui::SameLine(); }
 				if (ImGui::SmallButton(presets[i])) { component.ApplyPreset((FireComponent::Preset)i); }
 			}
@@ -1680,6 +1681,10 @@ namespace Phoenix{
 			ImGui::DragFloat("Smoke", &component.smoke, 0.01f, 0.0f, 5.0f);
 			ImGui::DragFloat("Smoke Life", &component.smokeLife, 0.05f, 0.0f, 30.0f, "%.2f s");
 			ImGui::DragFloat3("Wind", glm::value_ptr(component.wind), 0.02f, -50.0f, 50.0f, "%.2f");
+			ImGui::SliderFloat("Wind Exposure", &component.windExposure, 0.0f, 1.0f, "%.2f");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Share of the wind (and of the source's own motion) that reaches the flame: low behind a lantern's glass.");
+			ImGui::DragFloat("Blow Out", &component.blowOut, 0.05f, 0.0f, 50.0f, component.blowOut > 0.0f ? "%.2f m/s" : "never");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("While playing, air reaching the flame faster than this puts it out.");
 
 			ImGui::Separator();
 			ImGui::TextDisabled("Look");

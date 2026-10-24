@@ -1,0 +1,330 @@
+{
+ "asset": {
+  "generator": "UnityGLTF",
+  "version": "2.0"
+ },
+ "extensionsUsed": [
+  "KHR_texture_transform"
+ ],
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0
+   ],
+   "name": "bedroll"
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 112,
+   "type": "VEC3",
+   "max": [
+    0.13019999861717224,
+    0.0748400017619133,
+    0.30379098653793335
+   ],
+   "min": [
+    -0.13019999861717224,
+    0.0,
+    -0.30379098653793335
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 112,
+   "type": "VEC3",
+   "max": [
+    1.0,
+    1.0,
+    0.9807852506637573
+   ],
+   "min": [
+    -1.0,
+    -1.0,
+    -0.9807852506637573
+   ]
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 112,
+   "type": "VEC4",
+   "max": [
+    1.0,
+    0.2898695468902588,
+    1.0,
+    1.0
+   ],
+   "min": [
+    -1.0,
+    -0.2898695468902588,
+    -1.0,
+    1.0
+   ]
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5126,
+   "count": 112,
+   "type": "VEC2",
+   "max": [
+    0.84375,
+    0.9750000238418579
+   ],
+   "min": [
+    0.46875,
+    0.5249999761581421
+   ]
+  },
+  {
+   "bufferView": 4,
+   "componentType": 5121,
+   "count": 228,
+   "type": "SCALAR",
+   "max": [
+    111.0
+   ],
+   "min": [
+    0.0
+   ]
+  },
+  {
+   "bufferView": 5,
+   "componentType": 5126,
+   "count": 108,
+   "type": "VEC3",
+   "max": [
+    0.15519998967647552,
+    0.125,
+    0.18472564220428467
+   ],
+   "min": [
+    -0.15519998967647552,
+    0.005159999709576368,
+    -0.18472564220428467
+   ]
+  },
+  {
+   "bufferView": 6,
+   "componentType": 5126,
+   "count": 108,
+   "type": "VEC3",
+   "max": [
+    1.0,
+    0.9807852506637573,
+    1.0
+   ],
+   "min": [
+    -1.0,
+    -1.0,
+    -1.0
+   ]
+  },
+  {
+   "bufferView": 7,
+   "componentType": 5126,
+   "count": 108,
+   "type": "VEC4",
+   "max": [
+    1.0,
+    0.19509032368659973,
+    1.0,
+    1.0
+   ],
+   "min": [
+    -1.0,
+    -0.19509032368659973,
+    -1.0,
+    1.0
+   ]
+  },
+  {
+   "bufferView": 8,
+   "componentType": 5126,
+   "count": 108,
+   "type": "VEC2",
+   "max": [
+    0.46875,
+    0.7167440056800842
+   ],
+   "min": [
+    0.46875,
+    0.5249999761581421
+   ]
+  },
+  {
+   "bufferView": 9,
+   "componentType": 5121,
+   "count": 204,
+   "type": "SCALAR",
+   "max": [
+    107.0
+   ],
+   "min": [
+    0.0
+   ]
+  }
+ ],
+ "buffers": [
+  {
+   "byteLength": 10992,
+   "uri": "bedroll.bin"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteLength": 1344,
+   "byteStride": 12,
+   "target": 34962,
+   "byteOffset": 0
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 1344,
+   "byteLength": 1344,
+   "byteStride": 12,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 2688,
+   "byteLength": 1792,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 4480,
+   "byteLength": 896,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 5376,
+   "byteLength": 228,
+   "target": 34963
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 5604,
+   "byteLength": 1296,
+   "byteStride": 12,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 6900,
+   "byteLength": 1296,
+   "byteStride": 12,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 8196,
+   "byteLength": 1728,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 9924,
+   "byteLength": 864,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 10788,
+   "byteLength": 204,
+   "target": 34963
+  }
+ ],
+ "images": [
+  {
+   "uri": "kenney_survival_colormap.png",
+   "name": "colormap"
+  }
+ ],
+ "materials": [
+  {
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 0,
+     "extensions": {
+      "KHR_texture_transform": {
+       "texCoord": 0
+      }
+     }
+    },
+    "metallicFactor": 0.0
+   },
+   "doubleSided": true,
+   "name": "colormap"
+  }
+ ],
+ "meshes": [
+  {
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TANGENT": 2,
+      "TEXCOORD_0": 3
+     },
+     "indices": 4,
+     "material": 0
+    }
+   ],
+   "name": "bedroll"
+  },
+  {
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 5,
+      "NORMAL": 6,
+      "TANGENT": 7,
+      "TEXCOORD_0": 8
+     },
+     "indices": 9,
+     "material": 0
+    }
+   ],
+   "name": "blanket"
+  }
+ ],
+ "nodes": [
+  {
+   "children": [
+    1
+   ],
+   "mesh": 0,
+   "name": "bedroll"
+  },
+  {
+   "mesh": 1,
+   "translation": [
+    0.0,
+    -0.0551599972,
+    0.08
+   ],
+   "name": "blanket"
+  }
+ ],
+ "samplers": [
+  {
+   "magFilter": 9728,
+   "minFilter": 9984
+  }
+ ],
+ "textures": [
+  {
+   "sampler": 0,
+   "source": 0,
+   "name": "colormap"
+  }
+ ]
+}

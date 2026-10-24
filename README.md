@@ -598,8 +598,8 @@ entity (on Play and every RL episode) and/or pours from the entity along its loc
 
 ![The Fire showcase: a torch-lit dungeon room with a campfire, a brazier and candles](images/fire-showcase.png)
 
-`FireComponent` is a simulated flame. **Create > Fire** adds a torch, candle, campfire or
-brazier (with a model from the dungeon kit) or a bare flame; **Add Component > Fire** sets
+`FireComponent` is a simulated flame. **Create > Fire** adds a torch, candle, campfire,
+brazier or lantern (with its model) or a bare flame; **Add Component > Fire** sets
 any entity alight, with the flame's source placed in the entity's frame (on a torch's head,
 in a brazier's bowl). Presets set typical values for each kind.
 
@@ -610,7 +610,9 @@ in a brazier's bowl). Presets set typical values for each kind.
   vorticity confinement keeps the curls that split a flame into tongues, a little noise
   turbulence makes it waver, and MacCormack advection keeps its edges crisp. It steps at
   60 Hz in edit mode too. The box stays upright whatever holds it, and air streams past a
-  moving source: a carried torch's flame trails behind it. Each fire has its own wind.
+  moving source: a carried torch's flame trails behind it. Each fire has its own wind, and
+  a **Wind Exposure** for how much of the moving air reaches the flame (a lantern's flame,
+  behind glass, barely feels the wind or its own swinging).
 - **Rendering**: each flame's grid is ray-marched. A flame's light is soot glowing at the
   gas's temperature, and soot lives where fuel burns: the glow is the black-body colour of
   the temperature weighted by the unburnt fuel, so the flame ends where its fuel runs out
@@ -622,14 +624,18 @@ in a brazier's bowl). Presets set typical values for each kind.
   of heat, coloured by its temperature, whose strength follows the flame's radiated power:
   it flickers, and its shadows dance, with the flame. The four fires nearest the camera
   cast shadows; a fire's own model (the torch) doesn't shadow its light.
-- **Water and flame** (while playing): a fire goes out when its source is under a pool's
-  water or particle-fluid liquid lands on it, and dies down; a burning flame lights an
+- **Water, wind and flame** (while playing): a fire goes out when its source is under a
+  pool's water or particle-fluid liquid lands on it, or when the air reaching it is faster
+  than its **Blow Out** speed (a candle: 2 m/s), and dies down; a burning flame lights an
   unlit fire whose source it touches (carry a torch to a candle). Lua: `Ignite`,
   `Extinguish`, `IsBurning`, `SetFireWind`.
 - **Performance**: the CPU path spreads several fires over the cores (one fire per core at
   a time); fires out of view step every other frame, and fires that are out stop once their
   smoke has cleared. Settings > OpenCL > Fires steps grids of 8000+ cells on the device,
   bit-identical to the CPU.
+- The **Night Camp** showcase has one of each kind of fire under the moon: a campfire, a
+  torch on a pole, a candle on a crate and a lantern hanging from a post, with wind gusts
+  while playing (below).
 - The **Fire** showcase is a torch-lit dungeon room: wall torches, a brazier on a column, a
   campfire and candles. Press **Play** and a torch is lit at the brazier and carried around
   the room. Models:
@@ -756,6 +762,14 @@ Open via **File → Showcases**:
   below the surface for the underwater view.
 - **Fluid** — the pool plus particle water: a block on the deck collapses and spills over
   the edge into the pool, and a stream pours into it.
+- **Night Camp** — a clearing in the woods at night, lit by the moon and four fires: a
+  campfire with logs around it, a torch on a pole by the path, a candle on a crate by the
+  tent and a lantern hanging from a post on a short chain. Press **Play** and a breeze
+  blows, with a gust every twelve seconds: the campfire and the torch lean into it, the
+  candle blows out and is relit once the gust has passed, and the lantern swings on its
+  chain (a physics pendulum) while its flame, behind glass, stays calm and upright.
+
+  ![The Night Camp showcase: a lantern, a campfire, a candle on a crate and a torch at night](images/camp-showcase.png)
 - **Fire** — a torch-lit dungeon room: wall torches, a brazier on a column, a campfire and
   candles, all simulated flames lighting the room with flickering light and shadows. Press
   **Play** and an unlit torch is held in the brazier's flame until it catches, then carried

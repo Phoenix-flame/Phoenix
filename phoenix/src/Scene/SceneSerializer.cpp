@@ -623,6 +623,8 @@ namespace Phoenix{
             out << YAML::Key << "Smoke" << YAML::Value << f.smoke;
             out << YAML::Key << "SmokeLife" << YAML::Value << f.smokeLife;
             out << YAML::Key << "Wind" << YAML::Value << f.wind;
+            out << YAML::Key << "WindExposure" << YAML::Value << f.windExposure;
+            out << YAML::Key << "BlowOut" << YAML::Value << f.blowOut;
             out << YAML::Key << "Brightness" << YAML::Value << f.brightness;
             out << YAML::Key << "FlameTemperature" << YAML::Value << f.flameTemperature;
             out << YAML::Key << "SmokeColor" << YAML::Value << f.smokeColor;
@@ -1201,6 +1203,8 @@ namespace Phoenix{
             f.smoke = n["Smoke"].as<float>(def.smoke);
             f.smokeLife = n["SmokeLife"].as<float>(def.smokeLife);
             f.wind = ReadVec3(n["Wind"], def.wind);
+            f.windExposure = n["WindExposure"].as<float>(def.windExposure);
+            f.blowOut = n["BlowOut"].as<float>(def.blowOut);
             f.brightness = n["Brightness"].as<float>(def.brightness);
             f.flameTemperature = n["FlameTemperature"].as<float>(def.flameTemperature);
             f.smokeColor = ReadVec3(n["SmokeColor"], def.smokeColor);

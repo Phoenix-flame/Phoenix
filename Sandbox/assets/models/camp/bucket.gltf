@@ -1,0 +1,195 @@
+{
+ "asset": {
+  "generator": "UnityGLTF",
+  "version": "2.0"
+ },
+ "extensionsUsed": [
+  "KHR_texture_transform"
+ ],
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0
+   ],
+   "name": "bucket"
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 120,
+   "type": "VEC3",
+   "max": [
+    0.07206259667873383,
+    0.1920626014471054,
+    0.07206259667873383
+   ],
+   "min": [
+    -0.07206259667873383,
+    0.0,
+    -0.07206259667873383
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 120,
+   "type": "VEC3",
+   "max": [
+    0.913658082485199,
+    1.0,
+    0.990533709526062
+   ],
+   "min": [
+    -0.913658082485199,
+    -1.0,
+    -0.990533709526062
+   ]
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 120,
+   "type": "VEC4",
+   "max": [
+    1.0,
+    0.06065044179558754,
+    0.9256219267845154,
+    1.0
+   ],
+   "min": [
+    -1.0,
+    -0.06065044179558754,
+    -0.9256219267845154,
+    -1.0
+   ]
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5126,
+   "count": 120,
+   "type": "VEC2",
+   "max": [
+    0.59375,
+    0.9750000238418579
+   ],
+   "min": [
+    0.34375,
+    0.7749999761581421
+   ]
+  },
+  {
+   "bufferView": 4,
+   "componentType": 5121,
+   "count": 204,
+   "type": "SCALAR",
+   "max": [
+    119.0
+   ],
+   "min": [
+    0.0
+   ]
+  }
+ ],
+ "buffers": [
+  {
+   "byteLength": 5964,
+   "uri": "bucket.bin"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteLength": 1440,
+   "byteStride": 12,
+   "target": 34962,
+   "byteOffset": 0
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 1440,
+   "byteLength": 1440,
+   "byteStride": 12,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 2880,
+   "byteLength": 1920,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 4800,
+   "byteLength": 960,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 5760,
+   "byteLength": 204,
+   "target": 34963
+  }
+ ],
+ "images": [
+  {
+   "uri": "kenney_survival_colormap.png",
+   "name": "colormap"
+  }
+ ],
+ "materials": [
+  {
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 0,
+     "extensions": {
+      "KHR_texture_transform": {
+       "texCoord": 0
+      }
+     }
+    },
+    "metallicFactor": 0.0
+   },
+   "doubleSided": true,
+   "name": "colormap"
+  }
+ ],
+ "meshes": [
+  {
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TANGENT": 2,
+      "TEXCOORD_0": 3
+     },
+     "indices": 4,
+     "material": 0
+    }
+   ],
+   "name": "bucket"
+  }
+ ],
+ "nodes": [
+  {
+   "mesh": 0,
+   "name": "bucket"
+  }
+ ],
+ "samplers": [
+  {
+   "magFilter": 9728,
+   "minFilter": 9984
+  }
+ ],
+ "textures": [
+  {
+   "sampler": 0,
+   "source": 0,
+   "name": "colormap"
+  }
+ ]
+}

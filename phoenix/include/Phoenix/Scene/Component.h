@@ -637,11 +637,11 @@ namespace Phoenix{
     // brazier's bowl). The box stays upright, so the flame rises whatever holds it, and
     // trails behind when the entity moves or the wind blows. It lights its surroundings
     // with a point light that follows the flame's heat (flicker and dancing shadows),
-    // throws embers, and goes out when its source is under a pool's water or doused
-    // by a particle fluid; a burning flame lights an unlit fire it touches. Simulates
-    // in edit mode too.
+    // throws embers, and goes out when its source is under a pool's water, doused by a
+    // particle fluid or (with blowOut set) caught by too strong a wind; a burning flame
+    // lights an unlit fire it touches. Simulates in edit mode too.
     struct FireComponent{
-        enum class Preset { Torch = 0, Candle, Campfire, Brazier };
+        enum class Preset { Torch = 0, Candle, Campfire, Brazier, Lantern };
 
         bool lit = true;                    // burning when the scene starts
         glm::vec3 offset = glm::vec3(0.0f); // source, in the entity's frame (scaled with it)
@@ -665,6 +665,12 @@ namespace Phoenix{
         float smoke = 0.35f;
         float smokeLife = 1.2f;             // s
         glm::vec3 wind = glm::vec3(0.0f);   // m/s (world)
+        // Share of the air's motion past the source (wind, and the source's own movement)
+        // that reaches the flame: 1 in the open, a little behind a lantern's glass.
+        float windExposure = 1.0f;
+        // While playing, the flame goes out when the air reaching it is faster than this
+        // (m/s; 0 = never): a candle in a gust, or carried at a run.
+        float blowOut = 0.0f;
 
         // Look.
         float brightness = 1.0f;
@@ -702,7 +708,7 @@ namespace Phoenix{
               pressureIterations(o.pressureIterations), sourceRadius(o.sourceRadius),
               fuel(o.fuel), exitSpeed(o.exitSpeed), burnRate(o.burnRate), heat(o.heat), cooling(o.cooling),
               buoyancy(o.buoyancy), vorticity(o.vorticity), turbulence(o.turbulence), smoke(o.smoke),
-              smokeLife(o.smokeLife), wind(o.wind),
+              smokeLife(o.smokeLife), wind(o.wind), windExposure(o.windExposure), blowOut(o.blowOut),
               brightness(o.brightness), flameTemperature(o.flameTemperature), smokeColor(o.smokeColor),
               smokeDensity(o.smokeDensity), heatHaze(o.heatHaze), embers(o.embers),
               castLight(o.castLight), lightIntensity(o.lightIntensity), lightRange(o.lightRange),
@@ -720,6 +726,15 @@ namespace Phoenix{
                 d.exitSpeed = 0.04f; d.burnRate = 12.0f; d.buoyancy = 1.2f; d.turbulence = 0.2f; d.vorticity = 0.2f;
                 d.smoke = 0.05f; d.embers = 0.0f; d.heatHaze = 0.5f; d.brightness = 3.0f;
                 d.lightIntensity = 0.4f; d.lightRange = 1.5f; d.castShadows = false;
+                d.blowOut = 2.0f;
+                break;
+            case Preset::Lantern:
+                // A candle behind glass: sheltered from the wind and its swinging, and
+                // its light (and shadows: the lantern's frame) carry further.
+                d.width = 0.05f; d.height = 0.12f; d.resolution = 12; d.sourceRadius = { 0.011f, 0.012f };
+                d.exitSpeed = 0.04f; d.burnRate = 12.0f; d.buoyancy = 1.2f; d.turbulence = 0.2f; d.vorticity = 0.2f;
+                d.smoke = 0.05f; d.embers = 0.0f; d.heatHaze = 0.0f; d.brightness = 3.0f;
+                d.windExposure = 0.1f; d.lightIntensity = 0.9f; d.lightRange = 4.0f;
                 break;
             case Preset::Campfire:
                 d.width = 1.0f; d.height = 1.8f; d.resolution = 24; d.sourceRadius = { 0.35f, 0.08f };

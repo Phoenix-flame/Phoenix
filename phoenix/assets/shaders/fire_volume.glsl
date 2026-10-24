@@ -104,8 +104,14 @@ void main(){
     for (int i = 0; i < 160; i++){
         if (i >= steps) { break; }
         vec3 pos = u_CameraPos + rd * (t0 + (float(i) + jitter) * dt);
-        vec4 s = texture(u_Volume, (pos - u_Origin) / u_Size);
-        float T = max(s.r, 0.0);
+        vec3 q = (pos - u_Origin) / u_Size;
+        vec4 s = texture(u_Volume, q);
+        // Smoke and hot air leave through the box's top and sides: fade them out there,
+        // so the box's faces never show as edges.
+        vec3 inner = min(q, 1.0 - q);
+        float edge = smoothstep(0.0, 0.12, min(inner.x, inner.z)) * smoothstep(0.0, 0.2, 1.0 - q.y);
+        s.b *= edge;
+        float T = max(s.r, 0.0) * mix(1.0, edge, step(max(s.g, 0.0), 0.02));
         vec3 body = texture(u_BlackBody, vec2(T * u_KelvinScale, 0.5)).rgb * BRIGHTNESS;
         float sigmaSoot = (1.0 - exp(-max(s.g, 0.0) * SOOT)) * SOOT_EXTINCTION;
         float sigmaSmoke = max(s.b, 0.0) * u_SmokeDensity * SMOKE;
