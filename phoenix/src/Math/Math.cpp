@@ -3,6 +3,8 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/matrix_decompose.hpp>
 #include <glm/gtx/euler_angles.hpp>
+#include <glm/gtc/constants.hpp>
+#include <cmath>
 
 namespace Phoenix::Math{
     bool DecomposeTransform(const glm::mat4& transform, glm::vec3& translation, glm::vec3& rotation, glm::vec3& scale){
@@ -73,5 +75,30 @@ namespace Phoenix::Math{
 		glm::extractEulerAngleXYZ(rotationMatrix, rotation.x, rotation.y, rotation.z);
 
 		return true;
+	}
+
+	glm::quat EulerXYZToQuat(const glm::vec3& e){
+		return glm::angleAxis(e.x, glm::vec3(1, 0, 0))
+		     * glm::angleAxis(e.y, glm::vec3(0, 1, 0))
+		     * glm::angleAxis(e.z, glm::vec3(0, 0, 1));
+	}
+
+	// Shift each angle by a multiple of 2*pi so it lies closest to the reference.
+	static glm::vec3 UnwrapNear(glm::vec3 angles, const glm::vec3& reference){
+		const float twoPi = glm::two_pi<float>();
+		for (int i = 0; i < 3; i++)
+			angles[i] += twoPi * std::round((reference[i] - angles[i]) / twoPi);
+		return angles;
+	}
+
+	glm::vec3 QuatToEulerXYZ(const glm::quat& q, const glm::vec3& reference){
+		// (x, y, z) and (x + pi, pi - y, z + pi) describe the same rotation.
+		glm::vec3 a;
+		glm::extractEulerAngleXYZ(glm::mat4_cast(q), a.x, a.y, a.z);
+		const float pi = glm::pi<float>();
+		glm::vec3 first  = UnwrapNear(a, reference);
+		glm::vec3 second = UnwrapNear(glm::vec3(a.x + pi, pi - a.y, a.z + pi), reference);
+		glm::vec3 d1 = first - reference, d2 = second - reference;
+		return glm::dot(d1, d1) <= glm::dot(d2, d2) ? first : second;
 	}
 }

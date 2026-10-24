@@ -1,6 +1,7 @@
 #pragma once
 #include <Phoenix/core/base.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <cstdint>
 #include <vector>
 
@@ -24,6 +25,7 @@ namespace Phoenix{
         static constexpr uint32_t InvalidBody = 0xffffffff;
         static constexpr uint32_t InvalidJoint = 0xffffffff;
         static constexpr uint32_t InvalidCharacter = 0xffffffff;
+        static constexpr uint32_t InvalidVehicle = 0xffffffff;
 
         // User collision layers. Each body is on one layer; layerMasks[i] bit j says
         // whether layer i collides with layer j (both directions must agree).
@@ -67,6 +69,7 @@ namespace Phoenix{
             bool  continuousCollision = false; // for fast movers (bullets) so they don't tunnel
             bool  isSensor = false;          // detects contacts but has no collision response
             bool  allowSleeping = true;      // resting bodies stop simulating until touched
+            bool  startAsleep = false;       // frozen until something touches it (dynamic)
             bool  lockPosition[3] = { false, false, false }; // world X/Y/Z translation
             bool  lockRotation[3] = { false, false, false }; // world X/Y/Z rotation
             int   layer = 0;                 // collision layer (0..MaxLayers-1)
@@ -97,7 +100,7 @@ namespace Phoenix{
 
         using QueryFilter = PhysicsQueryFilter;
 
-        enum class JointType { Fixed = 0, Point = 1, Distance = 2, Hinge = 3, Slider = 4, Cone = 5 };
+        enum class JointType { Fixed = 0, Point = 1, Distance = 2, Hinge = 3, Slider = 4, Cone = 5, SwingTwist = 6 };
         enum class MotorMode { Off = 0, Velocity = 1, Position = 2 };
 
         // A constraint between two bodies. Anchors/axes are in WORLD space of the
@@ -125,6 +128,37 @@ namespace Phoenix{
             float friction = 0.0f;        // hinge / slider resisting force/torque
             float breakForce = 0.0f;      // N; joint snaps above this (0 = unbreakable)
             bool  collideConnected = false; // let the two jointed bodies collide
+            // SwingTwist (ragdoll joints): swing limits around the two axes
+            // perpendicular to `axis` (planeAxis and axis x planeAxis) and a twist range
+            // around `axis` (radians).
+            glm::vec3 planeAxis = { 0.0f, 1.0f, 0.0f };
+            float normalHalfCone = 0.5f;
+            float planeHalfCone = 0.5f;
+            float twistMin = -0.3f;
+            float twistMax = 0.3f;
+        };
+
+        // A four-wheeled car on Jolt's wheeled vehicle constraint (raycast-free
+        // cylinder casts for wheels, suspension springs, engine, auto gearbox,
+        // differentials, anti-roll bars). Everything is in the chassis body's local
+        // space in meters; the vehicle drives towards local -Z with +Y up.
+        struct VehicleDesc{
+            glm::vec3 wheelPositions[4] = { { -0.9f, -0.1f, -1.3f }, { 0.9f, -0.1f, -1.3f },   // FL, FR
+                                            { -0.9f, -0.1f,  1.3f }, { 0.9f, -0.1f,  1.3f } }; // RL, RR
+            float wheelRadius = 0.4f;
+            float wheelWidth = 0.3f;
+            float suspensionMinLength = 0.2f;
+            float suspensionMaxLength = 0.5f;
+            float suspensionFrequency = 1.5f; // Hz (stiffness)
+            float suspensionDamping = 0.5f;
+            float maxSteerAngle = 0.52f;      // radians, front wheels
+            float engineTorque = 500.0f;      // N.m
+            float maxRPM = 6000.0f;
+            float brakeTorque = 1500.0f;      // N.m per wheel
+            float handBrakeTorque = 4000.0f;  // N.m, rear wheels
+            int   drive = 2;                  // 0 front, 1 rear, 2 all-wheel
+            bool  antiRollBars = true;
+            float maxPitchRoll = 3.1416f;     // radians; < pi keeps it from flipping over
         };
 
         // Kinematic capsule character (walks, climbs steps, slides off steep slopes,
@@ -182,6 +216,24 @@ namespace Phoenix{
         // The kinematic body that represents the character for raycasts/sensors/contacts.
         uint32_t GetCharacterBody(uint32_t character) const;
 
+        // ---- Vehicles ----
+
+        // Turns a dynamic body into a car. Removed with the body.
+        uint32_t CreateVehicle(uint32_t bodyID, const VehicleDesc& desc);
+        void RemoveVehicle(uint32_t vehicle);
+        // forward/right in [-1, 1] (right > 0 steers right), brake/handBrake in [0, 1].
+        void SetVehicleInput(uint32_t vehicle, float forward, float right, float brake, float handBrake);
+        float GetVehicleSpeed(uint32_t vehicle) const;  // m/s along the car's forward axis
+        float GetVehicleRPM(uint32_t vehicle) const;
+        int GetVehicleGear(uint32_t vehicle) const;
+        // World pose of wheel 0..3 for a model whose axle is its local Y axis (the
+        // built-in cylinder primitive); false if the vehicle doesn't exist.
+        bool GetWheelPose(uint32_t vehicle, int wheel, glm::vec3& outPosition, glm::quat& outRotation) const;
+        bool IsWheelGrounded(uint32_t vehicle, int wheel) const;
+
+        // Never let these two bodies collide (ragdoll parts, jointed assemblies).
+        void DisableCollisionBetween(uint32_t bodyA, uint32_t bodyB);
+
         // ---- Dynamics ----
 
         void ApplyImpulse(uint32_t bodyID, const glm::vec3& impulse);          // kg m/s, at center of mass
@@ -200,6 +252,7 @@ namespace Phoenix{
         void SetRestitution(uint32_t bodyID, float restitution);
         // Teleport (no velocity change); wakes the body.
         void SetBodyTransform(uint32_t bodyID, const glm::vec3& position, const glm::vec3& rotationEuler);
+        void SetBodyPose(uint32_t bodyID, const glm::vec3& position, const glm::quat& rotation);
         void WakeUp(uint32_t bodyID);
         bool IsAwake(uint32_t bodyID) const;
         bool IsSensor(uint32_t bodyID) const;
@@ -242,12 +295,16 @@ namespace Phoenix{
         static constexpr float MaxStep = 0.1f;
 
         // Advances characters and the simulation by dt (clamped to MaxStep), split into
-        // collision steps of at most 1/maxSubstepRate s for stability.
+        // collision steps of at most 1/maxSubstepRate s for stability. With the same
+        // sequence of dt values and inputs the result is deterministic (the Scene
+        // calls this with a fixed dt when its fixed timestep is on).
         void Step(float dt);
 
         // Reads back a body's world transform. Rotation is XYZ Euler in radians; pass the
         // entity's current rotation in so the returned angles stay continuous with it.
         void GetBodyTransform(uint32_t bodyID, glm::vec3& outPosition, glm::vec3& inOutRotationEuler) const;
+        // Same as a quaternion (for interpolation and ragdoll bone posing).
+        void GetBodyPose(uint32_t bodyID, glm::vec3& outPosition, glm::quat& outRotation) const;
 
         const Settings& GetSettings() const;
         uint32_t GetBodyCount() const;

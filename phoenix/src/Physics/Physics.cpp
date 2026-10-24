@@ -1,5 +1,6 @@
 #include <Phoenix/Physics/Physics.h>
 #include <Phoenix/core/log.h>
+#include <Phoenix/Math/Math.h>
 
 #include <Jolt/Jolt.h>
 #include <Jolt/RegisterTypes.h>
@@ -32,11 +33,13 @@
 #include <Jolt/Physics/Constraints/HingeConstraint.h>
 #include <Jolt/Physics/Constraints/SliderConstraint.h>
 #include <Jolt/Physics/Constraints/ConeConstraint.h>
+#include <Jolt/Physics/Constraints/SwingTwistConstraint.h>
 #include <Jolt/Physics/Character/CharacterVirtual.h>
+#include <Jolt/Physics/Vehicle/VehicleConstraint.h>
+#include <Jolt/Physics/Vehicle/WheeledVehicleController.h>
+#include <Jolt/Physics/Vehicle/VehicleCollisionTester.h>
 
-#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtc/quaternion.hpp>
-#include <glm/gtx/euler_angles.hpp>
 
 #include <thread>
 #include <mutex>
@@ -254,6 +257,11 @@ namespace Phoenix{
         float jumpSpeed = 0.0f;
     };
 
+    struct VehicleRecord{
+        JPH::Ref<JPH::VehicleConstraint> constraint;
+        uint32_t body;
+    };
+
     // Collision groups let jointed bodies ignore each other (collideConnected = false).
     // Sub-group ids are handed out on demand from one shared table.
     static constexpr JPH::uint MaxJointGroups = 4096;
@@ -276,6 +284,7 @@ namespace Phoenix{
         std::vector<JointRecord> joints;          // index = joint id; null constraint = removed
         std::vector<uint32_t> brokenJoints;
         std::vector<CharacterRecord> characters;  // index = character id; null = removed
+        std::vector<VehicleRecord> vehicles;      // index = vehicle id; null = removed
         JPH::CharacterVsCharacterCollisionSimple characterVsCharacter;
         JPH::Ref<JPH::GroupFilterTable> groupTable;
         std::unordered_map<uint32_t, JPH::CollisionGroup::SubGroupID> bodySubGroups;
@@ -303,6 +312,15 @@ namespace Phoenix{
 
         JPH::BodyInterface& Bodies() { return physicsSystem.GetBodyInterface(); }
         const JPH::BodyInterface& Bodies() const { return physicsSystem.GetBodyInterface(); }
+
+        VehicleRecord* GetVehicle(uint32_t id){
+            if (id >= vehicles.size() || !vehicles[id].constraint) { return nullptr; }
+            return &vehicles[id];
+        }
+        const VehicleRecord* GetVehicle(uint32_t id) const{
+            if (id >= vehicles.size() || !vehicles[id].constraint) { return nullptr; }
+            return &vehicles[id];
+        }
 
         JointRecord* GetJoint(uint32_t id){
             if (id >= joints.size() || !joints[id].constraint) { return nullptr; }
@@ -348,41 +366,14 @@ namespace Phoenix{
 
     const PhysicsWorld::Settings& PhysicsWorld::GetSettings() const { return m_Impl->settings; }
 
-    // Rotations use the same XYZ Euler convention as TransformComponent::GetTransform
-    // (Rx * Ry * Rz). glm::quat(euler) / glm::eulerAngles use ZYX instead, which made
-    // colliders disagree with the rendered mesh for any multi-axis rotation.
-    static glm::quat EulerXYZToQuat(const glm::vec3& e){
-        return glm::angleAxis(e.x, glm::vec3(1, 0, 0))
-             * glm::angleAxis(e.y, glm::vec3(0, 1, 0))
-             * glm::angleAxis(e.z, glm::vec3(0, 0, 1));
-    }
+    using Math::EulerXYZToQuat;
+    using Math::QuatToEulerXYZ;
 
     static JPH::Quat ToJolt(const glm::quat& q) { return JPH::Quat(q.x, q.y, q.z, q.w); }
     static JPH::Vec3 ToJolt(const glm::vec3& v) { return JPH::Vec3(v.x, v.y, v.z); }
     static JPH::RVec3 ToJoltR(const glm::vec3& v) { return JPH::RVec3(v.x, v.y, v.z); }
     static glm::vec3 ToGlm(JPH::Vec3Arg v) { return { v.GetX(), v.GetY(), v.GetZ() }; }
     static glm::vec3 ToGlmR(JPH::RVec3Arg v) { return { (float)v.GetX(), (float)v.GetY(), (float)v.GetZ() }; }
-
-    // Shift each angle by a multiple of 2*pi so it lies closest to the reference.
-    static glm::vec3 UnwrapNear(glm::vec3 angles, const glm::vec3& reference){
-        const float twoPi = glm::two_pi<float>();
-        for (int i = 0; i < 3; i++)
-            angles[i] += twoPi * std::round((reference[i] - angles[i]) / twoPi);
-        return angles;
-    }
-
-    // XYZ Euler angles for q, picking whichever of the two equivalent solutions
-    // ((x, y, z) and (x + pi, pi - y, z + pi)) is closest to the reference, so the
-    // angles stay continuous frame to frame instead of flipping once y passes 90 deg.
-    static glm::vec3 QuatToEulerXYZ(const glm::quat& q, const glm::vec3& reference){
-        glm::vec3 a;
-        glm::extractEulerAngleXYZ(glm::mat4_cast(q), a.x, a.y, a.z);
-        const float pi = glm::pi<float>();
-        glm::vec3 first  = UnwrapNear(a, reference);
-        glm::vec3 second = UnwrapNear(glm::vec3(a.x + pi, pi - a.y, a.z + pi), reference);
-        glm::vec3 d1 = first - reference, d2 = second - reference;
-        return glm::dot(d1, d1) <= glm::dot(d2, d2) ? first : second;
-    }
 
     // ---- Shapes ----
 
@@ -535,7 +526,8 @@ namespace Phoenix{
             else { settings.mAllowedDOFs = (EAllowedDOFs)dofs; }
         }
 
-        BodyID id = m_Impl->Bodies().CreateAndAddBody(settings, isStatic ? EActivation::DontActivate : EActivation::Activate);
+        const bool asleep = isStatic || (props.startAsleep && props.allowSleeping);
+        BodyID id = m_Impl->Bodies().CreateAndAddBody(settings, asleep ? EActivation::DontActivate : EActivation::Activate);
         if (id.IsInvalid()) { PHX_CORE_WARN("Physics body limit reached; body not created"); }
         return id.GetIndexAndSequenceNumber();
     }
@@ -548,6 +540,8 @@ namespace Phoenix{
             const JointRecord& rec = m_Impl->joints[j];
             if (rec.constraint && (rec.bodyA == bodyID || rec.bodyB == bodyID)) { RemoveJoint(j); }
         }
+        for (uint32_t v = 0; v < (uint32_t)m_Impl->vehicles.size(); v++)
+            if (m_Impl->vehicles[v].constraint && m_Impl->vehicles[v].body == bodyID) { RemoveVehicle(v); }
         m_Impl->bodySubGroups.erase(bodyID);
         JPH::BodyID id(bodyID);
         m_Impl->Bodies().RemoveBody(id);
@@ -650,6 +644,24 @@ namespace Phoenix{
                 constraint = CreateTwoBodyConstraint(system, bodyB, bodyA, s);
                 break;
             }
+            case JointType::SwingTwist:{
+                SwingTwistConstraintSettings s;
+                s.mSpace = EConstraintSpace::WorldSpace;
+                s.mPosition1 = s.mPosition2 = pivot;
+                s.mTwistAxis1 = s.mTwistAxis2 = axis;
+                // The plane axis must be perpendicular to the twist axis.
+                Vec3 plane = ToJolt(d.planeAxis);
+                plane = plane - plane.Dot(axis) * axis;
+                plane = plane.LengthSq() > 1.0e-6f ? plane.Normalized() : normal;
+                s.mPlaneAxis1 = s.mPlaneAxis2 = plane;
+                s.mNormalHalfConeAngle = std::clamp(d.normalHalfCone, 0.0f, JPH_PI);
+                s.mPlaneHalfConeAngle = std::clamp(d.planeHalfCone, 0.0f, JPH_PI);
+                s.mTwistMinAngle = std::clamp(d.twistMin, -JPH_PI, 0.0f);
+                s.mTwistMaxAngle = std::clamp(d.twistMax, 0.0f, JPH_PI);
+                s.mMaxFrictionTorque = std::max(0.0f, d.friction);
+                constraint = CreateTwoBodyConstraint(system, bodyB, bodyA, s);
+                break;
+            }
             case JointType::Cone:{
                 ConeConstraintSettings s;
                 s.mSpace = EConstraintSpace::WorldSpace;
@@ -733,6 +745,7 @@ namespace Phoenix{
             case PhysicsWorld::JointType::Hinge:    return static_cast<const HingeConstraint*>(c)->GetTotalLambdaPosition().Length();
             case PhysicsWorld::JointType::Slider:   return static_cast<const SliderConstraint*>(c)->GetTotalLambdaPosition().Length();
             case PhysicsWorld::JointType::Cone:     return static_cast<const ConeConstraint*>(c)->GetTotalLambdaPosition().Length();
+            case PhysicsWorld::JointType::SwingTwist: return static_cast<const SwingTwistConstraint*>(c)->GetTotalLambdaPosition().Length();
         }
         return 0.0f;
     }
@@ -875,6 +888,135 @@ namespace Phoenix{
             {}, {}, tempAllocator);
     }
 
+    // ---- Vehicles ----
+
+    uint32_t PhysicsWorld::CreateVehicle(uint32_t bodyID, const VehicleDesc& d){
+        using namespace JPH;
+        if (bodyID == InvalidBody) { return InvalidVehicle; }
+
+        VehicleConstraintSettings settings;
+        settings.mUp = Vec3::sAxisY();
+        settings.mForward = -Vec3::sAxisZ(); // engine convention: entities face -Z
+        settings.mMaxPitchRollAngle = std::clamp(d.maxPitchRoll, 0.1f, JPH_PI);
+
+        for (int i = 0; i < 4; i++){
+            JPH::Ref<WheelSettingsWV> w = new WheelSettingsWV();
+            w->mPosition = ToJolt(d.wheelPositions[i]);
+            w->mSuspensionForcePoint = w->mPosition;
+            w->mWheelForward = -Vec3::sAxisZ();
+            w->mRadius = std::max(d.wheelRadius, 0.05f);
+            w->mWidth = std::max(d.wheelWidth, 0.02f);
+            w->mSuspensionMinLength = std::max(0.0f, d.suspensionMinLength);
+            w->mSuspensionMaxLength = std::max(w->mSuspensionMinLength + 0.01f, d.suspensionMaxLength);
+            w->mSuspensionSpring.mFrequency = std::max(0.1f, d.suspensionFrequency);
+            w->mSuspensionSpring.mDamping = std::max(0.0f, d.suspensionDamping);
+            const bool front = i < 2;
+            w->mMaxSteerAngle = front ? std::clamp(d.maxSteerAngle, 0.0f, 1.4f) : 0.0f;
+            w->mMaxBrakeTorque = std::max(0.0f, d.brakeTorque);
+            w->mMaxHandBrakeTorque = front ? 0.0f : std::max(0.0f, d.handBrakeTorque);
+            settings.mWheels.push_back(w.GetPtr());
+        }
+
+        JPH::Ref<WheeledVehicleControllerSettings> controller = new WheeledVehicleControllerSettings();
+        controller->mEngine.mMaxTorque = std::max(1.0f, d.engineTorque);
+        controller->mEngine.mMaxRPM = std::max(controller->mEngine.mMinRPM + 100.0f, d.maxRPM);
+        auto addDifferential = [&](int left, int right, float ratio){
+            VehicleDifferentialSettings diff;
+            diff.mLeftWheel = left;
+            diff.mRightWheel = right;
+            diff.mEngineTorqueRatio = ratio;
+            controller->mDifferentials.push_back(diff);
+        };
+        if (d.drive == 0)      { addDifferential(0, 1, 1.0f); }
+        else if (d.drive == 1) { addDifferential(2, 3, 1.0f); }
+        else                   { addDifferential(0, 1, 0.5f); addDifferential(2, 3, 0.5f); }
+        settings.mController = controller;
+
+        if (d.antiRollBars){
+            VehicleAntiRollBar front, rear;
+            front.mLeftWheel = 0; front.mRightWheel = 1;
+            rear.mLeftWheel = 2;  rear.mRightWheel = 3;
+            settings.mAntiRollBars.push_back(front);
+            settings.mAntiRollBars.push_back(rear);
+        }
+
+        JPH::Ref<VehicleConstraint> constraint;
+        ObjectLayer layer;
+        {
+            BodyLockWrite lock(m_Impl->physicsSystem.GetBodyLockInterface(), BodyID(bodyID));
+            if (!lock.Succeeded() || !lock.GetBody().IsDynamic()){
+                PHX_CORE_WARN("Physics: a vehicle needs a dynamic rigid body");
+                return InvalidVehicle;
+            }
+            constraint = new VehicleConstraint(lock.GetBody(), settings);
+            layer = lock.GetBody().GetObjectLayer();
+        }
+        constraint->SetVehicleCollisionTester(new VehicleCollisionTesterCastCylinder(layer));
+        m_Impl->physicsSystem.AddConstraint(constraint);
+        m_Impl->physicsSystem.AddStepListener(constraint);
+        m_Impl->vehicles.push_back({ constraint, bodyID });
+        return (uint32_t)m_Impl->vehicles.size() - 1;
+    }
+
+    void PhysicsWorld::RemoveVehicle(uint32_t vehicle){
+        VehicleRecord* rec = m_Impl->GetVehicle(vehicle);
+        if (!rec) { return; }
+        m_Impl->physicsSystem.RemoveStepListener(rec->constraint);
+        m_Impl->physicsSystem.RemoveConstraint(rec->constraint);
+        rec->constraint = nullptr;
+    }
+
+    void PhysicsWorld::SetVehicleInput(uint32_t vehicle, float forward, float right, float brake, float handBrake){
+        VehicleRecord* rec = m_Impl->GetVehicle(vehicle);
+        if (!rec) { return; }
+        auto* controller = static_cast<JPH::WheeledVehicleController*>(rec->constraint->GetController());
+        controller->SetDriverInput(std::clamp(forward, -1.0f, 1.0f), std::clamp(right, -1.0f, 1.0f),
+                                   std::clamp(brake, 0.0f, 1.0f), std::clamp(handBrake, 0.0f, 1.0f));
+        if (forward != 0.0f || right != 0.0f || brake != 0.0f || handBrake != 0.0f)
+            m_Impl->Bodies().ActivateBody(JPH::BodyID(rec->body)); // a parked car falls asleep
+    }
+
+    float PhysicsWorld::GetVehicleSpeed(uint32_t vehicle) const{
+        const VehicleRecord* rec = m_Impl->GetVehicle(vehicle);
+        if (!rec) { return 0.0f; }
+        JPH::BodyID id(rec->body);
+        JPH::Vec3 forward = m_Impl->Bodies().GetRotation(id) * -JPH::Vec3::sAxisZ();
+        return m_Impl->Bodies().GetLinearVelocity(id).Dot(forward);
+    }
+
+    float PhysicsWorld::GetVehicleRPM(uint32_t vehicle) const{
+        const VehicleRecord* rec = m_Impl->GetVehicle(vehicle);
+        if (!rec) { return 0.0f; }
+        return static_cast<const JPH::WheeledVehicleController*>(rec->constraint->GetController())->GetEngine().GetCurrentRPM();
+    }
+
+    int PhysicsWorld::GetVehicleGear(uint32_t vehicle) const{
+        const VehicleRecord* rec = m_Impl->GetVehicle(vehicle);
+        if (!rec) { return 0; }
+        return static_cast<const JPH::WheeledVehicleController*>(rec->constraint->GetController())->GetTransmission().GetCurrentGear();
+    }
+
+    bool PhysicsWorld::GetWheelPose(uint32_t vehicle, int wheel, glm::vec3& outPosition, glm::quat& outRotation) const{
+        const VehicleRecord* rec = m_Impl->GetVehicle(vehicle);
+        if (!rec || wheel < 0 || wheel > 3) { return false; }
+        // Wheel model space: axle along +Y (cylinder primitive), "up" along +X.
+        JPH::RMat44 m = rec->constraint->GetWheelWorldTransform((JPH::uint)wheel, JPH::Vec3::sAxisY(), JPH::Vec3::sAxisX());
+        outPosition = ToGlmR(m.GetTranslation());
+        JPH::Quat q = m.GetQuaternion();
+        outRotation = glm::quat(q.GetW(), q.GetX(), q.GetY(), q.GetZ());
+        return true;
+    }
+
+    bool PhysicsWorld::IsWheelGrounded(uint32_t vehicle, int wheel) const{
+        const VehicleRecord* rec = m_Impl->GetVehicle(vehicle);
+        if (!rec || wheel < 0 || wheel > 3) { return false; }
+        return rec->constraint->GetWheel((JPH::uint)wheel)->HasContact();
+    }
+
+    void PhysicsWorld::DisableCollisionBetween(uint32_t bodyA, uint32_t bodyB){
+        m_Impl->DisableCollision(bodyA, bodyB);
+    }
+
     // ---- Dynamics ----
 
     void PhysicsWorld::ApplyImpulse(uint32_t bodyID, const glm::vec3& impulse){
@@ -955,6 +1097,12 @@ namespace Phoenix{
         if (bodyID == InvalidBody) { return; }
         m_Impl->Bodies().SetPositionAndRotation(JPH::BodyID(bodyID), ToJoltR(position),
             ToJolt(EulerXYZToQuat(rotationEuler)), JPH::EActivation::Activate);
+    }
+
+    void PhysicsWorld::SetBodyPose(uint32_t bodyID, const glm::vec3& position, const glm::quat& rotation){
+        if (bodyID == InvalidBody) { return; }
+        m_Impl->Bodies().SetPositionAndRotation(JPH::BodyID(bodyID), ToJoltR(position), ToJolt(rotation),
+            JPH::EActivation::Activate);
     }
 
     void PhysicsWorld::WakeUp(uint32_t bodyID){
@@ -1122,6 +1270,14 @@ namespace Phoenix{
         outPosition = ToGlmR(pos);
         glm::quat q(rot.GetW(), rot.GetX(), rot.GetY(), rot.GetZ());
         inOutRotationEuler = QuatToEulerXYZ(q, inOutRotationEuler);
+    }
+
+    void PhysicsWorld::GetBodyPose(uint32_t bodyID, glm::vec3& outPosition, glm::quat& outRotation) const{
+        if (bodyID == InvalidBody) { return; }
+        JPH::BodyID id(bodyID);
+        outPosition = ToGlmR(m_Impl->Bodies().GetPosition(id));
+        JPH::Quat q = m_Impl->Bodies().GetRotation(id);
+        outRotation = glm::quat(q.GetW(), q.GetX(), q.GetY(), q.GetZ());
     }
 
     uint32_t PhysicsWorld::GetBodyCount() const { return m_Impl->physicsSystem.GetNumBodies(); }

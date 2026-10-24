@@ -182,28 +182,62 @@ namespace Phoenix{
         if (m_PhysicsDebug.showJoints){
             auto view = m_Registry.view<JointComponent, TransformComponent>();
             for (auto entity : view){
-                auto& j = view.get<JointComponent>(entity);
                 auto& t = view.get<TransformComponent>(entity);
-                if (m_PhysicsWorld && j.runtimeJointID == PhysicsWorld::InvalidJoint) { continue; } // broken / failed
-                Lines& out = lines(jointColor);
-                Entity other = j.connectedTag.empty() ? Entity{} : FindEntityByTag(j.connectedTag);
-                glm::vec3 otherPoint = (other && other.HasComponent<TransformComponent>())
-                    ? other.GetComponent<TransformComponent>().Translation : j.pivot;
-                if (m_PhysicsWorld || j.type == JointComponent::Type::Distance){
-                    // Playing (pivots move with the bodies) or a distance joint: the link.
-                    Segment(out, glm::mat4(1.0f), t.Translation, otherPoint);
-                    Cross(out, otherPoint, 0.1f);
-                    continue;
+                for (const auto& j : view.get<JointComponent>(entity).joints){
+                    if (m_PhysicsWorld && j.runtimeJointID == PhysicsWorld::InvalidJoint) { continue; } // broken / failed
+                    Lines& out = lines(jointColor);
+                    Entity other = j.connectedTag.empty() ? Entity{} : FindEntityByTag(j.connectedTag);
+                    glm::vec3 otherPoint = (other && other.HasComponent<TransformComponent>())
+                        ? other.GetComponent<TransformComponent>().Translation : j.pivot;
+                    if (m_PhysicsWorld || j.type == JointComponent::Type::Distance){
+                        // Playing (pivots move with the bodies) or a distance joint: the link.
+                        Segment(out, glm::mat4(1.0f), t.Translation, otherPoint);
+                        Cross(out, otherPoint, 0.1f);
+                        continue;
+                    }
+                    Cross(out, j.pivot, 0.15f);
+                    Segment(out, glm::mat4(1.0f), t.Translation, j.pivot);
+                    if (other) { Segment(out, glm::mat4(1.0f), j.pivot, otherPoint); }
+                    if (j.type != JointComponent::Type::Point && j.type != JointComponent::Type::Fixed){
+                        glm::vec3 axis = glm::dot(j.axis, j.axis) > 1e-8f ? glm::normalize(j.axis) : Y;
+                        float len = j.type == JointComponent::Type::Slider && j.limitSlide
+                            ? std::max(std::abs(j.minSlide), std::abs(j.maxSlide)) : 0.8f;
+                        Segment(out, glm::mat4(1.0f), j.pivot - axis * len, j.pivot + axis * len);
+                    }
                 }
-                Cross(out, j.pivot, 0.15f);
-                Segment(out, glm::mat4(1.0f), t.Translation, j.pivot);
-                if (other) { Segment(out, glm::mat4(1.0f), j.pivot, otherPoint); }
-                if (j.type == JointComponent::Type::Hinge || j.type == JointComponent::Type::Slider
-                    || j.type == JointComponent::Type::Cone){
-                    glm::vec3 axis = glm::dot(j.axis, j.axis) > 1e-8f ? glm::normalize(j.axis) : Y;
-                    float len = j.type == JointComponent::Type::Slider && j.limitSlide
-                        ? std::max(std::abs(j.minSlide), std::abs(j.maxSlide)) : 0.8f;
-                    Segment(out, glm::mat4(1.0f), j.pivot - axis * len, j.pivot + axis * len);
+            }
+        }
+
+        // Ragdoll bodies (they have no components of their own).
+        if (m_PhysicsWorld){
+            for (auto entity : m_Registry.view<RagdollComponent>()){
+                const auto& rd = m_Registry.get<RagdollComponent>(entity);
+                for (const auto& part : rd.parts){
+                    glm::vec3 position; glm::quat rotation;
+                    m_PhysicsWorld->GetBodyPose(part.body, position, rotation);
+                    Cross(lines(m_PhysicsWorld->IsAwake(part.body) ? dynamicColor : sleepingColor), position, 0.08f);
+                    if (part.parentPart >= 0){
+                        glm::vec3 parent; glm::quat unused;
+                        m_PhysicsWorld->GetBodyPose(rd.parts[part.parentPart].body, parent, unused);
+                        Segment(lines(jointColor), glm::mat4(1.0f), position, parent);
+                    }
+                }
+            }
+        }
+
+        // Vehicles: wheel circles at the suspension attachment points.
+        {
+            auto view = m_Registry.view<VehicleComponent, TransformComponent>();
+            for (auto entity : view){
+                auto& v = view.get<VehicleComponent>(entity);
+                glm::mat4 pose = PoseOf(view.get<TransformComponent>(entity));
+                const float x = v.halfTrack;
+                const glm::vec3 wheels[4] = { { -x, v.wheelHeight, v.frontAxle }, { x, v.wheelHeight, v.frontAxle },
+                                              { -x, v.wheelHeight, v.rearAxle },  { x, v.wheelHeight, v.rearAxle } };
+                for (const auto& w : wheels){
+                    glm::vec3 center = w - Y * v.suspensionMax * 0.5f; // mid suspension travel
+                    Circle(lines(kinematicColor), pose, center, Z, Y, v.wheelRadius);
+                    Segment(lines(kinematicColor), pose, w, center);
                 }
             }
         }

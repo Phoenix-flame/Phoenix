@@ -72,6 +72,8 @@ private:
     void BuildMultiShadowShowcase();
     // Populate m_Scene with the physics playground (joints, materials, triggers, cannon).
     void BuildPhysicsShowcase();
+    // Populate m_Scene with the vehicle test track (car, ramp, cones, crates, ragdoll dummies).
+    void BuildVehicleShowcase();
 
     // Terrain sculpting: raycast to the terrain plane and raise/lower/smooth heights.
     void SculptTerrain(TerrainComponent& terrain, const glm::vec3& terrainPos,

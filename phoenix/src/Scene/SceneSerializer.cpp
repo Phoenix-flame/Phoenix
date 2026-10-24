@@ -35,6 +35,69 @@ namespace Phoenix{
             out[i] = (node && node.IsSequence() && node.size() == 3) ? node[i].as<bool>(false) : false;
     }
 
+    static void SerializeJoint(YAML::Emitter& out, const JointComponent::Joint& j){
+        out << YAML::BeginMap;
+        out << YAML::Key << "Type" << YAML::Value << (int)j.type;
+        out << YAML::Key << "ConnectedTag" << YAML::Value << j.connectedTag;
+        out << YAML::Key << "Pivot" << YAML::Value << j.pivot;
+        out << YAML::Key << "Axis" << YAML::Value << j.axis;
+        out << YAML::Key << "MinDistance" << YAML::Value << j.minDistance;
+        out << YAML::Key << "MaxDistance" << YAML::Value << j.maxDistance;
+        out << YAML::Key << "SpringFrequency" << YAML::Value << j.springFrequency;
+        out << YAML::Key << "SpringDamping" << YAML::Value << j.springDamping;
+        out << YAML::Key << "LimitAngles" << YAML::Value << j.limitAngles;
+        out << YAML::Key << "MinAngle" << YAML::Value << j.minAngle;
+        out << YAML::Key << "MaxAngle" << YAML::Value << j.maxAngle;
+        out << YAML::Key << "LimitSlide" << YAML::Value << j.limitSlide;
+        out << YAML::Key << "MinSlide" << YAML::Value << j.minSlide;
+        out << YAML::Key << "MaxSlide" << YAML::Value << j.maxSlide;
+        out << YAML::Key << "ConeAngle" << YAML::Value << j.coneAngle;
+        out << YAML::Key << "PlaneAxis" << YAML::Value << j.planeAxis;
+        out << YAML::Key << "SwingAngle1" << YAML::Value << j.swingAngle1;
+        out << YAML::Key << "SwingAngle2" << YAML::Value << j.swingAngle2;
+        out << YAML::Key << "TwistMin" << YAML::Value << j.twistMin;
+        out << YAML::Key << "TwistMax" << YAML::Value << j.twistMax;
+        out << YAML::Key << "Motor" << YAML::Value << (int)j.motor;
+        out << YAML::Key << "MotorTarget" << YAML::Value << j.motorTarget;
+        out << YAML::Key << "MotorMaxForce" << YAML::Value << j.motorMaxForce;
+        out << YAML::Key << "Friction" << YAML::Value << j.friction;
+        out << YAML::Key << "BreakForce" << YAML::Value << j.breakForce;
+        out << YAML::Key << "CollideConnected" << YAML::Value << j.collideConnected;
+        out << YAML::EndMap;
+    }
+
+    static JointComponent::Joint ReadJoint(const YAML::Node& n){
+        const JointComponent::Joint def{}; // fallbacks for keys missing from the file
+        JointComponent::Joint j;
+        j.type = (JointComponent::Type)std::clamp(n["Type"].as<int>((int)def.type), 0, 6);
+        j.connectedTag = n["ConnectedTag"].as<std::string>(def.connectedTag);
+        j.pivot = ReadVec3(n["Pivot"], def.pivot);
+        j.axis = ReadVec3(n["Axis"], def.axis);
+        j.minDistance = n["MinDistance"].as<float>(def.minDistance);
+        j.maxDistance = n["MaxDistance"].as<float>(def.maxDistance);
+        j.springFrequency = n["SpringFrequency"].as<float>(def.springFrequency);
+        j.springDamping = n["SpringDamping"].as<float>(def.springDamping);
+        j.limitAngles = n["LimitAngles"].as<bool>(def.limitAngles);
+        j.minAngle = n["MinAngle"].as<float>(def.minAngle);
+        j.maxAngle = n["MaxAngle"].as<float>(def.maxAngle);
+        j.limitSlide = n["LimitSlide"].as<bool>(def.limitSlide);
+        j.minSlide = n["MinSlide"].as<float>(def.minSlide);
+        j.maxSlide = n["MaxSlide"].as<float>(def.maxSlide);
+        j.coneAngle = n["ConeAngle"].as<float>(def.coneAngle);
+        j.planeAxis = ReadVec3(n["PlaneAxis"], def.planeAxis);
+        j.swingAngle1 = n["SwingAngle1"].as<float>(def.swingAngle1);
+        j.swingAngle2 = n["SwingAngle2"].as<float>(def.swingAngle2);
+        j.twistMin = n["TwistMin"].as<float>(def.twistMin);
+        j.twistMax = n["TwistMax"].as<float>(def.twistMax);
+        j.motor = (JointComponent::Motor)std::clamp(n["Motor"].as<int>((int)def.motor), 0, 2);
+        j.motorTarget = n["MotorTarget"].as<float>(def.motorTarget);
+        j.motorMaxForce = n["MotorMaxForce"].as<float>(def.motorMaxForce);
+        j.friction = n["Friction"].as<float>(def.friction);
+        j.breakForce = n["BreakForce"].as<float>(def.breakForce);
+        j.collideConnected = n["CollideConnected"].as<bool>(def.collideConnected);
+        return j;
+    }
+
     // Scene-level physics settings (gravity, solver, collision layers).
     static void SerializePhysicsSettings(YAML::Emitter& out, const ScenePhysicsSettings& p){
         out << YAML::Key << "Physics" << YAML::Value << YAML::BeginMap;
@@ -42,6 +105,8 @@ namespace Phoenix{
         out << YAML::Key << "VelocitySteps" << YAML::Value << p.velocitySteps;
         out << YAML::Key << "PositionSteps" << YAML::Value << p.positionSteps;
         out << YAML::Key << "SubstepRate" << YAML::Value << p.substepRate;
+        out << YAML::Key << "FixedTimestep" << YAML::Value << p.fixedTimestep;
+        out << YAML::Key << "FixedRate" << YAML::Value << p.fixedRate;
         out << YAML::Key << "Layers" << YAML::Value << YAML::BeginSeq;
         for (int i = 0; i < ScenePhysicsSettings::MaxLayers; i++){
             out << YAML::BeginMap;
@@ -61,6 +126,8 @@ namespace Phoenix{
         p.velocitySteps = node["VelocitySteps"].as<int>(def.velocitySteps);
         p.positionSteps = node["PositionSteps"].as<int>(def.positionSteps);
         p.substepRate = node["SubstepRate"].as<float>(def.substepRate);
+        p.fixedTimestep = node["FixedTimestep"].as<bool>(def.fixedTimestep);
+        p.fixedRate = node["FixedRate"].as<float>(def.fixedRate);
         const YAML::Node layers = node["Layers"];
         if (layers && layers.IsSequence()){
             for (std::size_t i = 0; i < layers.size() && i < (std::size_t)ScenePhysicsSettings::MaxLayers; i++){
@@ -201,6 +268,7 @@ namespace Phoenix{
             out << YAML::Key << "ContinuousCollision" << YAML::Value << rb.continuousCollision;
             out << YAML::Key << "IsSensor" << YAML::Value << rb.isSensor;
             out << YAML::Key << "AllowSleeping" << YAML::Value << rb.allowSleeping;
+            out << YAML::Key << "StartAsleep" << YAML::Value << rb.startAsleep;
             out << YAML::Key << "LockPosition" << YAML::Value;
             WriteBool3(out, rb.lockPosition);
             out << YAML::Key << "LockRotation" << YAML::Value;
@@ -255,29 +323,69 @@ namespace Phoenix{
         }
 
         if (entity.HasComponent<JointComponent>()){
-            auto& j = entity.GetComponent<JointComponent>();
             out << YAML::Key << "JointComponent" << YAML::Value << YAML::BeginMap;
-            out << YAML::Key << "Type" << YAML::Value << (int)j.type;
-            out << YAML::Key << "ConnectedTag" << YAML::Value << j.connectedTag;
-            out << YAML::Key << "Pivot" << YAML::Value << j.pivot;
-            out << YAML::Key << "Axis" << YAML::Value << j.axis;
-            out << YAML::Key << "MinDistance" << YAML::Value << j.minDistance;
-            out << YAML::Key << "MaxDistance" << YAML::Value << j.maxDistance;
-            out << YAML::Key << "SpringFrequency" << YAML::Value << j.springFrequency;
-            out << YAML::Key << "SpringDamping" << YAML::Value << j.springDamping;
-            out << YAML::Key << "LimitAngles" << YAML::Value << j.limitAngles;
-            out << YAML::Key << "MinAngle" << YAML::Value << j.minAngle;
-            out << YAML::Key << "MaxAngle" << YAML::Value << j.maxAngle;
-            out << YAML::Key << "LimitSlide" << YAML::Value << j.limitSlide;
-            out << YAML::Key << "MinSlide" << YAML::Value << j.minSlide;
-            out << YAML::Key << "MaxSlide" << YAML::Value << j.maxSlide;
-            out << YAML::Key << "ConeAngle" << YAML::Value << j.coneAngle;
-            out << YAML::Key << "Motor" << YAML::Value << (int)j.motor;
-            out << YAML::Key << "MotorTarget" << YAML::Value << j.motorTarget;
-            out << YAML::Key << "MotorMaxForce" << YAML::Value << j.motorMaxForce;
-            out << YAML::Key << "Friction" << YAML::Value << j.friction;
-            out << YAML::Key << "BreakForce" << YAML::Value << j.breakForce;
-            out << YAML::Key << "CollideConnected" << YAML::Value << j.collideConnected;
+            out << YAML::Key << "Joints" << YAML::Value << YAML::BeginSeq;
+            for (const auto& j : entity.GetComponent<JointComponent>().joints) { SerializeJoint(out, j); }
+            out << YAML::EndSeq;
+            out << YAML::EndMap;
+        }
+
+        if (entity.HasComponent<CompoundColliderComponent>()){
+            out << YAML::Key << "CompoundColliderComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "Shapes" << YAML::Value << YAML::BeginSeq;
+            for (const auto& shape : entity.GetComponent<CompoundColliderComponent>().shapes){
+                out << YAML::BeginMap;
+                out << YAML::Key << "Type" << YAML::Value << (int)shape.type;
+                out << YAML::Key << "HalfExtents" << YAML::Value << shape.halfExtents;
+                out << YAML::Key << "Radius" << YAML::Value << shape.radius;
+                out << YAML::Key << "HalfHeight" << YAML::Value << shape.halfHeight;
+                out << YAML::Key << "Offset" << YAML::Value << shape.offset;
+                out << YAML::Key << "Rotation" << YAML::Value << shape.rotation;
+                out << YAML::EndMap;
+            }
+            out << YAML::EndSeq;
+            out << YAML::EndMap;
+        }
+
+        if (entity.HasComponent<VehicleComponent>()){
+            auto& v = entity.GetComponent<VehicleComponent>();
+            out << YAML::Key << "VehicleComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "HalfTrack" << YAML::Value << v.halfTrack;
+            out << YAML::Key << "FrontAxle" << YAML::Value << v.frontAxle;
+            out << YAML::Key << "RearAxle" << YAML::Value << v.rearAxle;
+            out << YAML::Key << "WheelHeight" << YAML::Value << v.wheelHeight;
+            out << YAML::Key << "WheelRadius" << YAML::Value << v.wheelRadius;
+            out << YAML::Key << "WheelWidth" << YAML::Value << v.wheelWidth;
+            out << YAML::Key << "SuspensionMin" << YAML::Value << v.suspensionMin;
+            out << YAML::Key << "SuspensionMax" << YAML::Value << v.suspensionMax;
+            out << YAML::Key << "SuspensionFrequency" << YAML::Value << v.suspensionFrequency;
+            out << YAML::Key << "SuspensionDamping" << YAML::Value << v.suspensionDamping;
+            out << YAML::Key << "MaxSteerAngle" << YAML::Value << v.maxSteerAngle;
+            out << YAML::Key << "EngineTorque" << YAML::Value << v.engineTorque;
+            out << YAML::Key << "MaxRPM" << YAML::Value << v.maxRPM;
+            out << YAML::Key << "BrakeTorque" << YAML::Value << v.brakeTorque;
+            out << YAML::Key << "HandBrakeTorque" << YAML::Value << v.handBrakeTorque;
+            out << YAML::Key << "Drive" << YAML::Value << (int)v.drive;
+            out << YAML::Key << "AntiRollBars" << YAML::Value << v.antiRollBars;
+            out << YAML::Key << "KeyboardControl" << YAML::Value << v.keyboardControl;
+            out << YAML::Key << "WheelTags" << YAML::Value << YAML::Flow << YAML::BeginSeq;
+            for (const auto& tag : v.wheelTags) { out << tag; }
+            out << YAML::EndSeq;
+            out << YAML::EndMap;
+        }
+
+        if (entity.HasComponent<RagdollComponent>()){
+            auto& r = entity.GetComponent<RagdollComponent>();
+            out << YAML::Key << "RagdollComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "StartActive" << YAML::Value << r.startActive;
+            out << YAML::Key << "Density" << YAML::Value << r.density;
+            out << YAML::Key << "Friction" << YAML::Value << r.friction;
+            out << YAML::Key << "LimbThickness" << YAML::Value << r.limbThickness;
+            out << YAML::Key << "TorsoThickness" << YAML::Value << r.torsoThickness;
+            out << YAML::Key << "JointFriction" << YAML::Value << r.jointFriction;
+            out << YAML::Key << "JointLimitScale" << YAML::Value << r.jointLimitScale;
+            out << YAML::Key << "Layer" << YAML::Value << r.layer;
+            out << YAML::Key << "FollowHips" << YAML::Value << r.followHips;
             out << YAML::EndMap;
         }
 
@@ -539,6 +647,7 @@ namespace Phoenix{
             rb.continuousCollision = n["ContinuousCollision"].as<bool>(def.continuousCollision);
             rb.isSensor = n["IsSensor"].as<bool>(def.isSensor);
             rb.allowSleeping = n["AllowSleeping"].as<bool>(def.allowSleeping);
+            rb.startAsleep = n["StartAsleep"].as<bool>(def.startAsleep);
             ReadBool3(n["LockPosition"], rb.lockPosition);
             ReadBool3(n["LockRotation"], rb.lockRotation);
             rb.layer = std::clamp(n["Layer"].as<int>(def.layer), 0, ScenePhysicsSettings::MaxLayers - 1);
@@ -576,29 +685,14 @@ namespace Phoenix{
         else if (entity.HasComponent<CylinderColliderComponent>()) entity.RemoveComponent<CylinderColliderComponent>();
 
         if (auto n = node["JointComponent"]){
-            auto& j = entity.HasComponent<JointComponent>() ? entity.GetComponent<JointComponent>() : entity.AddComponent<JointComponent>();
-            const JointComponent def{}; // fallbacks for keys missing from the file
-            j.type = (JointComponent::Type)std::clamp(n["Type"].as<int>((int)def.type), 0, 5);
-            j.connectedTag = n["ConnectedTag"].as<std::string>(def.connectedTag);
-            j.pivot = ReadVec3(n["Pivot"], def.pivot);
-            j.axis = ReadVec3(n["Axis"], def.axis);
-            j.minDistance = n["MinDistance"].as<float>(def.minDistance);
-            j.maxDistance = n["MaxDistance"].as<float>(def.maxDistance);
-            j.springFrequency = n["SpringFrequency"].as<float>(def.springFrequency);
-            j.springDamping = n["SpringDamping"].as<float>(def.springDamping);
-            j.limitAngles = n["LimitAngles"].as<bool>(def.limitAngles);
-            j.minAngle = n["MinAngle"].as<float>(def.minAngle);
-            j.maxAngle = n["MaxAngle"].as<float>(def.maxAngle);
-            j.limitSlide = n["LimitSlide"].as<bool>(def.limitSlide);
-            j.minSlide = n["MinSlide"].as<float>(def.minSlide);
-            j.maxSlide = n["MaxSlide"].as<float>(def.maxSlide);
-            j.coneAngle = n["ConeAngle"].as<float>(def.coneAngle);
-            j.motor = (JointComponent::Motor)std::clamp(n["Motor"].as<int>((int)def.motor), 0, 2);
-            j.motorTarget = n["MotorTarget"].as<float>(def.motorTarget);
-            j.motorMaxForce = n["MotorMaxForce"].as<float>(def.motorMaxForce);
-            j.friction = n["Friction"].as<float>(def.friction);
-            j.breakForce = n["BreakForce"].as<float>(def.breakForce);
-            j.collideConnected = n["CollideConnected"].as<bool>(def.collideConnected);
+            auto& jc = entity.HasComponent<JointComponent>() ? entity.GetComponent<JointComponent>() : entity.AddComponent<JointComponent>();
+            jc.joints.clear();
+            if (n["Joints"] && n["Joints"].IsSequence()){
+                for (const auto& jn : n["Joints"]) { jc.joints.push_back(ReadJoint(jn)); }
+            }
+            else{
+                jc.joints.push_back(ReadJoint(n)); // older scenes: one joint, fields inline
+            }
         }
         else if (entity.HasComponent<JointComponent>()) entity.RemoveComponent<JointComponent>();
 
@@ -632,6 +726,68 @@ namespace Phoenix{
             f.drag = n["Drag"].as<float>(def.drag);
         }
         else if (entity.HasComponent<ForceFieldComponent>()) entity.RemoveComponent<ForceFieldComponent>();
+
+        if (auto n = node["CompoundColliderComponent"]){
+            auto& cc = entity.HasComponent<CompoundColliderComponent>() ? entity.GetComponent<CompoundColliderComponent>() : entity.AddComponent<CompoundColliderComponent>();
+            cc.shapes.clear();
+            if (n["Shapes"] && n["Shapes"].IsSequence()){
+                const CompoundColliderComponent::Shape def{};
+                for (const auto& sn : n["Shapes"]){
+                    CompoundColliderComponent::Shape shape;
+                    shape.type = (CompoundColliderComponent::Shape::Type)std::clamp(sn["Type"].as<int>((int)def.type), 0, 3);
+                    shape.halfExtents = ReadVec3(sn["HalfExtents"], def.halfExtents);
+                    shape.radius = sn["Radius"].as<float>(def.radius);
+                    shape.halfHeight = sn["HalfHeight"].as<float>(def.halfHeight);
+                    shape.offset = ReadVec3(sn["Offset"], def.offset);
+                    shape.rotation = ReadVec3(sn["Rotation"], def.rotation);
+                    cc.shapes.push_back(shape);
+                }
+            }
+        }
+        else if (entity.HasComponent<CompoundColliderComponent>()) entity.RemoveComponent<CompoundColliderComponent>();
+
+        if (auto n = node["VehicleComponent"]){
+            auto& v = entity.HasComponent<VehicleComponent>() ? entity.GetComponent<VehicleComponent>() : entity.AddComponent<VehicleComponent>();
+            const VehicleComponent def{}; // fallbacks for keys missing from the file
+            v.halfTrack = n["HalfTrack"].as<float>(def.halfTrack);
+            v.frontAxle = n["FrontAxle"].as<float>(def.frontAxle);
+            v.rearAxle = n["RearAxle"].as<float>(def.rearAxle);
+            v.wheelHeight = n["WheelHeight"].as<float>(def.wheelHeight);
+            v.wheelRadius = n["WheelRadius"].as<float>(def.wheelRadius);
+            v.wheelWidth = n["WheelWidth"].as<float>(def.wheelWidth);
+            v.suspensionMin = n["SuspensionMin"].as<float>(def.suspensionMin);
+            v.suspensionMax = n["SuspensionMax"].as<float>(def.suspensionMax);
+            v.suspensionFrequency = n["SuspensionFrequency"].as<float>(def.suspensionFrequency);
+            v.suspensionDamping = n["SuspensionDamping"].as<float>(def.suspensionDamping);
+            v.maxSteerAngle = n["MaxSteerAngle"].as<float>(def.maxSteerAngle);
+            v.engineTorque = n["EngineTorque"].as<float>(def.engineTorque);
+            v.maxRPM = n["MaxRPM"].as<float>(def.maxRPM);
+            v.brakeTorque = n["BrakeTorque"].as<float>(def.brakeTorque);
+            v.handBrakeTorque = n["HandBrakeTorque"].as<float>(def.handBrakeTorque);
+            v.drive = (VehicleComponent::Drive)std::clamp(n["Drive"].as<int>((int)def.drive), 0, 2);
+            v.antiRollBars = n["AntiRollBars"].as<bool>(def.antiRollBars);
+            v.keyboardControl = n["KeyboardControl"].as<bool>(def.keyboardControl);
+            for (int i = 0; i < 4; i++){
+                const YAML::Node tags = n["WheelTags"];
+                v.wheelTags[i] = (tags && tags.IsSequence() && (int)tags.size() > i) ? tags[i].as<std::string>("") : std::string();
+            }
+        }
+        else if (entity.HasComponent<VehicleComponent>()) entity.RemoveComponent<VehicleComponent>();
+
+        if (auto n = node["RagdollComponent"]){
+            auto& r = entity.HasComponent<RagdollComponent>() ? entity.GetComponent<RagdollComponent>() : entity.AddComponent<RagdollComponent>();
+            const RagdollComponent def{}; // fallbacks for keys missing from the file
+            r.startActive = n["StartActive"].as<bool>(def.startActive);
+            r.density = n["Density"].as<float>(def.density);
+            r.friction = n["Friction"].as<float>(def.friction);
+            r.limbThickness = n["LimbThickness"].as<float>(def.limbThickness);
+            r.torsoThickness = n["TorsoThickness"].as<float>(def.torsoThickness);
+            r.jointFriction = n["JointFriction"].as<float>(def.jointFriction);
+            r.jointLimitScale = n["JointLimitScale"].as<float>(def.jointLimitScale);
+            r.layer = std::clamp(n["Layer"].as<int>(def.layer), 0, ScenePhysicsSettings::MaxLayers - 1);
+            r.followHips = n["FollowHips"].as<bool>(def.followHips);
+        }
+        else if (entity.HasComponent<RagdollComponent>()) entity.RemoveComponent<RagdollComponent>();
 
         if (auto n = node["BoxColliderComponent"]){
             auto& bc = entity.HasComponent<BoxColliderComponent>() ? entity.GetComponent<BoxColliderComponent>() : entity.AddComponent<BoxColliderComponent>();

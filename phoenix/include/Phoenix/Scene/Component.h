@@ -3,6 +3,9 @@
 #include <Phoenix/core/assert.h>
 #include <Phoenix/Scene/SceneCamera.h>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <vector>
+#include <string>
 #include <Phoenix/renderer/shader.h>
 #include <Phoenix/renderer/VertexArray.h>
 #include <Phoenix/renderer/Mesh.h>
@@ -110,6 +113,7 @@ namespace Phoenix{
         bool  continuousCollision = false; // for fast movers (bullets) so they don't tunnel
         bool  isSensor = false;        // trigger volume: detects contacts, no response
         bool  allowSleeping = true;    // resting bodies stop simulating until disturbed
+        bool  startAsleep = false;     // frozen in place until touched (standing ragdolls, stacks)
         bool  lockPosition[3] = { false, false, false }; // freeze world X/Y/Z movement
         bool  lockRotation[3] = { false, false, false }; // freeze world X/Y/Z rotation
         int   layer = 0;               // collision layer (Scene physics settings matrix)
@@ -117,6 +121,13 @@ namespace Phoenix{
         glm::vec3 initialAngularVelocity = { 0.0f, 0.0f, 0.0f }; // rad/s
 
         uint32_t runtimeBodyID = 0xffffffff;
+        // Runtime (not serialized). The poses of the last two fixed steps, blended
+        // for rendering, and the transform the simulation last wrote to the entity:
+        // any other change (gizmo drag, SetTranslation) teleports the body there.
+        glm::vec3 prevPosition{ 0.0f }, currPosition{ 0.0f };
+        glm::quat prevRotation{ 1, 0, 0, 0 }, currRotation{ 1, 0, 0, 0 };
+        glm::vec3 syncedTranslation{ 0.0f }, syncedRotation{ 0.0f };
+        bool synced = false;
         RigidBodyComponent() = default;
         RigidBodyComponent(const RigidBodyComponent&) = default;
     };
@@ -160,6 +171,25 @@ namespace Phoenix{
         CylinderColliderComponent(const CylinderColliderComponent&) = default;
     };
 
+    // Any number of box / sphere / capsule / cylinder shapes on one entity (two boxes,
+    // a table of five boxes, a dumbbell ...). Combines with the single-shape collider
+    // components above into one compound body. Same local-space rules as they use.
+    struct CompoundColliderComponent{
+        struct Shape{
+            enum class Type { Box = 0, Sphere = 1, Capsule = 2, Cylinder = 3 };
+            Type type = Type::Box;
+            glm::vec3 halfExtents = { 0.5f, 0.5f, 0.5f }; // box
+            float radius = 0.5f;                          // sphere / capsule / cylinder
+            float halfHeight = 0.5f;                      // capsule / cylinder (local Y)
+            glm::vec3 offset = { 0.0f, 0.0f, 0.0f };
+            glm::vec3 rotation = { 0.0f, 0.0f, 0.0f };    // radians
+        };
+        std::vector<Shape> shapes;
+        Shape& Add(Shape::Type type) { shapes.push_back({}); shapes.back().type = type; return shapes.back(); }
+        CompoundColliderComponent() = default;
+        CompoundColliderComponent(const CompoundColliderComponent&) = default;
+    };
+
     // Collider built from the entity's MeshComponent geometry. convex = convex hull
     // (works for dynamic bodies); otherwise an exact triangle mesh (static only).
     struct MeshColliderComponent{
@@ -181,32 +211,47 @@ namespace Phoenix{
     //  - Slider: moves along `axis` only, optional position limits and a motor
     //    (pistons, elevators, drawers).
     //  - Cone: ball-and-socket whose swing is limited to a cone around `axis`
-    //    (ragdoll shoulders, lamp arms).
+    //    (lamp arms).
+    //  - SwingTwist: cone with separate limits on its two swing axes plus a twist
+    //    range around `axis` (ragdoll shoulders, hips, knees, neck).
     struct JointComponent{
-        enum class Type { Point = 0, Distance = 1, Hinge = 2, Fixed = 3, Slider = 4, Cone = 5 };
+        enum class Type { Point = 0, Distance = 1, Hinge = 2, Fixed = 3, Slider = 4, Cone = 5, SwingTwist = 6 };
         enum class Motor { Off = 0, Velocity = 1, Position = 2 };
-        Type type = Type::Point;
-        std::string connectedTag;          // other rigid-body entity; empty = world
-        glm::vec3 pivot = { 0.0f, 0.0f, 0.0f };
-        glm::vec3 axis = { 0.0f, 0.0f, 1.0f }; // hinge / slider / cone axis
-        float minDistance = -1.0f;         // distance joint; -1 = use starting distance
-        float maxDistance = -1.0f;
-        float springFrequency = 0.0f;      // distance joint softness in Hz (0 = rigid)
-        float springDamping = 0.5f;
-        bool  limitAngles = false;         // hinge limits (radians, about the rest pose)
-        float minAngle = -1.5708f;
-        float maxAngle =  1.5708f;
-        bool  limitSlide = false;          // slider limits (meters, about the rest pose)
-        float minSlide = -1.0f;
-        float maxSlide =  1.0f;
-        float coneAngle = 0.7854f;         // cone half angle (radians)
-        Motor motor = Motor::Off;          // hinge / slider motor
-        float motorTarget = 0.0f;          // rad/s or m/s (velocity), rad or m (position)
-        float motorMaxForce = 0.0f;        // N / N·m; 0 = unlimited
-        float friction = 0.0f;             // hinge / slider friction torque / force
-        float breakForce = 0.0f;           // N; snaps above this force (0 = unbreakable)
-        bool  collideConnected = false;    // let the two connected bodies collide
-        uint32_t runtimeJointID = 0xffffffff;
+        // One joint. An entity can have any number (a plank hinged at both ends, a
+        // ragdoll torso holding the head and both arms ...).
+        struct Joint{
+            Type type = Type::Point;
+            std::string connectedTag;          // other rigid-body entity; empty = world
+            glm::vec3 pivot = { 0.0f, 0.0f, 0.0f };
+            glm::vec3 axis = { 0.0f, 0.0f, 1.0f }; // hinge / slider / cone / swing-twist axis
+            float minDistance = -1.0f;         // distance joint; -1 = use starting distance
+            float maxDistance = -1.0f;
+            float springFrequency = 0.0f;      // distance joint softness in Hz (0 = rigid)
+            float springDamping = 0.5f;
+            bool  limitAngles = false;         // hinge limits (radians, about the rest pose)
+            float minAngle = -1.5708f;
+            float maxAngle =  1.5708f;
+            bool  limitSlide = false;          // slider limits (meters, about the rest pose)
+            float minSlide = -1.0f;
+            float maxSlide =  1.0f;
+            float coneAngle = 0.7854f;         // cone half angle (radians)
+            // Swing-twist (ragdoll joints): swing cone half angles around the two axes
+            // perpendicular to `axis` (planeAxis, and axis x planeAxis), twist range.
+            glm::vec3 planeAxis = { 0.0f, 1.0f, 0.0f };
+            float swingAngle1 = 0.5f;          // radians
+            float swingAngle2 = 0.5f;
+            float twistMin = -0.3f;
+            float twistMax = 0.3f;
+            Motor motor = Motor::Off;          // hinge / slider motor
+            float motorTarget = 0.0f;          // rad/s or m/s (velocity), rad or m (position)
+            float motorMaxForce = 0.0f;        // N / N·m; 0 = unlimited
+            float friction = 0.0f;             // hinge / slider / swing-twist friction
+            float breakForce = 0.0f;           // N; snaps above this force (0 = unbreakable)
+            bool  collideConnected = false;    // let the two connected bodies collide
+            uint32_t runtimeJointID = 0xffffffff;
+        };
+        std::vector<Joint> joints;
+        Joint& Add(Type type = Type::Point) { joints.push_back({}); joints.back().type = type; return joints.back(); }
         JointComponent() = default;
         JointComponent(const JointComponent&) = default;
     };
@@ -238,6 +283,9 @@ namespace Phoenix{
         bool grounded = false;
         glm::vec3 velocity = { 0.0f, 0.0f, 0.0f };
         uint32_t runtimeCharacterID = 0xffffffff;
+        glm::vec3 prevPosition{ 0.0f }, currPosition{ 0.0f }; // last two fixed steps
+        glm::vec3 syncedTranslation{ 0.0f };                  // last written by physics
+        bool synced = false;
         CharacterControllerComponent() = default;
         CharacterControllerComponent(const CharacterControllerComponent& o)
             : radius(o.radius), halfHeight(o.halfHeight), maxSlopeAngle(o.maxSlopeAngle),
@@ -265,6 +313,93 @@ namespace Phoenix{
         float drag = 0.0f;                            // extra velocity damping inside (1/s)
         ForceFieldComponent() = default;
         ForceFieldComponent(const ForceFieldComponent&) = default;
+    };
+
+    // Turns the entity's Dynamic rigid body into a four-wheeled car (Jolt wheeled
+    // vehicle: suspension, engine, automatic gearbox, differentials, anti-roll bars).
+    // The car drives towards local -Z. Wheel layout is in METERS in the entity's
+    // local frame (rotated but NOT scaled by the Transform). Optional wheel entities
+    // (any visual, e.g. a cylinder shape; no rigid body) are posed every frame.
+    // Drive it with keyboardControl (W/S or Up/Down throttle and reverse, A/D or
+    // Left/Right steer, Space handbrake) or from Lua with SetVehicleInput.
+    struct VehicleComponent{
+        enum class Drive { Front = 0, Rear = 1, All = 2 };
+        float halfTrack = 0.9f;        // wheel X distance from the center line
+        float frontAxle = -1.3f;       // wheel Z (front is -Z)
+        float rearAxle = 1.3f;
+        float wheelHeight = -0.1f;     // suspension attachment Y
+        float wheelRadius = 0.4f;
+        float wheelWidth = 0.3f;
+        float suspensionMin = 0.2f;    // m
+        float suspensionMax = 0.5f;    // m
+        float suspensionFrequency = 1.5f; // Hz; higher = stiffer
+        float suspensionDamping = 0.5f;
+        float maxSteerAngle = 0.52f;   // radians
+        float engineTorque = 500.0f;   // N.m
+        float maxRPM = 6000.0f;
+        float brakeTorque = 1500.0f;   // N.m per wheel
+        float handBrakeTorque = 4000.0f;
+        Drive drive = Drive::All;
+        bool  antiRollBars = true;
+        bool  keyboardControl = false;
+        std::string wheelTags[4];      // FL, FR, RL, RR visual entities (optional)
+
+        // Runtime (not serialized): driver input (Lua / keyboard) and readouts.
+        float forward = 0.0f, right = 0.0f, brake = 0.0f, handBrake = 0.0f;
+        float speed = 0.0f, rpm = 0.0f;
+        int gear = 0;
+        uint32_t runtimeVehicleID = 0xffffffff;
+        VehicleComponent() = default;
+        VehicleComponent(const VehicleComponent& o)
+            : halfTrack(o.halfTrack), frontAxle(o.frontAxle), rearAxle(o.rearAxle), wheelHeight(o.wheelHeight),
+              wheelRadius(o.wheelRadius), wheelWidth(o.wheelWidth), suspensionMin(o.suspensionMin),
+              suspensionMax(o.suspensionMax), suspensionFrequency(o.suspensionFrequency),
+              suspensionDamping(o.suspensionDamping), maxSteerAngle(o.maxSteerAngle), engineTorque(o.engineTorque),
+              maxRPM(o.maxRPM), brakeTorque(o.brakeTorque), handBrakeTorque(o.handBrakeTorque), drive(o.drive),
+              antiRollBars(o.antiRollBars), keyboardControl(o.keyboardControl){
+            for (int i = 0; i < 4; i++) { wheelTags[i] = o.wheelTags[i]; }
+        }
+    };
+
+    // Physics ragdoll for a skinned, animated model (MeshComponent + Animation). When
+    // activated (startActive, or Lua SetRagdoll(true)) capsule bodies are built along
+    // the skeleton's humanoid bones from the CURRENT animated pose, joined with
+    // swing-twist joints, and the skinned mesh follows the bodies instead of the
+    // animation; deactivating removes the bodies and the animation resumes. Bones are
+    // matched by name (Mixamo "mixamorig:Hips", "LeftUpLeg", ... and common
+    // alternatives such as "pelvis", "thigh", "calf", "upperarm"); missing limbs are
+    // skipped, but a hips/pelvis bone is required.
+    struct RagdollComponent{
+        bool  startActive = false;
+        float density = 985.0f;       // kg/m3 (about a human body)
+        float friction = 0.6f;
+        float limbThickness = 0.22f;  // limb capsule radius as a fraction of bone length
+        float torsoThickness = 0.55f;
+        float jointFriction = 2.0f;   // N.m; damps flailing
+        float jointLimitScale = 1.0f; // scales every joint's angle limits (0.5 = stiff)
+        int   layer = 0;
+        bool  followHips = true;      // the entity's position follows the pelvis (horizontally)
+
+        // Runtime (not serialized).
+        struct Part{
+            int node = -1;            // skeleton node driven by this body
+            int parentPart = -1;
+            uint32_t body = 0xffffffff;
+            uint32_t joint = 0xffffffff;
+            glm::mat4 bodyToNode{ 1.0f }; // node world = body world * bodyToNode
+        };
+        std::vector<Part> parts;
+        std::vector<glm::mat4> restLocals; // per node, local transform at activation
+        std::vector<int> nodePart;         // per node: part index or -1
+        glm::vec3 hipsToEntity{ 0.0f };    // world offset entity - pelvis at activation
+        bool active = false;
+        int request = -1;                  // -1 none, 0 deactivate, 1 activate
+        RagdollComponent() = default;
+        RagdollComponent(const RagdollComponent& o)
+            : startActive(o.startActive), density(o.density), friction(o.friction),
+              limbThickness(o.limbThickness), torsoThickness(o.torsoThickness),
+              jointFriction(o.jointFriction), jointLimitScale(o.jointLimitScale), layer(o.layer),
+              followHips(o.followHips) {}
     };
 
     // When present, the entity is drawn as a wireframe ("mesh network"). The bool

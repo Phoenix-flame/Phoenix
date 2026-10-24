@@ -23,6 +23,12 @@ namespace Phoenix{
         int velocitySteps = 10;      // solver iterations (stiffer stacks/chains when higher)
         int positionSteps = 2;
         float substepRate = 60.0f;   // max collision step length = 1 / rate seconds
+        // Fixed timestep: the simulation always advances in steps of 1 / fixedRate s
+        // (an accumulator absorbs the frame time) and rendering interpolates between
+        // the last two steps, so runs are repeatable regardless of frame rate. Off =
+        // one variable step per frame.
+        bool fixedTimestep = true;
+        float fixedRate = 60.0f;     // Hz
         // Collision layers: layerMasks[i] bit j = layer i collides with layer j
         // (kept symmetric by the editor). Every body is on one layer (default 0).
         std::string layerNames[MaxLayers];
@@ -51,6 +57,8 @@ namespace Phoenix{
 
     class Entity;
     class SceneEditor;
+    class Animator;
+    struct RagdollComponent;
     class PhysicsWorld;
     class LuaScript;
     class Scene{
@@ -86,6 +94,12 @@ namespace Phoenix{
         void OnRuntimeStart();
         void OnRuntimeStop();
         bool IsRunning() const { return (bool)m_PhysicsWorld; }
+
+        // Advance the running physics by one frame of ts seconds: fixed steps (see
+        // ScenePhysicsSettings::fixedTimestep), vehicles, ragdolls, characters, water,
+        // force fields and contact callbacks, then interpolated transforms. OnUpdate
+        // calls it; exposed for tools and tests that run physics without rendering.
+        void UpdatePhysics(float ts);
 
         // The live physics world while playing (null in edit mode). Used by Lua
         // bindings for impulses/velocities/raycasts.
@@ -130,10 +144,22 @@ namespace Phoenix{
         // Debug wireframes of colliders, joints, characters and force fields.
         void DrawPhysicsDebug();
         // Before/after the physics step: characters, force fields, contact dispatch.
+        void SyncExternalEdits();
+        void ApplyWaterCoupling(float dt);
         void UpdateCharactersPreStep(float dt);
         void UpdateCharactersPostStep(float dt);
         void ApplyForceFields();
         void DispatchPhysicsEvents();
+        // Vehicles (SceneVehicle.cpp).
+        void CreateVehicles();
+        void UpdateVehiclesPreStep();
+        void UpdateVehiclesPostStep();
+        // Ragdolls (SceneRagdoll.cpp).
+        void ProcessRagdollRequests();
+        bool ActivateRagdoll(Entity entity, RagdollComponent& ragdoll, Animator& animator);
+        void DeactivateRagdoll(Entity entity, RagdollComponent& ragdoll);
+        void PoseRagdoll(Entity entity, RagdollComponent& ragdoll, Animator& animator);
+        void UpdateRagdollFollow();
 
         ScenePhysicsSettings m_PhysicsSettings;
         PhysicsDebugSettings m_PhysicsDebug;
@@ -143,8 +169,9 @@ namespace Phoenix{
         std::unordered_map<uint32_t, entt::entity> m_BodyToEntity;
         // Bodies currently touching a water surface (splash edge detection).
         std::unordered_set<uint32_t> m_SubmergedBodies;
-        // Runtime joint id -> owning entity (for OnJointBreak).
-        std::unordered_map<uint32_t, entt::entity> m_JointToEntity;
+        // Runtime joint id -> owning entity and index in its JointComponent (OnJointBreak).
+        std::unordered_map<uint32_t, std::pair<entt::entity, int>> m_JointToEntity;
+        float m_PhysicsAccumulator = 0.0f; // fixed-step leftover time
         // Body pairs (min, max) currently touching through a sensor, so the matching
         // exit is reported as a trigger exit too.
         std::set<std::pair<uint32_t, uint32_t>> m_SensorPairs;

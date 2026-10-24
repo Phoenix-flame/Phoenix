@@ -8,6 +8,7 @@
 #include <Phoenix/core/Profiler.h>
 #include <Phoenix/Physics/Physics.h>
 #include <Phoenix/Scene/LuaScript.h>
+#include <Phoenix/Math/Math.h>
 #include <Phoenix/core/Input.h>
 #include <Phoenix/core/keyCodes.h>
 #include <limits>
@@ -141,6 +142,7 @@ namespace Phoenix{
         props.continuousCollision = rb.continuousCollision;
         props.isSensor = rb.isSensor;
         props.allowSleeping = rb.allowSleeping;
+        props.startAsleep = rb.startAsleep;
         for (int i = 0; i < 3; i++){
             props.lockPosition[i] = rb.lockPosition[i];
             props.lockRotation[i] = rb.lockRotation[i];
@@ -190,6 +192,20 @@ namespace Phoenix{
             d.rotation = cylinder->rotation;
             out.push_back(d);
         }
+        if (auto* compound = registry.try_get<CompoundColliderComponent>(entity)){
+            for (const auto& shape : compound->shapes){
+                PhysicsWorld::ShapeDesc d;
+                d.type = (ShapeType)(int)shape.type; // Box/Sphere/Capsule/Cylinder share values
+                d.halfExtents = shape.halfExtents * s;
+                const float radial = shape.type == CompoundColliderComponent::Shape::Type::Sphere
+                    ? std::max(s.x, std::max(s.y, s.z)) : std::max(s.x, s.z);
+                d.radius = shape.radius * radial;
+                d.halfHeight = shape.halfHeight * s.y;
+                d.offset = shape.offset * s;
+                d.rotation = shape.rotation;
+                out.push_back(d);
+            }
+        }
         if (auto* meshCollider = registry.try_get<MeshColliderComponent>(entity)){
             // Geometry (scaled into local space) from the entity's model, or from its
             // generated primitive-shape mesh.
@@ -215,7 +231,7 @@ namespace Phoenix{
         return true;
     }
 
-    static PhysicsWorld::JointDesc MakeJointDesc(const JointComponent& joint, const glm::vec3& ownCenter,
+    static PhysicsWorld::JointDesc MakeJointDesc(const JointComponent::Joint& joint, const glm::vec3& ownCenter,
                                                  const glm::vec3& otherCenter){
         PhysicsWorld::JointDesc d;
         switch (joint.type){
@@ -225,6 +241,7 @@ namespace Phoenix{
             case JointComponent::Type::Fixed:    d.type = PhysicsWorld::JointType::Fixed; break;
             case JointComponent::Type::Slider:   d.type = PhysicsWorld::JointType::Slider; break;
             case JointComponent::Type::Cone:     d.type = PhysicsWorld::JointType::Cone; break;
+            case JointComponent::Type::SwingTwist: d.type = PhysicsWorld::JointType::SwingTwist; break;
         }
         d.axis = joint.axis;
         if (joint.type == JointComponent::Type::Distance){
@@ -251,6 +268,11 @@ namespace Phoenix{
         else if (joint.type == JointComponent::Type::Cone){
             d.maxLimit = joint.coneAngle;
         }
+        d.planeAxis = joint.planeAxis;
+        d.normalHalfCone = joint.swingAngle1;
+        d.planeHalfCone = joint.swingAngle2;
+        d.twistMin = joint.twistMin;
+        d.twistMax = joint.twistMax;
         d.motorMode = (PhysicsWorld::MotorMode)(int)joint.motor;
         d.motorTarget = joint.motorTarget;
         d.motorMaxForce = joint.motorMaxForce;
@@ -337,30 +359,60 @@ namespace Phoenix{
         {
             auto jointView = m_Registry.view<JointComponent, RigidBodyComponent>();
             for (auto entity : jointView){
-                auto& joint = jointView.get<JointComponent>(entity);
+                auto& jc = jointView.get<JointComponent>(entity);
                 auto& rb = jointView.get<RigidBodyComponent>(entity);
-                joint.runtimeJointID = PhysicsWorld::InvalidJoint;
-                if (rb.runtimeBodyID == PhysicsWorld::InvalidBody) { continue; } // no body (missing collider?)
+                for (int index = 0; index < (int)jc.joints.size(); index++){
+                    auto& joint = jc.joints[index];
+                    joint.runtimeJointID = PhysicsWorld::InvalidJoint;
+                    if (rb.runtimeBodyID == PhysicsWorld::InvalidBody) { continue; } // no body (missing collider?)
 
-                uint32_t other = PhysicsWorld::InvalidBody; // world
-                glm::vec3 otherCenter = joint.pivot;
-                if (!joint.connectedTag.empty()){
-                    Entity target = FindEntityByTag(joint.connectedTag);
-                    if (target && target.HasComponent<RigidBodyComponent>())
-                        other = target.GetComponent<RigidBodyComponent>().runtimeBodyID;
-                    if (other == PhysicsWorld::InvalidBody || (entt::entity)target == entity){
-                        PHX_CORE_WARN("Joint on '{0}': connected body '{1}' not found or has no collider",
-                            m_Registry.any_of<TagComponent>(entity) ? m_Registry.get<TagComponent>(entity).Tag : "?",
-                            joint.connectedTag);
-                        continue;
+                    uint32_t other = PhysicsWorld::InvalidBody; // world
+                    glm::vec3 otherCenter = joint.pivot;
+                    if (!joint.connectedTag.empty()){
+                        Entity target = FindEntityByTag(joint.connectedTag);
+                        if (target && target.HasComponent<RigidBodyComponent>())
+                            other = target.GetComponent<RigidBodyComponent>().runtimeBodyID;
+                        if (other == PhysicsWorld::InvalidBody || (entt::entity)target == entity){
+                            PHX_CORE_WARN("Joint {0} on '{1}': connected body '{2}' not found or has no collider", index + 1,
+                                m_Registry.any_of<TagComponent>(entity) ? m_Registry.get<TagComponent>(entity).Tag : "?",
+                                joint.connectedTag);
+                            continue;
+                        }
+                        otherCenter = target.GetComponent<TransformComponent>().Translation;
                     }
-                    otherCenter = target.GetComponent<TransformComponent>().Translation;
-                }
 
-                glm::vec3 own = m_Registry.get<TransformComponent>(entity).Translation;
-                joint.runtimeJointID = m_PhysicsWorld->AddJoint(rb.runtimeBodyID, other, MakeJointDesc(joint, own, otherCenter));
-                if (joint.runtimeJointID != PhysicsWorld::InvalidJoint) { m_JointToEntity[joint.runtimeJointID] = entity; }
+                    glm::vec3 own = m_Registry.get<TransformComponent>(entity).Translation;
+                    joint.runtimeJointID = m_PhysicsWorld->AddJoint(rb.runtimeBodyID, other, MakeJointDesc(joint, own, otherCenter));
+                    if (joint.runtimeJointID != PhysicsWorld::InvalidJoint) { m_JointToEntity[joint.runtimeJointID] = { entity, index }; }
+                }
             }
+        }
+
+        CreateVehicles();
+
+        // Fixed-step interpolation and external-edit detection start from the
+        // edit-time layout.
+        m_PhysicsAccumulator = 0.0f;
+        for (auto entity : m_Registry.view<RigidBodyComponent, TransformComponent>()){
+            auto& rb = m_Registry.get<RigidBodyComponent>(entity);
+            auto& t = m_Registry.get<TransformComponent>(entity);
+            rb.prevPosition = rb.currPosition = t.Translation;
+            rb.prevRotation = rb.currRotation = Math::EulerXYZToQuat(t.Rotation);
+            rb.syncedTranslation = t.Translation;
+            rb.syncedRotation = t.Rotation;
+            rb.synced = rb.runtimeBodyID != PhysicsWorld::InvalidBody;
+        }
+        for (auto entity : m_Registry.view<CharacterControllerComponent, TransformComponent>()){
+            auto& cc = m_Registry.get<CharacterControllerComponent>(entity);
+            auto& t = m_Registry.get<TransformComponent>(entity);
+            cc.prevPosition = cc.currPosition = cc.syncedTranslation = t.Translation;
+            cc.synced = cc.runtimeCharacterID != PhysicsWorld::InvalidCharacter;
+        }
+        for (auto entity : m_Registry.view<RagdollComponent>()){
+            auto& rd = m_Registry.get<RagdollComponent>(entity);
+            rd.parts.clear();
+            rd.active = false;
+            rd.request = rd.startActive ? 1 : -1;
         }
 
         m_PhysicsWorld->OptimizeBroadPhase();
@@ -378,11 +430,26 @@ namespace Phoenix{
             m_Registry.get<RigidBodyComponent>(entity).runtimeBodyID = PhysicsWorld::InvalidBody;
         for (auto entity : m_Registry.view<TerrainComponent>())
             m_Registry.get<TerrainComponent>(entity).runtimeBodyID = PhysicsWorld::InvalidBody;
+        for (auto entity : m_Registry.view<RigidBodyComponent>())
+            m_Registry.get<RigidBodyComponent>(entity).synced = false;
         for (auto entity : m_Registry.view<JointComponent>())
-            m_Registry.get<JointComponent>(entity).runtimeJointID = PhysicsWorld::InvalidJoint;
+            for (auto& joint : m_Registry.get<JointComponent>(entity).joints) { joint.runtimeJointID = PhysicsWorld::InvalidJoint; }
+        for (auto entity : m_Registry.view<VehicleComponent>()){
+            auto& v = m_Registry.get<VehicleComponent>(entity);
+            v.runtimeVehicleID = PhysicsWorld::InvalidVehicle;
+            v.speed = v.rpm = 0.0f;
+            v.gear = 0;
+        }
+        for (auto entity : m_Registry.view<RagdollComponent>()){
+            auto& rd = m_Registry.get<RagdollComponent>(entity);
+            rd.parts.clear();
+            rd.active = false;
+            rd.request = -1;
+        }
         for (auto entity : m_Registry.view<CharacterControllerComponent>()){
             auto& cc = m_Registry.get<CharacterControllerComponent>(entity);
             cc.runtimeCharacterID = PhysicsWorld::InvalidCharacter;
+            cc.synced = false;
             cc.grounded = false;
             cc.velocity = glm::vec3(0.0f);
         }
@@ -450,14 +517,16 @@ namespace Phoenix{
         }
     }
 
-    // Characters after the step: copy position/state back and face the movement.
+    // Characters after a step: record the position (written back interpolated) and
+    // state, and turn toward the movement.
     void Scene::UpdateCharactersPostStep(float dt){
         auto view = m_Registry.view<CharacterControllerComponent, TransformComponent>();
         for (auto entity : view){
             auto& cc = view.get<CharacterControllerComponent>(entity);
             if (cc.runtimeCharacterID == PhysicsWorld::InvalidCharacter) { continue; }
             auto& transform = view.get<TransformComponent>(entity);
-            transform.Translation = m_PhysicsWorld->GetCharacterPosition(cc.runtimeCharacterID);
+            cc.prevPosition = cc.currPosition;
+            cc.currPosition = m_PhysicsWorld->GetCharacterPosition(cc.runtimeCharacterID);
             cc.velocity = m_PhysicsWorld->GetCharacterVelocity(cc.runtimeCharacterID);
             cc.grounded = m_PhysicsWorld->IsCharacterGrounded(cc.runtimeCharacterID);
             glm::vec2 planar(cc.desiredVelocity.x, cc.desiredVelocity.z);
@@ -560,14 +629,16 @@ namespace Phoenix{
 
         for (uint32_t joint : broken){
             auto it = m_JointToEntity.find(joint);
-            if (it == m_JointToEntity.end() || !m_Registry.valid(it->second)) { continue; }
-            Entity owner{ it->second, this };
+            if (it == m_JointToEntity.end() || !m_Registry.valid(it->second.first)) { continue; }
+            Entity owner{ it->second.first, this };
             auto& jc = owner.GetComponent<JointComponent>();
-            jc.runtimeJointID = PhysicsWorld::InvalidJoint;
-            Entity other = jc.connectedTag.empty() ? Entity{} : FindEntityByTag(jc.connectedTag);
+            if (it->second.second >= (int)jc.joints.size()) { m_JointToEntity.erase(it); continue; }
+            auto& j = jc.joints[it->second.second];
+            j.runtimeJointID = PhysicsWorld::InvalidJoint;
+            Entity other = j.connectedTag.empty() ? Entity{} : FindEntityByTag(j.connectedTag);
             for (auto& script : m_Scripts){
                 entt::entity se = (entt::entity)script->GetEntity();
-                if (se == (entt::entity)owner)       { script->OnJointBreak(jc.connectedTag); }
+                if (se == (entt::entity)owner)       { script->OnJointBreak(j.connectedTag); }
                 else if (other && se == (entt::entity)other) { script->OnJointBreak(tagOf(owner)); }
             }
             m_JointToEntity.erase(it);
@@ -734,12 +805,180 @@ namespace Phoenix{
                 m_PhysicsWorld->RemoveCharacter(cc->runtimeCharacterID);
             }
             for (auto it = m_JointToEntity.begin(); it != m_JointToEntity.end();)
-                it = (it->second == (entt::entity)entity) ? m_JointToEntity.erase(it) : std::next(it);
+                it = (it->second.first == (entt::entity)entity) ? m_JointToEntity.erase(it) : std::next(it);
+            if (auto* rd = m_Registry.try_get<RagdollComponent>(entity)) { DeactivateRagdoll(entity, *rd); }
             m_Scripts.erase(std::remove_if(m_Scripts.begin(), m_Scripts.end(),
                 [&](const Ref<LuaScript>& script){ return (entt::entity)script->GetEntity() == (entt::entity)entity; }),
                 m_Scripts.end());
         }
         m_Registry.destroy(entity);
+    }
+
+    void Scene::ApplyWaterCoupling(float dt){
+        auto view = m_Registry.view<RigidBodyComponent, TransformComponent>();
+            // Water coupling: buoyancy + fluid drag on dynamic bodies over a water
+        // surface, splash ripples on entry, and a wake while moving in it. The
+        // surface height includes the Gerstner waves AND the live ripples, so
+        // floating bodies bob on both.
+        {
+            auto waterView = m_Registry.view<WaterComponent, TransformComponent>();
+            for (auto wEntity : waterView){
+                auto& water = waterView.get<WaterComponent>(wEntity);
+                if (water.buoyancy <= 0.0f) { continue; }
+                auto& wTransform = waterView.get<TransformComponent>(wEntity);
+                float half = water.size * 0.5f;
+
+                for (auto entity : view){
+                    auto& rb = view.get<RigidBodyComponent>(entity);
+                    if (rb.runtimeBodyID == 0xffffffff || rb.type != RigidBodyComponent::Type::Dynamic) { continue; }
+                    const glm::vec3& bodyPos = rb.currPosition; // this step's pose (not the interpolated one)
+                    float lx = bodyPos.x - wTransform.Translation.x;
+                    float lz = bodyPos.z - wTransform.Translation.z;
+                    if (std::abs(lx) > half || std::abs(lz) > half) { continue; }
+
+                    float u = lx / water.size + 0.5f;
+                    float v = lz / water.size + 0.5f;
+                    float surfaceY = wTransform.Translation.y
+                        + WaterWaveHeight(water, { bodyPos.x, bodyPos.z }, m_Time)
+                        + (water.ripples ? water.ripples->SampleHeight(u, v) : 0.0f);
+                    if (bodyPos.y - surfaceY > 4.0f){ // far above: can't touch
+                        m_SubmergedBodies.erase(rb.runtimeBodyID);
+                        continue;
+                    }
+
+                    // Jolt's buoyancy factor is fluid density RELATIVE TO THE BODY
+                    // (>1 floats, <1 sinks), so derive it from the body's density:
+                    // water.buoyancy is the water's density in units of 1000 kg/m3.
+                    float factor = std::min(8.0f, water.buoyancy * 1000.0f / std::max(1.0f, rb.density));
+                    bool touching = m_PhysicsWorld->ApplyBuoyancy(rb.runtimeBodyID,
+                        { bodyPos.x, surfaceY, bodyPos.z }, { 0.0f, 1.0f, 0.0f },
+                        factor, water.linearDrag, water.angularDrag, dt);
+
+                    if (water.ripples && touching){
+                        glm::vec3 vel = m_PhysicsWorld->GetLinearVelocity(rb.runtimeBodyID);
+                        bool wasTouching = m_SubmergedBodies.count(rb.runtimeBodyID) > 0;
+                        if (!wasTouching && vel.y < -1.0f){
+                            // Splash: radius/strength grow with impact speed.
+                            float strength = std::min(0.4f, 0.06f * -vel.y);
+                            water.ripples->AddImpulse(u, v, 0.03f + 0.002f * -vel.y, strength);
+                        }
+                        else{
+                            float speed = glm::length(glm::vec2(vel.x, vel.z));
+                            if (speed > 0.5f){ // wake behind moving bodies
+                                water.ripples->AddImpulse(u, v, 0.02f,
+                                    std::min(0.05f, 0.25f * speed * dt));
+                            }
+                        }
+                    }
+                    if (touching) { m_SubmergedBodies.insert(rb.runtimeBodyID); }
+                    else          { m_SubmergedBodies.erase(rb.runtimeBodyID); }
+                }
+            }
+        }
+
+    }
+
+    // One frame of physics: fixed steps (or one variable step) with everything that
+    // has to happen per step, then interpolated transforms back to the entities.
+    void Scene::UpdatePhysics(float ts){
+        if (!m_PhysicsWorld) { return; }
+        ProcessRagdollRequests();
+        SyncExternalEdits();
+
+        const float frameDt = std::min(std::max(ts, 0.0f), PhysicsWorld::MaxStep);
+        const bool fixed = m_PhysicsSettings.fixedTimestep;
+        const float h = fixed ? 1.0f / std::clamp(m_PhysicsSettings.fixedRate, 10.0f, 1000.0f) : frameDt;
+        int steps = 0;
+        if (fixed){
+            m_PhysicsAccumulator += frameDt;
+            steps = (int)std::floor(m_PhysicsAccumulator / h + 1e-4f);
+            m_PhysicsAccumulator = std::max(0.0f, m_PhysicsAccumulator - steps * h);
+        }
+        else if (h > 0.0f){
+            steps = 1;
+        }
+
+        UpdateVehiclesPreStep();
+        auto view = m_Registry.view<RigidBodyComponent, TransformComponent>();
+        for (int step = 0; step < steps; step++){
+            // Kinematic bodies follow their entity transform (scripts/animation move
+            // it); MoveKinematic over the frame's remaining steps gives them a steady
+            // velocity that pushes dynamic bodies properly.
+            for (auto entity : view){
+                auto& rb = view.get<RigidBodyComponent>(entity);
+                if (rb.runtimeBodyID == PhysicsWorld::InvalidBody || rb.type != RigidBodyComponent::Type::Kinematic) { continue; }
+                auto& transform = view.get<TransformComponent>(entity);
+                m_PhysicsWorld->MoveKinematic(rb.runtimeBodyID, transform.Translation, transform.Rotation, h * (steps - step));
+            }
+            ApplyWaterCoupling(h);
+            UpdateCharactersPreStep(h);
+            ApplyForceFields();
+
+            m_PhysicsWorld->Step(h);
+
+            // Keep the last two poses of every dynamic body for interpolation.
+            for (auto entity : view){
+                auto& rb = view.get<RigidBodyComponent>(entity);
+                if (rb.runtimeBodyID == PhysicsWorld::InvalidBody || rb.type != RigidBodyComponent::Type::Dynamic) { continue; }
+                rb.prevPosition = rb.currPosition;
+                rb.prevRotation = rb.currRotation;
+                m_PhysicsWorld->GetBodyPose(rb.runtimeBodyID, rb.currPosition, rb.currRotation);
+            }
+            UpdateCharactersPostStep(h);
+            DispatchPhysicsEvents();
+        }
+
+        // Write back. Only dynamic bodies are moved by the simulation: static ones never
+        // move and kinematic ones follow their entity transform. With a fixed step the
+        // pose is blended between the last two steps by the leftover time.
+        const float alpha = fixed ? std::clamp(m_PhysicsAccumulator / h, 0.0f, 1.0f) : 1.0f;
+        for (auto entity : view){
+            auto& rb = view.get<RigidBodyComponent>(entity);
+            if (rb.runtimeBodyID == PhysicsWorld::InvalidBody || rb.type != RigidBodyComponent::Type::Dynamic) { continue; }
+            auto& transform = view.get<TransformComponent>(entity);
+            transform.Translation = glm::mix(rb.prevPosition, rb.currPosition, alpha);
+            transform.Rotation = Math::QuatToEulerXYZ(glm::slerp(rb.prevRotation, rb.currRotation, alpha), transform.Rotation);
+            rb.syncedTranslation = transform.Translation;
+            rb.syncedRotation = transform.Rotation;
+        }
+        for (auto entity : m_Registry.view<CharacterControllerComponent, TransformComponent>()){
+            auto& cc = m_Registry.get<CharacterControllerComponent>(entity);
+            if (cc.runtimeCharacterID == PhysicsWorld::InvalidCharacter) { continue; }
+            auto& transform = m_Registry.get<TransformComponent>(entity);
+            transform.Translation = glm::mix(cc.prevPosition, cc.currPosition, alpha);
+            cc.syncedTranslation = transform.Translation;
+        }
+        UpdateVehiclesPostStep();
+        UpdateRagdollFollow();
+    }
+
+    // Anything that moved a body's entity since physics last wrote it (the gizmo while
+    // playing, SetTranslation from Lua, undo...) teleports the body there; dynamic
+    // bodies also lose their velocity, so a dragged object hangs where it is dropped.
+    void Scene::SyncExternalEdits(){
+        for (auto entity : m_Registry.view<RigidBodyComponent, TransformComponent>()){
+            auto& rb = m_Registry.get<RigidBodyComponent>(entity);
+            if (!rb.synced || rb.type == RigidBodyComponent::Type::Kinematic) { continue; }
+            auto& t = m_Registry.get<TransformComponent>(entity);
+            if (t.Translation == rb.syncedTranslation && t.Rotation == rb.syncedRotation) { continue; }
+            m_PhysicsWorld->SetBodyTransform(rb.runtimeBodyID, t.Translation, t.Rotation);
+            if (rb.type == RigidBodyComponent::Type::Dynamic){
+                m_PhysicsWorld->SetLinearVelocity(rb.runtimeBodyID, glm::vec3(0.0f));
+                m_PhysicsWorld->SetAngularVelocity(rb.runtimeBodyID, glm::vec3(0.0f));
+            }
+            rb.prevPosition = rb.currPosition = t.Translation;
+            rb.prevRotation = rb.currRotation = Math::EulerXYZToQuat(t.Rotation);
+            rb.syncedTranslation = t.Translation;
+            rb.syncedRotation = t.Rotation;
+        }
+        for (auto entity : m_Registry.view<CharacterControllerComponent, TransformComponent>()){
+            auto& cc = m_Registry.get<CharacterControllerComponent>(entity);
+            if (!cc.synced) { continue; }
+            auto& t = m_Registry.get<TransformComponent>(entity);
+            if (t.Translation == cc.syncedTranslation) { continue; }
+            m_PhysicsWorld->SetCharacterPosition(cc.runtimeCharacterID, t.Translation);
+            cc.prevPosition = cc.currPosition = cc.syncedTranslation = t.Translation;
+        }
     }
 
     void Scene::OnUpdate(EditorCamera& editorCamera, Timestep ts, Entity selectedEntity){
@@ -752,99 +991,10 @@ namespace Phoenix{
             for (auto& script : m_Scripts){ script->OnUpdate((float)ts); }
         }
 
-        // Physics: step the simulation and copy body transforms back to entities.
+        // Physics: fixed steps, then interpolated transforms back to the entities.
         if (m_PhysicsWorld){
             PHX_PROFILE("Physics Step");
-            auto view = m_Registry.view<RigidBodyComponent, TransformComponent>();
-            // Kinematic targets, buoyancy impulses and the step must all use the same
-            // (clamped) dt, or a long frame would over-apply impulses.
-            const float physicsDt = std::min((float)ts, PhysicsWorld::MaxStep);
-
-            // Kinematic bodies follow their entity transform (scripts/animation move
-            // it); MoveKinematic gives them the velocities to push dynamic bodies.
-            for (auto entity : view){
-                auto& rb = view.get<RigidBodyComponent>(entity);
-                if (rb.runtimeBodyID == 0xffffffff || rb.type != RigidBodyComponent::Type::Kinematic) { continue; }
-                auto& transform = view.get<TransformComponent>(entity);
-                m_PhysicsWorld->MoveKinematic(rb.runtimeBodyID, transform.Translation, transform.Rotation, physicsDt);
-            }
-
-            // Water coupling: buoyancy + fluid drag on dynamic bodies over a water
-            // surface, splash ripples on entry, and a wake while moving in it. The
-            // surface height includes the Gerstner waves AND the live ripples, so
-            // floating bodies bob on both.
-            {
-                auto waterView = m_Registry.view<WaterComponent, TransformComponent>();
-                for (auto wEntity : waterView){
-                    auto& water = waterView.get<WaterComponent>(wEntity);
-                    if (water.buoyancy <= 0.0f) { continue; }
-                    auto& wTransform = waterView.get<TransformComponent>(wEntity);
-                    float half = water.size * 0.5f;
-
-                    for (auto entity : view){
-                        auto& rb = view.get<RigidBodyComponent>(entity);
-                        if (rb.runtimeBodyID == 0xffffffff || rb.type != RigidBodyComponent::Type::Dynamic) { continue; }
-                        auto& t = view.get<TransformComponent>(entity);
-                        float lx = t.Translation.x - wTransform.Translation.x;
-                        float lz = t.Translation.z - wTransform.Translation.z;
-                        if (std::abs(lx) > half || std::abs(lz) > half) { continue; }
-
-                        float u = lx / water.size + 0.5f;
-                        float v = lz / water.size + 0.5f;
-                        float surfaceY = wTransform.Translation.y
-                            + WaterWaveHeight(water, { t.Translation.x, t.Translation.z }, m_Time)
-                            + (water.ripples ? water.ripples->SampleHeight(u, v) : 0.0f);
-                        if (t.Translation.y - surfaceY > 4.0f){ // far above: can't touch
-                            m_SubmergedBodies.erase(rb.runtimeBodyID);
-                            continue;
-                        }
-
-                        // Jolt's buoyancy factor is fluid density RELATIVE TO THE BODY
-                        // (>1 floats, <1 sinks), so derive it from the body's density:
-                        // water.buoyancy is the water's density in units of 1000 kg/m3.
-                        float factor = std::min(8.0f, water.buoyancy * 1000.0f / std::max(1.0f, rb.density));
-                        bool touching = m_PhysicsWorld->ApplyBuoyancy(rb.runtimeBodyID,
-                            { t.Translation.x, surfaceY, t.Translation.z }, { 0.0f, 1.0f, 0.0f },
-                            factor, water.linearDrag, water.angularDrag, physicsDt);
-
-                        if (water.ripples && touching){
-                            glm::vec3 vel = m_PhysicsWorld->GetLinearVelocity(rb.runtimeBodyID);
-                            bool wasTouching = m_SubmergedBodies.count(rb.runtimeBodyID) > 0;
-                            if (!wasTouching && vel.y < -1.0f){
-                                // Splash: radius/strength grow with impact speed.
-                                float strength = std::min(0.4f, 0.06f * -vel.y);
-                                water.ripples->AddImpulse(u, v, 0.03f + 0.002f * -vel.y, strength);
-                            }
-                            else{
-                                float speed = glm::length(glm::vec2(vel.x, vel.z));
-                                if (speed > 0.5f){ // wake behind moving bodies
-                                    water.ripples->AddImpulse(u, v, 0.02f,
-                                        std::min(0.05f, 0.25f * speed * physicsDt));
-                                }
-                            }
-                        }
-                        if (touching) { m_SubmergedBodies.insert(rb.runtimeBodyID); }
-                        else          { m_SubmergedBodies.erase(rb.runtimeBodyID); }
-                    }
-                }
-            }
-
-            UpdateCharactersPreStep(physicsDt);
-            ApplyForceFields();
-            m_PhysicsWorld->Step(physicsDt);
-            UpdateCharactersPostStep(physicsDt);
-
-            // Only dynamic bodies are moved by the simulation: static ones never move and
-            // kinematic ones follow their entity transform, so reading those back would
-            // just overwrite the authored/scripted rotation with an equivalent one.
-            for (auto entity : view){
-                auto& rb = view.get<RigidBodyComponent>(entity);
-                if (rb.runtimeBodyID == PhysicsWorld::InvalidBody || rb.type != RigidBodyComponent::Type::Dynamic) { continue; }
-                auto& transform = view.get<TransformComponent>(entity);
-                m_PhysicsWorld->GetBodyTransform(rb.runtimeBodyID, transform.Translation, transform.Rotation);
-            }
-
-            DispatchPhysicsEvents();
+            UpdatePhysics((float)ts);
         }
 
         {
@@ -906,6 +1056,12 @@ namespace Phoenix{
 
                 // Seek request (timeline scrub / Lua). Negative means "no request".
                 if (anim.pendingSeek >= 0.0f){ animator.Seek(anim.pendingSeek); anim.pendingSeek = -1.0f; }
+
+                // A live ragdoll poses the skeleton from its bodies instead.
+                if (auto* ragdoll = m_Registry.try_get<RagdollComponent>(entity); ragdoll && ragdoll->active){
+                    PoseRagdoll(Entity{ entity, this }, *ragdoll, animator);
+                    continue;
+                }
 
                 // Advance (0 when paused -> re-pose at rest); speed is applied inside.
                 animator.UpdateAnimation(anim.playing ? (float)ts : 0.0f);
@@ -1326,6 +1482,18 @@ namespace Phoenix{
 
     template<>
 	void Scene::OnComponentAdded<ForceFieldComponent>(Entity entity, ForceFieldComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<CompoundColliderComponent>(Entity entity, CompoundColliderComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<VehicleComponent>(Entity entity, VehicleComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<RagdollComponent>(Entity entity, RagdollComponent& component){
 	}
 
     template<>

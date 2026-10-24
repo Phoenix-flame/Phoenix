@@ -1,4 +1,5 @@
 #include "MainLayer.h"
+#include <Phoenix/Scene/PhysicsPrefabs.h>
 
 #include <Phoenix/core/base.h>
 #include <Phoenix/event/event.h>
@@ -388,8 +389,14 @@ void MainLayer::BuildRobotShowcase() {
         t.Translation = { 0.0f, -0.75f, 0.0f };
         t.Scale = glm::vec3(0.02f); // tune in the Transform panel to fit your model
 
+        // Physics ragdoll: G toggles between animation and a limp ragdoll built from
+        // the current pose; H shoves the ragdoll.
+        auto& ragdoll = robot.AddComponent<RagdollComponent>();
+        ragdoll.jointFriction = 1.0f;
+
         // Keyboard controller (runs while playing). Press Run, click the viewport, then:
-        //   Up/Down = walk fwd/back, Left/Right = turn, Shift = run, Space = jump.
+        //   Up/Down = walk fwd/back, Left/Right = turn, Shift = run, Space = jump,
+        //   G = ragdoll on/off, H = shove the ragdoll.
         // Crossfades between the idle / walk / run / jump clips when present, and falls
         // back to clip 0 (the embedded walk) for any clip you haven't added yet.
         auto& script = robot.AddComponent<LuaScriptComponent>();
@@ -412,6 +419,14 @@ void MainLayer::BuildRobotShowcase() {
             "end\n"
             "\n"
             "function OnUpdate(dt)\n"
+            "    if IsKeyPressed(Key.G) then\n"
+            "        SetRagdoll(not IsRagdoll())\n"
+            "        if IsRagdoll() then state = '' end -- re-pick a clip when standing up\n"
+            "    end\n"
+            "    if IsRagdoll() then\n"
+            "        if IsKeyPressed(Key.H) then RagdollImpulse(0, 3, -4) end\n"
+            "        return -- limp: physics owns the skeleton\n"
+            "    end\n"
             "    if IsKeyDown(Key.Left)  then Rotate(0,  turn*dt, 0) end\n"
             "    if IsKeyDown(Key.Right) then Rotate(0, -turn*dt, 0) end\n"
             "    local run  = IsKeyDown(Key.LeftShift)\n"
@@ -581,7 +596,7 @@ void MainLayer::BuildPhysicsShowcase() {
         auto& rb = link.AddComponent<RigidBodyComponent>();
         rb.density = 7000.0f;
         link.AddComponent<SphereColliderComponent>();
-        auto& j = link.AddComponent<JointComponent>();
+        auto& j = link.AddComponent<JointComponent>().Add();
         j.type = JointComponent::Type::Point;
         j.connectedTag = (i == 0) ? "" : ("Chain Link " + std::to_string(i));
         j.pivot = { 8.0f, 7.0f - 1.2f * i, -4.0f };
@@ -599,7 +614,7 @@ void MainLayer::BuildPhysicsShowcase() {
         rb.density = 3000.0f;
         rb.initialVelocity = { 0.0f, 0.0f, -9.0f }; // start the swing
         ball.AddComponent<SphereColliderComponent>();
-        auto& j = ball.AddComponent<JointComponent>();
+        auto& j = ball.AddComponent<JointComponent>().Add();
         j.type = JointComponent::Type::Point;
         j.connectedTag = "Chain Link 3";
         j.pivot = { 8.0f, 3.4f, -4.0f };
@@ -647,7 +662,7 @@ void MainLayer::BuildPhysicsShowcase() {
         rb.density = 700.0f;
         rb.friction = 0.8f;
         plank.AddComponent<BoxColliderComponent>();
-        auto& j = plank.AddComponent<JointComponent>();
+        auto& j = plank.AddComponent<JointComponent>().Add();
         j.type = JointComponent::Type::Hinge;
         j.pivot = { 0.0f, 0.7f, 6.0f };
         j.axis = { 0.0f, 0.0f, 1.0f };
@@ -735,7 +750,7 @@ void MainLayer::BuildPhysicsShowcase() {
         rb.linearDamping = 0.4f;
         rb.initialVelocity = { 1.5f, 0.0f, 0.0f }; // sway on the tether
         balloon.AddComponent<SphereColliderComponent>();
-        auto& j = balloon.AddComponent<JointComponent>();
+        auto& j = balloon.AddComponent<JointComponent>().Add();
         j.type = JointComponent::Type::Distance;
         j.pivot = { 6.0f, 0.15f, 10.0f };
         j.minDistance = 0.0f;   // rope: can slacken...
@@ -874,7 +889,7 @@ void MainLayer::BuildPhysicsShowcase() {
         b.radius = 0.2f;
         b.halfHeight = 2.8f;
         blades.AddComponent<WireframeComponent>(); // the cube visual can't show both blades
-        auto& j = blades.AddComponent<JointComponent>();
+        auto& j = blades.AddComponent<JointComponent>().Add();
         j.type = JointComponent::Type::Hinge;
         j.pivot = t.Translation;
         j.axis = { 0.0f, 0.0f, 1.0f };
@@ -897,7 +912,7 @@ void MainLayer::BuildPhysicsShowcase() {
         rb.density = 500.0f;
         rb.allowSleeping = false;
         lift.AddComponent<BoxColliderComponent>();
-        auto& j = lift.AddComponent<JointComponent>();
+        auto& j = lift.AddComponent<JointComponent>().Add();
         j.type = JointComponent::Type::Slider;
         j.pivot = t.Translation;
         j.axis = { 0.0f, 1.0f, 0.0f };
@@ -943,7 +958,7 @@ void MainLayer::BuildPhysicsShowcase() {
         auto& rb = block.AddComponent<RigidBodyComponent>();
         rb.density = 100.0f; // the welds carry the blocks above: 3 x 981 N < breakForce
         block.AddComponent<BoxColliderComponent>();
-        auto& j = block.AddComponent<JointComponent>();
+        auto& j = block.AddComponent<JointComponent>().Add();
         j.type = JointComponent::Type::Fixed;
         j.connectedTag = i == 0 ? "" : "Welded Block " + std::to_string(i);
         j.pivot = t.Translation - glm::vec3(0.0f, 0.5f, 0.0f);
@@ -965,7 +980,7 @@ void MainLayer::BuildPhysicsShowcase() {
         rb.density = 4000.0f;
         rb.initialVelocity = { 0.0f, 0.0f, -7.0f };
         pendulum.AddComponent<SphereColliderComponent>();
-        auto& j = pendulum.AddComponent<JointComponent>();
+        auto& j = pendulum.AddComponent<JointComponent>().Add();
         j.type = JointComponent::Type::Distance; // rigid rod to the world anchor
         j.pivot = { 14.0f, 8.0f, 8.5f };
     }
@@ -1040,6 +1055,151 @@ void MainLayer::BuildPhysicsShowcase() {
         auto& rb = step.AddComponent<RigidBodyComponent>();
         rb.type = RigidBodyComponent::Type::Static;
         step.AddComponent<BoxColliderComponent>();
+    }
+}
+
+void MainLayer::BuildVehicleShowcase() {
+    // A drivable car on a test track with ramps, cones, crates and ragdoll dummies.
+    m_Scene->AmbientColor() = glm::vec3(0.08f);
+    auto matte = [](Material& m, const glm::vec3& color){
+        m.ambient = color * 0.5f;
+        m.diffuse = color;
+        m.specular = glm::vec3(0.2f);
+        m.shininess = 16.0f;
+    };
+
+    {
+        auto sun = m_Scene->CreateDirLightEntity("Sun");
+        auto& t = sun.GetComponent<TransformComponent>();
+        t.Translation = { 10.0f, 20.0f, 10.0f };
+        t.Rotation = { glm::radians(-55.0f), glm::radians(35.0f), 0.0f };
+        auto& dl = sun.GetComponent<DirLightComponent>();
+        dl.ambient = glm::vec3(0.06f);
+        dl.diffuse = glm::vec3(0.9f);
+    }
+    {
+        auto ground = m_Scene->CreateEntity("Track");
+        auto& c = ground.AddComponent<CubeComponent>();
+        matte(c.material, glm::vec3(0.35f, 0.38f, 0.36f));
+        auto& t = ground.GetComponent<TransformComponent>();
+        t.Translation = { 0.0f, -0.5f, 0.0f };
+        t.Scale = { 160.0f, 1.0f, 160.0f };
+        auto& rb = ground.AddComponent<RigidBodyComponent>();
+        rb.type = RigidBodyComponent::Type::Static;
+        rb.friction = 0.9f; // tyre grip comes from tyre x ground friction
+        ground.AddComponent<BoxColliderComponent>();
+    }
+
+    // Walls so the car can't leave the track.
+    for (int i = 0; i < 4; i++){
+        auto wall = m_Scene->CreateEntity("Track Wall " + std::to_string(i + 1));
+        auto& c = wall.AddComponent<CubeComponent>();
+        matte(c.material, glm::vec3(0.55f, 0.55f, 0.6f));
+        auto& t = wall.GetComponent<TransformComponent>();
+        const bool alongX = i < 2;
+        const float side = (i % 2 == 0) ? 1.0f : -1.0f;
+        t.Translation = alongX ? glm::vec3(0.0f, 1.0f, 70.0f * side) : glm::vec3(70.0f * side, 1.0f, 0.0f);
+        t.Scale = alongX ? glm::vec3(141.0f, 2.0f, 1.0f) : glm::vec3(1.0f, 2.0f, 141.0f);
+        wall.AddComponent<RigidBodyComponent>().type = RigidBodyComponent::Type::Static;
+        wall.AddComponent<BoxColliderComponent>();
+    }
+
+    // The car: W/S throttle + reverse, A/D steer, Space handbrake.
+    Entity car = PhysicsPrefabs::CreateCar(*m_Scene, "Car", { 0.0f, 0.0f, 10.0f });
+    (void)car;
+    {
+        auto cam = m_Scene->CreateEntity("Chase Camera");
+        auto& camera = cam.AddComponent<CameraComponent>();
+        camera.primary = true;
+        auto& t = cam.GetComponent<TransformComponent>();
+        t.Translation = { 0.0f, 4.0f, 18.0f };
+        auto& follow = cam.AddComponent<CameraFollowComponent>();
+        follow.target = "Car";
+        follow.distance = 9.0f;
+        follow.height = 3.5f;
+        follow.lookHeight = 1.0f;
+        follow.followYaw = true;
+    }
+
+    // Jump ramp.
+    {
+        auto ramp = m_Scene->CreateEntity("Jump Ramp");
+        auto& c = ramp.AddComponent<CubeComponent>();
+        matte(c.material, glm::vec3(0.9f, 0.6f, 0.1f));
+        auto& t = ramp.GetComponent<TransformComponent>();
+        t.Translation = { 0.0f, 0.9f, -25.0f };
+        t.Rotation = { glm::radians(14.0f), 0.0f, 0.0f };
+        t.Scale = { 6.0f, 0.4f, 8.0f };
+        auto& rb = ramp.AddComponent<RigidBodyComponent>();
+        rb.type = RigidBodyComponent::Type::Static;
+        rb.friction = 0.9f;
+        ramp.AddComponent<BoxColliderComponent>();
+    }
+    // Cone slalom (light, tippable).
+    for (int i = 0; i < 8; i++){
+        auto cone = m_Scene->CreateEntity("Cone " + std::to_string(i + 1));
+        auto& p = cone.AddComponent<PrimitiveComponent>(PrimitiveComponent::Type::Cone);
+        matte(p.material, glm::vec3(1.0f, 0.4f, 0.05f));
+        p.material.emissive = glm::vec3(1.0f, 0.35f, 0.0f);
+        p.material.emissiveStrength = 0.4f;
+        auto& t = cone.GetComponent<TransformComponent>();
+        t.Translation = { (i % 2 ? 2.5f : -2.5f) - 14.0f, 0.4f, 6.0f - 6.0f * i };
+        t.Scale = { 0.5f, 0.8f, 0.5f };
+        auto& rb = cone.AddComponent<RigidBodyComponent>();
+        rb.density = 150.0f;
+        cone.AddComponent<MeshColliderComponent>(); // convex hull of the cone
+    }
+    // Crate wall to smash.
+    for (int row = 0; row < 3; row++){
+        for (int i = 0; i < 6; i++){
+            auto crate = m_Scene->CreateEntity("Track Crate " + std::to_string(row * 6 + i + 1));
+            auto& c = crate.AddComponent<CubeComponent>();
+            matte(c.material, ((row + i) % 2) ? glm::vec3(0.7f, 0.5f, 0.3f) : glm::vec3(0.55f, 0.4f, 0.25f));
+            auto& t = crate.GetComponent<TransformComponent>();
+            t.Translation = { 16.0f + 1.0f * i - 2.5f, 0.5f + row, -10.0f };
+            auto& rb = crate.AddComponent<RigidBodyComponent>();
+            rb.density = 120.0f;
+            crate.AddComponent<BoxColliderComponent>();
+        }
+    }
+    // Crash-test dummies (primitive ragdolls).
+    for (int i = 0; i < 3; i++)
+        PhysicsPrefabs::CreateRagdollDummy(*m_Scene, "Dummy " + std::to_string(i + 1), { 14.0f + 2.0f * i, 0.0f, 6.0f },
+            glm::vec3(0.95f, 0.85f - 0.2f * i, 0.3f + 0.2f * i));
+    // A hinged boom gate at the start (two joints: a hinge plus a spring that lifts it).
+    {
+        auto post = m_Scene->CreateEntity("Gate Post");
+        auto& c = post.AddComponent<CubeComponent>();
+        matte(c.material, glm::vec3(0.3f));
+        auto& t = post.GetComponent<TransformComponent>();
+        t.Translation = { -5.0f, 0.55f, 2.0f };
+        t.Scale = { 0.4f, 1.1f, 0.4f }; // top stays below the boom
+        post.AddComponent<RigidBodyComponent>().type = RigidBodyComponent::Type::Static;
+        post.AddComponent<BoxColliderComponent>();
+    }
+    {
+        auto boom = m_Scene->CreateEntity("Boom Gate");
+        auto& c = boom.AddComponent<CubeComponent>();
+        matte(c.material, glm::vec3(0.95f, 0.95f, 0.95f));
+        c.material.emissive = glm::vec3(1.0f, 0.1f, 0.1f);
+        c.material.emissiveStrength = 0.5f;
+        auto& t = boom.GetComponent<TransformComponent>();
+        t.Translation = { -1.5f, 1.25f, 2.0f };
+        t.Scale = { 7.0f, 0.15f, 0.15f };
+        auto& rb = boom.AddComponent<RigidBodyComponent>();
+        rb.density = 200.0f;
+        boom.AddComponent<BoxColliderComponent>();
+        auto& joints = boom.AddComponent<JointComponent>();
+        auto& hinge = joints.Add(JointComponent::Type::Hinge);   // pivot on the post
+        hinge.pivot = { -5.0f, 1.25f, 2.0f };
+        hinge.axis = { 0.0f, 0.0f, 1.0f };
+        hinge.limitAngles = true;
+        hinge.minAngle = 0.0f;
+        hinge.maxAngle = glm::radians(85.0f);
+        auto& spring = joints.Add(JointComponent::Type::Distance); // soft spring holding it level
+        spring.pivot = { 2.0f, 4.0f, 2.0f };
+        spring.springFrequency = 1.5f;
+        spring.springDamping = 0.3f;
     }
 }
 
@@ -1492,6 +1652,7 @@ void MainLayer::OnImGuiRender(){
                 if (ImGui::MenuItem("Load Robot Showcase")) { LoadShowcase(&MainLayer::BuildRobotShowcase); }
                 if (ImGui::MenuItem("Load Multi-Shadow Showcase")) { LoadShowcase(&MainLayer::BuildMultiShadowShowcase); }
                 if (ImGui::MenuItem("Load Physics Showcase")) { LoadShowcase(&MainLayer::BuildPhysicsShowcase); }
+                if (ImGui::MenuItem("Load Vehicle Showcase")) { LoadShowcase(&MainLayer::BuildVehicleShowcase); }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Import Scene")) {
                     std::string path = "scene.phx";

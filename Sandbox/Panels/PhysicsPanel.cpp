@@ -2,6 +2,7 @@
 #include <Phoenix/imGui/imgui.h>
 #include <Phoenix/Scene/Component.h>
 #include <Phoenix/Physics/Physics.h>
+#include <Phoenix/Scene/PhysicsPrefabs.h>
 #include <glm/gtc/type_ptr.hpp>
 #include <cstring>
 #include <string>
@@ -44,6 +45,10 @@ namespace Phoenix{
             ImGui::SliderInt("Velocity Iterations", &settings.velocitySteps, 2, 32);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Higher = stiffer stacks and chains, more CPU.");
             ImGui::SliderInt("Position Iterations", &settings.positionSteps, 1, 16);
+            ImGui::Checkbox("Fixed Timestep", &settings.fixedTimestep);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Simulate in fixed steps and interpolate rendering:\nthe same inputs give the same result at any frame rate.");
+            if (settings.fixedTimestep)
+                ImGui::SliderFloat("Step Rate", &settings.fixedRate, 30.0f, 240.0f, "%.0f Hz");
             ImGui::SliderFloat("Substep Rate", &settings.substepRate, 30.0f, 240.0f, "%.0f Hz");
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Collision steps per second. Raise for fast, small objects.");
             ImGui::EndDisabled();
@@ -271,7 +276,7 @@ namespace Phoenix{
                 t.Scale = glm::vec3(0.45f);
                 e.AddComponent<RigidBodyComponent>().density = 5000.0f;
                 e.AddComponent<SphereColliderComponent>();
-                auto& j = e.AddComponent<JointComponent>();
+                auto& j = e.AddComponent<JointComponent>().Add();
                 j.type = JointComponent::Type::Point;
                 j.connectedTag = prev; // first link: world
                 j.pivot = t.Translation + glm::vec3(0.0f, 0.3f, 0.0f);
@@ -284,7 +289,7 @@ namespace Phoenix{
             t.Translation.y = 1.15f;
             e.AddComponent<RigidBodyComponent>().density = 500.0f;
             e.AddComponent<BoxColliderComponent>();
-            auto& j = e.AddComponent<JointComponent>();
+            auto& j = e.AddComponent<JointComponent>().Add();
             j.type = JointComponent::Type::Hinge;
             j.pivot = t.Translation - glm::vec3(0.6f, 0.0f, 0.0f);
             j.axis = { 0.0f, 1.0f, 0.0f };
@@ -298,7 +303,7 @@ namespace Phoenix{
             t.Rotation.x = glm::radians(90.0f); // face along Z
             e.AddComponent<RigidBodyComponent>();
             e.AddComponent<CylinderColliderComponent>();
-            auto& j = e.AddComponent<JointComponent>();
+            auto& j = e.AddComponent<JointComponent>().Add();
             j.type = JointComponent::Type::Hinge;
             j.pivot = t.Translation;
             j.axis = { 0.0f, 0.0f, 1.0f };
@@ -307,6 +312,20 @@ namespace Phoenix{
             m_SelectedEntity = e;
         }
         ImGui::Separator();
+        if (ImGui::MenuItem("Ragdoll Dummy")){
+            int n = 1;
+            while (scene.FindEntityByTag("Dummy " + std::to_string(n) + " Pelvis")) { n++; }
+            glm::vec3 feet = at;
+            feet.y = 0.0f;
+            m_SelectedEntity = PhysicsPrefabs::CreateRagdollDummy(scene, "Dummy " + std::to_string(n), feet);
+        }
+        if (ImGui::MenuItem("Car (WASD)")){
+            int n = 1;
+            while (scene.FindEntityByTag("Car " + std::to_string(n))) { n++; }
+            glm::vec3 ground = at;
+            ground.y = 0.0f;
+            m_SelectedEntity = PhysicsPrefabs::CreateCar(scene, "Car " + std::to_string(n), ground);
+        }
         if (ImGui::MenuItem("Player Character")){
             Entity e = shape("Player", PrimitiveComponent::Type::Cylinder, { 0.2f, 0.7f, 0.9f }, { 0.7f, 1.8f, 0.7f });
             e.GetComponent<TransformComponent>().Translation.y = 1.2f;

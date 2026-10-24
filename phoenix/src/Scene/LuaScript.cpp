@@ -362,17 +362,22 @@ namespace Phoenix{
     }
 
     // ---- Joints (the script entity's JointComponent) ----
+    // Every function takes an optional joint number (1-based, default 1) as its last
+    // argument, for entities with several joints.
 
-    static JointComponent* ScriptJoint(lua_State* L, PhysicsWorld*& outWorld){
+    static JointComponent::Joint* ScriptJoint(lua_State* L, PhysicsWorld*& outWorld, int indexArg){
         Entity e = ScriptEntity(L);
         outWorld = e.GetScene() ? e.GetScene()->GetPhysicsWorld() : nullptr;
-        return e.HasComponent<JointComponent>() ? &e.GetComponent<JointComponent>() : nullptr;
+        if (!e.HasComponent<JointComponent>()) { return nullptr; }
+        auto& joints = e.GetComponent<JointComponent>().joints;
+        int index = (lua_gettop(L) >= indexArg && lua_isinteger(L, indexArg)) ? (int)lua_tointeger(L, indexArg) - 1 : 0;
+        return (index >= 0 && index < (int)joints.size()) ? &joints[index] : nullptr;
     }
 
-    // SetMotor(mode, target): mode "off" | "velocity" | "position" (or 0/1/2).
+    // SetMotor(mode, target [, joint]): mode "off" | "velocity" | "position" (or 0/1/2).
     static int l_SetMotor(lua_State* L){
         PhysicsWorld* pw;
-        JointComponent* j = ScriptJoint(L, pw);
+        JointComponent::Joint* j = ScriptJoint(L, pw, 3);
         if (!j) { return 0; }
         int mode = 0;
         if (lua_isnumber(L, 1)) { mode = (int)lua_tointeger(L, 1); }
@@ -387,7 +392,7 @@ namespace Phoenix{
     }
     static int l_SetMotorTarget(lua_State* L){
         PhysicsWorld* pw;
-        JointComponent* j = ScriptJoint(L, pw);
+        JointComponent::Joint* j = ScriptJoint(L, pw, 2);
         if (!j) { return 0; }
         j->motorTarget = (float)luaL_checknumber(L, 1);
         if (pw) { pw->SetJointMotor(j->runtimeJointID, (PhysicsWorld::MotorMode)(int)j->motor, j->motorTarget); }
@@ -396,13 +401,13 @@ namespace Phoenix{
     // Hinge angle (rad) / slider position (m) / distance (m).
     static int l_GetJointValue(lua_State* L){
         PhysicsWorld* pw;
-        JointComponent* j = ScriptJoint(L, pw);
+        JointComponent::Joint* j = ScriptJoint(L, pw, 1);
         lua_pushnumber(L, (j && pw) ? pw->GetJointValue(j->runtimeJointID) : 0.0f);
         return 1;
     }
     static int l_BreakJoint(lua_State* L){
         PhysicsWorld* pw;
-        JointComponent* j = ScriptJoint(L, pw);
+        JointComponent::Joint* j = ScriptJoint(L, pw, 1);
         if (j && pw){
             pw->RemoveJoint(j->runtimeJointID);
             j->runtimeJointID = PhysicsWorld::InvalidJoint;
@@ -411,9 +416,69 @@ namespace Phoenix{
     }
     static int l_IsJointBroken(lua_State* L){
         PhysicsWorld* pw;
-        JointComponent* j = ScriptJoint(L, pw);
+        JointComponent::Joint* j = ScriptJoint(L, pw, 1);
         lua_pushboolean(L, j && pw && !pw->IsJointAlive(j->runtimeJointID));
         return 1;
+    }
+    static int l_GetJointCount(lua_State* L){
+        Entity e = ScriptEntity(L);
+        lua_pushinteger(L, e.HasComponent<JointComponent>() ? (lua_Integer)e.GetComponent<JointComponent>().joints.size() : 0);
+        return 1;
+    }
+
+    // ---- Ragdoll ----
+
+    static RagdollComponent* ScriptRagdoll(lua_State* L){
+        Entity e = ScriptEntity(L);
+        return e.HasComponent<RagdollComponent>() ? &e.GetComponent<RagdollComponent>() : nullptr;
+    }
+    // SetRagdoll(on): go limp (bodies from the current pose) or back to animation.
+    static int l_SetRagdoll(lua_State* L){
+        if (auto* rd = ScriptRagdoll(L)) { rd->request = lua_toboolean(L, 1) ? 1 : 0; }
+        return 0;
+    }
+    static int l_IsRagdoll(lua_State* L){
+        auto* rd = ScriptRagdoll(L);
+        lua_pushboolean(L, rd && (rd->active || rd->request == 1));
+        return 1;
+    }
+    // RagdollImpulse(vx,vy,vz): velocity change (m/s) for every part (a hit, a blast).
+    static int l_RagdollImpulse(lua_State* L){
+        auto* rd = ScriptRagdoll(L);
+        PhysicsWorld* pw = ScriptEntity(L).GetScene() ? ScriptEntity(L).GetScene()->GetPhysicsWorld() : nullptr;
+        if (!rd || !pw) { return 0; }
+        glm::vec3 dv = CheckVec3(L, 1);
+        for (const auto& part : rd->parts) { pw->ApplyImpulse(part.body, dv * pw->GetMass(part.body)); }
+        return 0;
+    }
+
+    // ---- Vehicle ----
+
+    static VehicleComponent* ScriptVehicle(lua_State* L){
+        Entity e = ScriptEntity(L);
+        return e.HasComponent<VehicleComponent>() ? &e.GetComponent<VehicleComponent>() : nullptr;
+    }
+    // SetVehicleInput(forward, right [, brake, handbrake]): forward/right in -1..1
+    // (forward < 0 reverses), brake/handbrake in 0..1. Kept until changed.
+    static int l_SetVehicleInput(lua_State* L){
+        if (auto* v = ScriptVehicle(L)){
+            v->forward = (float)luaL_checknumber(L, 1);
+            v->right = (float)luaL_checknumber(L, 2);
+            v->brake = lua_gettop(L) >= 3 ? (float)luaL_checknumber(L, 3) : 0.0f;
+            v->handBrake = lua_gettop(L) >= 4 ? (float)luaL_checknumber(L, 4) : 0.0f;
+        }
+        return 0;
+    }
+    static int l_GetVehicleSpeed(lua_State* L){
+        auto* v = ScriptVehicle(L);
+        lua_pushnumber(L, v ? v->speed : 0.0f);
+        return 1;
+    }
+    static int l_GetEngineRPM(lua_State* L){
+        auto* v = ScriptVehicle(L);
+        lua_pushnumber(L, v ? v->rpm : 0.0f);
+        lua_pushinteger(L, v ? v->gear : 0);
+        return 2;
     }
 
     // ---- Keyboard input ----
@@ -560,6 +625,14 @@ namespace Phoenix{
         lua_register(m_L, "GetJointValue",       l_GetJointValue);
         lua_register(m_L, "BreakJoint",          l_BreakJoint);
         lua_register(m_L, "IsJointBroken",       l_IsJointBroken);
+        lua_register(m_L, "GetJointCount",       l_GetJointCount);
+        // Physics: ragdoll + vehicle
+        lua_register(m_L, "SetRagdoll",          l_SetRagdoll);
+        lua_register(m_L, "IsRagdoll",           l_IsRagdoll);
+        lua_register(m_L, "RagdollImpulse",      l_RagdollImpulse);
+        lua_register(m_L, "SetVehicleInput",     l_SetVehicleInput);
+        lua_register(m_L, "GetVehicleSpeed",     l_GetVehicleSpeed);
+        lua_register(m_L, "GetEngineRPM",        l_GetEngineRPM);
 
         // Input + movement helpers
         lua_register(m_L, "IsKeyDown",    l_IsKeyDown);
@@ -577,8 +650,7 @@ namespace Phoenix{
         setKey("Space", Key::Space); setKey("Enter", Key::Enter); setKey("Escape", Key::Escape); setKey("Tab", Key::Tab);
         setKey("LeftShift", Key::LeftShift); setKey("RightShift", Key::RightShift);
         setKey("LeftControl", Key::LeftControl); setKey("RightControl", Key::RightControl);
-        setKey("W", Key::W); setKey("A", Key::A); setKey("S", Key::S); setKey("D", Key::D);
-        setKey("Q", Key::Q); setKey("E", Key::E); setKey("R", Key::R); setKey("F", Key::F);
+        for (int i = 0; i < 26; i++){ char n[2] = { (char)('A' + i), 0 }; setKey(n, Key::A + i); } // Key.A .. Key.Z
         for (int i = 0; i <= 9; i++){ char n[2] = { (char)('0' + i), 0 }; setKey(n, Key::D0 + i); }
         lua_setglobal(m_L, "Key");
 

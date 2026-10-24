@@ -55,7 +55,8 @@ playing, and serializing scenes.
   capsule, cylinder, convex-hull and triangle-mesh colliders (combinable into compound
   bodies), six joint types with motors, springs and break forces, a character controller,
   force fields, collision layers, ray/sphere casts and overlap queries, and collider
-  debug drawing.
+  debug drawing, **vehicles** (wheeled cars) and **ragdolls** (for rigged models and
+  primitive dummies), on a fixed, deterministic timestep.
 - **Editable terrain** with a Blender-style sculpt brush (raise / lower / smooth).
 - **Animated transparent water** surfaces for lakes/oceans.
 - **Lua scripting** with an in-editor, syntax-highlighted code editor that runs while playing.
@@ -196,10 +197,20 @@ Simulation runs on **Jolt Physics** (v5.5, multithreaded) behind a pimpl wrapper
 includes Jolt. Press **Play** to build the physics world from the scene; transforms are
 written back to entities every frame. **Stop** restores the edit-time state.
 
+By default it advances in **fixed steps** (60 Hz, in the Physics panel). Rendering
+interpolates between the last two steps, so motion stays smooth at any frame rate, and
+the same inputs give bit-identical results at 20 or 144 fps. Turn *Fixed Timestep* off
+for one variable step per frame.
+
+**Moving things while playing.** Drag a body with the gizmo (or `SetTranslation` it from
+Lua) and it teleports there and drops from rest when released. The engine notices any
+transform change it didn't make itself. This works for static and dynamic bodies and
+characters.
+
 **Making an object physical.** Right-click the hierarchy, then **Create Physics Object**
 for ready-made bodies: box, sphere, barrel, box pyramid, floor, ramp, moving platform,
-trigger zone, wind zone, black hole, chain, hinged door, motorized wheel, or a player
-character. To build one by hand, add a **Rigid Body** and at least one **collider**. Each
+trigger zone, wind zone, black hole, chain, hinged door, motorized wheel, ragdoll dummy,
+car, or a player character. To build one by hand, add a **Rigid Body** and at least one **collider**. Each
 collider has a **Fit to Shape** button that sizes it to the mesh or primitive.
 
 - `RigidBodyComponent`: Static, Dynamic or Kinematic (kinematic bodies follow their
@@ -212,16 +223,22 @@ collider has a **Fit to Shape** button that sizes it to the mesh or primitive.
   - continuous collision for fast movers, sleeping, sensor (trigger) mode, and a
     **collision layer**
 - Colliders: `Box`, `Sphere`, `Capsule` and `Cylinder` each take a local **offset** and
-  **rotation**. Every collider on an entity is combined into one **compound** body.
+  **rotation**. `CompoundColliderComponent` holds **any number** of those shapes (two
+  boxes, a five-box table, …). Every collider on an entity is combined into one
+  **compound** body.
   `MeshColliderComponent` builds a convex hull or an exact triangle mesh (static only)
   from the mesh. Terrain gets a static mesh collider automatically.
-- `JointComponent` connects the body to another body (by Tag) or to the world:
+- `JointComponent` holds **a list of joints**: a plank hinged at both ends, a torso
+  holding the head and both arms. Each joint connects the body to another body (by Tag)
+  or to the world:
   - **Fixed**: welds two bodies.
   - **Point**: ball-and-socket.
   - **Distance**: rope or rod, with an optional **spring** (frequency and damping).
   - **Hinge**: angle limits, friction and a **velocity or position motor**.
   - **Slider**: travel limits, friction and a motor.
   - **Cone**: swing limit.
+  - **Swing-Twist**: separate limits on two swing axes plus a twist range (ragdoll
+    shoulders, hips, knees).
 
   Any joint can have a **break force**, and the two jointed bodies don't collide unless
   you tick *Collide Connected*.
@@ -229,6 +246,23 @@ collider has a **Fit to Shape** button that sizes it to the mesh or primitive.
   up steps, slides off slopes that are too steep, rides moving platforms and pushes
   bodies. Tick *Keyboard Control* for WASD/arrows relative to the camera, Shift to run
   and Space to jump, or drive it from Lua with `Move`/`Jump`.
+- `VehicleComponent` turns a Dynamic rigid body into a four-wheeled **car**, using
+  Jolt's wheeled vehicle:
+  - suspension springs, engine and automatic gearbox
+  - front-, rear- or all-wheel drive, anti-roll bars, brakes and handbrake
+  - optional wheel entities, posed every frame (the built-in cylinder works as a wheel)
+  - *Keyboard Control*: W/S throttle and reverse, A/D steer, Space handbrake; or drive it
+    from Lua with `SetVehicleInput`
+  - Wheel layout is in meters in the car's frame; the car drives toward −Z.
+- `RagdollComponent` turns a **rigged, animated model** into a ragdoll on demand:
+  - *Start Active*, Lua `SetRagdoll(true)` or the inspector button builds capsule bodies
+    along the humanoid bones from the **current pose**, joined by swing-twist joints, and
+    the skinned mesh follows them.
+  - `SetRagdoll(false)` returns to animation.
+  - Bones are matched by name: Mixamo (`mixamorig:Hips`, `LeftUpLeg`, …) plus common
+    `pelvis`/`thigh`/`calf`/`upperarm` variants.
+  - For anything without a skeleton, **Create Physics Object → Ragdoll Dummy** builds an
+    11-part ragdoll from primitive shapes.
 - `ForceFieldComponent`: a box or sphere zone that applies a directional (wind,
   updraft) or radial (attract or repel) acceleration, plus optional drag, to every
   dynamic body inside it.
@@ -281,14 +315,18 @@ are loaded — no `io`/`os`). The API covers:
     `tag, x,y,z, nx,ny,nz, distance`, or `nil` when nothing is hit.
   - `OverlapSphere(x,y,z, r)` and `OverlapBox(x,y,z, hx,hy,hz)` return a table of tags.
 - **Character**: `Move(vx, vz)`, `Jump([speed])`, `IsGrounded()`
-- **Joints**: `SetMotor("velocity"|"position"|"off", target)`, `SetMotorTarget(t)`,
-  `GetJointValue()` (hinge angle, slider position or distance), `BreakJoint()`,
-  `IsJointBroken()`
+- **Joints** (optional joint number, 1-based, as the last argument):
+  `SetMotor("velocity"|"position"|"off", target)`, `SetMotorTarget(t)`, `GetJointValue()`
+  (hinge angle, slider position or distance), `BreakJoint()`, `IsJointBroken()`,
+  `GetJointCount()`
+- **Vehicle**: `SetVehicleInput(forward, right [, brake, handbrake])`, `GetVehicleSpeed()`,
+  `GetEngineRPM()` → rpm, gear
+- **Ragdoll**: `SetRagdoll(on)`, `IsRagdoll()`, `RagdollImpulse(vx, vy, vz)`
 - **Callbacks**:
   - `OnCollisionEnter(other, px,py,pz, nx,ny,nz, speed)` and `OnCollisionExit(other)`
   - `OnTriggerEnter(other)` and `OnTriggerExit(other)` for sensors
   - `OnJointBreak(other)`
-- **Input**: `IsKeyDown`, `IsKeyPressed`
+- **Input**: `IsKeyDown`, `IsKeyPressed` (`Key.A`–`Key.Z`, `Key.0`–`Key.9`, arrows, Space, …)
 
 The editor
 includes a **dedicated, syntax-highlighted code editor** window (Lua keyword/API colouring,
@@ -346,7 +384,7 @@ Open via the **File** menu:
 - **Load Robot Showcase** — skeletal animation: a rigged character on a shadow-receiving
   floor with a follow camera. Press **Run**, click the viewport, then drive it with the
   arrow keys (Shift runs, Space jumps); a Lua state machine crossfades idle / walk / run /
-  jump.
+  jump. **G** turns the robot into a physics ragdoll and back; **H** shoves it.
 - **Load Multi-Shadow Showcase** — three coloured directional lights, each casting its own
   shadow.
 - **Load Physics Showcase** — restitution and friction tests, a jointed wrecking ball, a
@@ -355,6 +393,10 @@ Open via the **File** menu:
   with breakable joints hit by a pendulum, an updraft force field, a compound hammer, a
   collision-layer "ghost" ball, and a keyboard-driven character (**WASD**, **Space**,
   **Shift**) with stairs. Turn on *Show Colliders* in the Physics panel to see it all.
+- **Load Vehicle Showcase** — a test track with a chase camera and a drivable car
+  (**W/S**, **A/D**, **Space** handbrake). It has a jump ramp, a cone slalom, a crate wall,
+  crash-test ragdoll dummies, and a boom gate held by a hinge plus a spring (two joints
+  on one entity).
 
 ### Getting a walking character for the Robot Showcase
 
@@ -391,7 +433,10 @@ in [`Sandbox/assets/models/README.txt`](Sandbox/assets/models/README.txt).
 | `RigidBodyComponent` | Static / Dynamic / Kinematic body: material, mass, locks, layer, sensor |
 | `Box/Sphere/Capsule/CylinderColliderComponent` | Primitive colliders with local offset/rotation (combine into compounds) |
 | `MeshColliderComponent` | Convex-hull / triangle-mesh collider |
-| `JointComponent` | Fixed / point / distance (spring) / hinge / slider / cone; motors, limits, break force |
+| `CompoundColliderComponent` | Any number of box / sphere / capsule / cylinder shapes |
+| `JointComponent` | List of joints: fixed / point / distance (spring) / hinge / slider / cone / swing-twist; motors, limits, break force |
+| `VehicleComponent` | Wheeled car: suspension, engine, gearbox, drive layout, wheel visuals |
+| `RagdollComponent` | Skeleton ragdoll for rigged models, toggled at runtime |
 | `CharacterControllerComponent` | Walking capsule character (steps, slopes, jumping, pushing) |
 | `ForceFieldComponent` | Wind / updraft / attractor zone |
 | `TerrainComponent` | Editable heightmap terrain |
