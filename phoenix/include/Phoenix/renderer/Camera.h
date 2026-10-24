@@ -43,12 +43,15 @@ namespace Phoenix{
         void Focus(const glm::vec3& target, float radius, float yawDegrees, float pitchDegrees);
         void Pan(float xoffset, float yoffset);
 
-        // Free flight: right mouse looks around from the eye (instead of orbiting),
-        // W/S/A/D fly along the view, E/Space rise, Q sinks, Shift is 4x faster and the
-        // wheel sets the speed (instead of zooming).
+        // Free flight: right mouse (or any movement of a captured mouse) looks around from
+        // the eye instead of orbiting, W/S/A/D fly along the view, E/Space rise, Q sinks,
+        // Shift is 4x faster and the wheel sets the speed (instead of zooming).
         void SetFlyMode(bool enabled) { m_FlyMode = enabled; }
         bool IsFlyMode() const { return m_FlyMode; }
         float GetFlySpeed() const { return m_FlySpeed; }
+        // With the mouse captured (cursor locked by the app), every mouse movement turns the
+        // flying view, no button needed, as far as the mouse goes.
+        void SetMouseCaptured(bool captured) { m_MouseCaptured = captured; m_HaveLastMouse = false; }
         const glm::mat4& GetViewProjectionMatrix() const { return m_ViewProjectionMatrix; }
         
         void SetFOV(float fov);
@@ -58,6 +61,7 @@ namespace Phoenix{
 
         operator bool() { return m_IsActivated; }
         void SetState(bool enabled) { m_IsActivated = enabled; }
+        bool IsActive() const { return m_IsActivated; } // false while a primary scene camera views
 
     private:
         void UpdateProjection(float fov, float aspect, float near, float far);
@@ -87,6 +91,9 @@ namespace Phoenix{
         bool m_IsActivated = false;
         bool m_FlyMode = false;
         float m_FlySpeed = 4.0f; // world units per second
+        bool m_MouseCaptured = false;
+        bool m_HaveLastMouse = false;
+        glm::vec2 m_LastMouse = glm::vec2(0.0f);
 
 
         friend class SceneEditor;

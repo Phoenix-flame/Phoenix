@@ -3033,7 +3033,10 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
 
     // Update
     m_MainCamera.SetFlyMode(IsFlying());
-    if (m_ViewportHovered){
+    // Give the mouse back when flying ends or the app loses focus (e.g. Alt+Tab).
+    if (m_MouseCaptured && (!IsFlying() || !Application::Get().GetWindow().IsFocused()))
+        SetMouseCaptured(false);
+    if (m_ViewportHovered || m_MouseCaptured){
         PHX_PROFILE("MainCamera Update");
         m_MainCamera.OnUpdate(ts);
     }
@@ -3072,7 +3075,7 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
 
 
 void MainLayer::OnEvent(Phoenix::Event& e) {
-    if (m_ViewportHovered){
+    if (m_ViewportHovered || m_MouseCaptured){
         m_MainCamera.OnEvent(e);
     }
     
@@ -3112,7 +3115,23 @@ void MainLayer::ExportScene() {
 
 void MainLayer::TogglePlay() {
     if (m_Scene->IsRunning()) { StopRuntime(); }
-    else                      { StartRuntime(); }
+    else{
+        StartRuntime();
+        // Straight into mouse look. Only for Play pressed here: a Python trainer starting
+        // the simulation must not grab the mouse.
+        if (IsFlying()) { SetMouseCaptured(true); }
+    }
+}
+
+void MainLayer::SetMouseCaptured(bool captured) {
+    if (captured == m_MouseCaptured) { return; }
+    m_MouseCaptured = captured;
+    Application::Get().GetWindow().SetCursorLocked(captured);
+    // The locked cursor's position is meaningless to the UI: no hovering or clicking panels.
+    ImGuiIO& io = ImGui::GetIO();
+    if (captured) { io.ConfigFlags |= ImGuiConfigFlags_NoMouse; }
+    else          { io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse; }
+    m_MainCamera.SetMouseCaptured(captured);
 }
 
 void MainLayer::OnImGuiRender(){
@@ -3183,7 +3202,8 @@ void MainLayer::OnImGuiRender(){
     m_ViewportFocused = ImGui::IsWindowFocused();
     m_ViewportHovered = ImGui::IsWindowHovered();
 
-    Application::Get().GetImGuiLayer()->BlockEvents(!m_ViewportFocused || !m_ViewportHovered);
+    // A captured mouse belongs to the viewport (ImGui sees no mouse then).
+    Application::Get().GetImGuiLayer()->BlockEvents(!m_MouseCaptured && (!m_ViewportFocused || !m_ViewportHovered));
 
     ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
     m_ViewportSize = { viewportPanelSize.x, viewportPanelSize.y };
@@ -3262,9 +3282,14 @@ void MainLayer::OnImGuiRender(){
         }
     }
 
+    // While flying, a click in the viewport takes the mouse back for mouse look.
+    const bool flying = IsFlying();
+    if (flying && !m_MouseCaptured && m_ViewportHovered && !overlayHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+        SetMouseCaptured(true);
+
     // Click-to-select: cast a ray from the cursor and pick the nearest entity.
-    // Skipped while interacting with the gizmo, orbiting, or sculpting.
-    if (!m_TerrainSculpt && m_ViewportHovered && !overlayHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
+    // Skipped while interacting with the gizmo, orbiting, sculpting or flying.
+    if (!flying && !m_TerrainSculpt && m_ViewportHovered && !overlayHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
         && !ImGuizmo::IsUsing() && !ImGuizmo::IsOver())
     {
         glm::vec3 rayOrigin, rayDir;
@@ -3804,7 +3829,7 @@ void MainLayer::DrawViewportOverlay(const ImVec2& imageMin, const ImVec2& imageS
     x += button + gap;
     ImGui::SetCursorScreenPos(ImVec2(x, y));
     if (EditorUI::IconButton("##ToolFly", EditorUI::Icon::Fly, ImVec2(button, button), m_FreeFlight,
-            "Free flight in Play: WASD fly, hold right mouse to look (scenes without a primary camera)"))
+            "Free flight in Play: WASD fly, mouse look (Esc frees the mouse; scenes without a primary camera)"))
         m_FreeFlight = !m_FreeFlight;
 
     // Play state: accent frame + badge (top-right).
@@ -3820,9 +3845,10 @@ void MainLayer::DrawViewportOverlay(const ImVec2& imageMin, const ImVec2& imageS
 
     // Free flight controls (bottom-centre).
     if (IsFlying()){
-        char text[160];
-        std::snprintf(text, sizeof(text), "Free flight  -  hold right mouse to look   WASD fly   E / Space up   Q down   "
-            "Shift fast   wheel speed (%.1f m/s)", m_MainCamera.GetFlySpeed());
+        char text[200];
+        std::snprintf(text, sizeof(text), "%s   WASD fly   E / Space up   Q down   Shift fast   wheel speed (%.1f m/s)",
+            m_MouseCaptured ? "Mouse look  -  Esc frees the mouse" : "Click the viewport for mouse look",
+            m_MainCamera.GetFlySpeed());
         ImVec2 size = EditorUI::PillSize(text, 5.0f);
         EditorUI::DrawPill(dl, ImVec2(imageMin.x + (imageSize.x - size.x) * 0.5f, imageMin.y + imageSize.y - size.y - margin),
             text, EditorUI::Accent(), IM_COL32(18, 19, 22, 215), 5.0f);
@@ -4134,7 +4160,8 @@ void MainLayer::DrawHelpPopups(){
             { "Play / Stop",                    "F5" },
             { "Pause / Step one decision",      "F6 / F7" },
             { "Frame selection",                "F" },
-            { "Free flight (Play, fly tool on)", "WASD, E / Q, hold RMB to look" },
+            { "Free flight (Play, fly tool on)", "WASD, E / Q, mouse to look" },
+            { "Free / recapture the mouse",     "Esc / click the viewport" },
             { "Free flight speed",              "Shift (4x) / Wheel" },
             { "Drive a Keyboard-policy agent",  "WASD / arrows" },
             { "This window",                    "F1" },
@@ -4257,8 +4284,10 @@ void MainLayer::HandleShortcuts(){
     }
     if (pressed(ImGuiKey_F1)) { m_OpenShortcuts = true; }
 
-    // Esc deselects, unless it is closing a popup.
-    if (pressed(ImGuiKey_Escape) && !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId))
+    // Esc releases a captured mouse, else deselects (unless it is closing a popup).
+    if (pressed(ImGuiKey_Escape) && m_MouseCaptured)
+        SetMouseCaptured(false);
+    else if (pressed(ImGuiKey_Escape) && !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId))
         m_SceneEditor->SetSelectedEntity({});
 
     // Gizmo operation shortcuts (only when not mid-manipulation).

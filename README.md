@@ -700,9 +700,11 @@ Open via **File → Showcases**:
 ![Contact-hardening sun shadows (left) and coloured point-light shadows (right)](images/soft-shadows.png)
 - **Sponza** — the Crytek Sponza atrium (glTF: 262k triangles, 69 textures) with
   normal-mapped stone, cloth banners and alpha-tested foliage, sunlit through the open
-  roof with soft shadows under a gradient sky. Press **Play** to fly through it: free flight is on, so **WASD**
-  flies, **E / Space** rises, **Q** sinks, hold the **right mouse** button to look,
-  **Shift** goes 4x faster and the wheel sets the speed. The paper-plane button in the
+  roof with soft shadows under a gradient sky. Press **Play** to fly through it: free flight is on, so the
+  mouse is captured and looks around freely, without limit in any direction; **WASD**
+  flies, **E / Space** rises, **Q** sinks, **Shift** goes 4x faster and the wheel sets the
+  speed. **Esc** frees the mouse (then hold the right button to look); click the viewport
+  to capture it again. The paper-plane button in the
   viewport tool strip (or *View → Free Flight*) turns free flight on for any scene that
   has no primary camera. Assets and credits: [`Sandbox/assets/models/sponza`](Sandbox/assets/models/sponza/README.txt).
 - **Physics** — restitution and friction tests, a jointed wrecking ball, a

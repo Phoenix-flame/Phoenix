@@ -19,7 +19,20 @@ namespace Phoenix{
             yoffset *= 0.2f;
 
             if (m_FlyMode){
-                if (Input::IsMouseButtonPressed(Mouse::Button1)) { LookAround(xoffset, yoffset); }
+                if (m_MouseCaptured){
+                    // Raw cursor motion: unbounded while the cursor is locked (ImGui's
+                    // delta is off then, the app disables its mouse input).
+                    glm::vec2 mouse = Input::GetMousePosition();
+                    if (m_HaveLastMouse){
+                        glm::vec2 d = (mouse - m_LastMouse) * 0.12f;
+                        LookAround(d.x, -d.y);
+                    }
+                    m_LastMouse = mouse;
+                    m_HaveLastMouse = true;
+                }
+                else if (Input::IsMouseButtonPressed(Mouse::Button1)){
+                    LookAround(xoffset, yoffset);
+                }
                 Fly(ts);
                 return;
             }

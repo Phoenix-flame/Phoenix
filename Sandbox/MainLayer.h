@@ -156,9 +156,14 @@ private:
     bool m_GizmoSnap = false;  // snap to increments (Ctrl inverts while dragging)
 
     // Free flight: while playing (without a primary scene camera) the viewport camera flies
-    // with WASD + right-mouse look instead of orbiting. Toolbar / View menu toggle.
+    // with WASD + mouse look instead of orbiting. Toolbar / View menu toggle.
     bool m_FreeFlight = false;
-    bool IsFlying() const { return m_FreeFlight && m_Scene->IsRunning(); }
+    bool IsFlying() const { return m_FreeFlight && m_Scene->IsRunning() && m_MainCamera.IsActive(); }
+    // While flying, the mouse can be captured: cursor hidden and locked, every movement
+    // turns the view without limit. Play captures it, Esc releases it, a viewport click
+    // takes it again.
+    bool m_MouseCaptured = false;
+    void SetMouseCaptured(bool captured);
 
     // Shown in the title bar: the loaded showcase / file name.
     std::string m_SceneName = "Untitled";
