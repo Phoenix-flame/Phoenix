@@ -4,6 +4,7 @@
 #include <Phoenix/core/timestep.h>
 #include <entt/entt.hpp>
 #include <Phoenix/renderer/Camera.h>
+#include <Phoenix/Scene/Sky.h>
 
 
 #include <Phoenix/renderer/shader.h>
@@ -223,6 +224,10 @@ namespace Phoenix{
 
         SimulationSettings& Simulation() { return m_Simulation; }
 
+        // Background / sky drawn behind the scene and mirrored by reflections.
+        SkySettings& Sky() { return m_Sky; }
+        const SkySettings& Sky() const { return m_Sky; }
+
         // Contacts recorded since the last call (bounded to the most recent few thousand).
         std::vector<ContactRecord> DrainContacts() { std::vector<ContactRecord> out; out.swap(m_ContactLog); return out; }
         // Seconds simulated since play started.
@@ -260,6 +265,7 @@ namespace Phoenix{
     
     private:
         glm::vec3 m_AmbientColor = glm::vec3(0.1f);
+        SkySettings m_Sky;
         float m_Time = 0.0f; // accumulated seconds (drives water animation)
         float m_SimTime = 0.0f;
         SimulationSettings m_Simulation;

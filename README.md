@@ -20,6 +20,7 @@ Gymnasium-compatible API. Phoenix provides the environment; the learning algorit
   - [Entity Component System](#entity-component-system)
   - [Rendering](#rendering)
   - [Lighting & Shadows](#lighting--shadows)
+  - [Sky & Background](#sky--background)
   - [Post-Processing (Bloom / Glow)](#post-processing-bloom--glow)
   - [Linear Lighting (sRGB)](#linear-lighting-srgb)
   - [Mesh Loading](#mesh-loading)
@@ -314,6 +315,22 @@ for (int face = 0; face < 6; face++){                          // point light j
 }
 ```
 
+### Sky & Background
+
+Each scene has a **sky** ([`Sky.h`](phoenix/include/Phoenix/Scene/Sky.h),
+[`sky.glsl`](phoenix/assets/shaders/sky.glsl)), saved with the scene and edited under
+*Settings → Environment*:
+
+- **Color**: a flat backdrop (the default, black).
+- **Gradient Sky**: zenith / horizon / ground colours plus a glowing **sun disc** placed
+  where the first directional light shines from, tinted by its colour (it blooms).
+- **Panorama**: any equirectangular (2:1) image, `.jpg`, `.png` or `.hdr`, with a
+  rotation and an intensity.
+
+The sky is a fullscreen pass drawn behind the scene, so it costs one triangle.
+Reflective materials and water mirror the same sky: the panorama in Panorama mode,
+otherwise the gradient. From code: `scene->Sky().mode = SkySettings::Mode::Gradient;`.
+
 ### Post-Processing (Bloom / Glow)
 
 An HDR pipeline ([`Bloom.cpp`](phoenix/src/renderer/Bloom.cpp)) renders the scene to an
@@ -343,7 +360,9 @@ usually need their lights and materials re-balanced.
 ### Mesh Loading
 
 Models are loaded with **Assimp** ([`Mesh.cpp`](phoenix/src/renderer/Mesh.cpp)) and support
-**diffuse textures**; any material can also take a diffuse and normal map from the
+**diffuse textures**, embedded **normal maps** (glTF `normalTexture`, OBJ `norm`) and
+**alpha-tested cut-out materials** (glTF `alphaMode: MASK`: leaves, chains, fences, which
+also cut their shadows); any material can also take a diffuse and normal map from the
 editor's **Textures** panel. Loading is **asynchronous**: the file is parsed on a worker thread and
 the GPU buffers/textures are uploaded on the main thread in `Model::Update()`, so the editor
 never blocks on a slow import. Add via the editor (Mesh component) or `CreateRef<Model>(path)`.
@@ -617,6 +636,13 @@ Open via **File → Showcases**:
   wall. Press **Play** to spin the fan, bounce a sphere and orbit the lantern lights.
 
 ![Contact-hardening sun shadows (left) and coloured point-light shadows (right)](images/soft-shadows.png)
+- **Sponza** — the Crytek Sponza atrium (glTF: 262k triangles, 69 textures) with
+  normal-mapped stone, cloth banners and alpha-tested foliage, sunlit through the open
+  roof with soft shadows under a gradient sky. Press **Play** to fly through it: free flight is on, so **WASD**
+  flies, **E / Space** rises, **Q** sinks, hold the **right mouse** button to look,
+  **Shift** goes 4x faster and the wheel sets the speed. The paper-plane button in the
+  viewport tool strip (or *View → Free Flight*) turns free flight on for any scene that
+  has no primary camera. Assets and credits: [`Sandbox/assets/models/sponza`](Sandbox/assets/models/sponza/README.txt).
 - **Physics** — restitution and friction tests, a jointed wrecking ball, a
   hinged seesaw, a Lua-driven kinematic spinner, a tethered balloon, a CCD cannon (press
   **F**) through a sensor gate, a motorized windmill, a slider elevator, a welded tower

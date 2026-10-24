@@ -177,13 +177,17 @@ namespace Phoenix{
 			int numOfPointLight);
 
 		// Draw any indexed geometry (position@0, normal@1, texcoord@2) with the lighting
-		// shader. If diffuseMap is non-null it is sampled in place of material.diffuse.
-		static void Submit(const Ref<VertexArray>& vertexArray, const Material& material, const glm::mat4& transform = glm::mat4(1.0f), const Ref<Texture2D>& diffuseMap = nullptr);
+		// shader. If diffuseMap is non-null it is sampled in place of material.diffuse;
+		// normalMap adds surface detail unless the material sets its own. alphaCutoff > 0
+		// discards fragments whose diffuse alpha falls below it (cut-out foliage).
+		static void Submit(const Ref<VertexArray>& vertexArray, const Material& material, const glm::mat4& transform = glm::mat4(1.0f),
+			const Ref<Texture2D>& diffuseMap = nullptr, const Ref<Texture2D>& normalMap = nullptr, float alphaCutoff = 0.0f);
 
 		// Draw a skinned mesh: same as Submit but uploads the per-frame bone matrices
 		// and enables vertex skinning in the shader.
 		static void SubmitAnimated(const Ref<VertexArray>& vertexArray, const Material& material, const glm::mat4& transform,
-			const std::vector<glm::mat4>& boneMatrices, const Ref<Texture2D>& diffuseMap = nullptr);
+			const std::vector<glm::mat4>& boneMatrices, const Ref<Texture2D>& diffuseMap = nullptr,
+			const Ref<Texture2D>& normalMap = nullptr, float alphaCutoff = 0.0f);
 
 		// Convenience: draw the built-in unit cube.
 		static void SubmitCube(const Material& material, const glm::mat4& transform = glm::mat4(1.0f));
@@ -204,9 +208,12 @@ namespace Phoenix{
 		static void BeginShadowPass(int lightIndex, const glm::mat4& lightSpaceMatrix, const ShadowSettings& settings = {});
 		static void BeginPointShadowPass(int lightIndex, int face, const glm::vec3& position, float range,
 			const ShadowSettings& settings = {});
-		static void SubmitShadow(const Ref<VertexArray>& vertexArray, const glm::mat4& transform);
+		// alphaMap/alphaCutoff: a cut-out caster's diffuse map, so only its opaque texels
+		// cast (leaves shadow as leaves, not as quads).
+		static void SubmitShadow(const Ref<VertexArray>& vertexArray, const glm::mat4& transform,
+			const Ref<Texture2D>& alphaMap = nullptr, float alphaCutoff = 0.0f);
 		static void SubmitShadowAnimated(const Ref<VertexArray>& vertexArray, const glm::mat4& transform,
-			const std::vector<glm::mat4>& boneMatrices);
+			const std::vector<glm::mat4>& boneMatrices, const Ref<Texture2D>& alphaMap = nullptr, float alphaCutoff = 0.0f);
 		static void SubmitShadowCube(const glm::mat4& transform);
 		static void EndShadowPass();
 
@@ -257,6 +264,14 @@ namespace Phoenix{
 			float size = 40.0f;        // world width of the grid (ripple slope scale)
 			uint32_t rippleTexture = 0; // R32F heightfield; 0 = no dynamic ripples
 		};
+
+		// The scene's sky, before BeginScene: lit materials and water reflect it, and
+		// DrawSky paints it behind the scene. sunDir points towards the sun (the disc);
+		// hasSun false hides the disc.
+		static void SetSky(const SkySettings& sky, bool hasSun, const glm::vec3& sunDir, const glm::vec3& sunColor);
+		// Fill the background with the sky (Gradient / Panorama modes; Color mode is the
+		// clear colour). Call right after BeginScene, before any geometry.
+		static void DrawSky();
 
 		// Draw an animated transparent water surface (flat grid displaced in the shader).
 		// Call after the opaque scene; uses the camera state from the last BeginScene.
@@ -321,5 +336,13 @@ namespace Phoenix{
         static int s_PrevFBO;
         static int s_PrevViewport[4];
         static bool s_LinearLighting;
+
+        static void BindSkyUniforms(const Ref<Shader>& shader);
+        static Ref<Shader> s_SkyShader;
+        static uint32_t s_SkyVAO; // empty: the sky triangle comes from gl_VertexID
+        static SkySettings s_Sky;
+        static Ref<Texture2D> s_SkyPanorama; // null unless Panorama mode with a loadable image
+        static bool s_HasSun;
+        static glm::vec3 s_SunDir, s_SunColor;
 	};
 }

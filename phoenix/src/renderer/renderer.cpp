@@ -35,6 +35,13 @@ namespace Phoenix{
     int Renderer::s_PrevFBO = 0;
     int Renderer::s_PrevViewport[4] = { 0, 0, 0, 0 };
     bool Renderer::s_LinearLighting = false;
+    Ref<Shader> Renderer::s_SkyShader;
+    uint32_t Renderer::s_SkyVAO = 0;
+    SkySettings Renderer::s_Sky;
+    Ref<Texture2D> Renderer::s_SkyPanorama;
+    bool Renderer::s_HasSun = false;
+    glm::vec3 Renderer::s_SunDir = glm::vec3(0.0f, 1.0f, 0.0f);
+    glm::vec3 Renderer::s_SunColor = glm::vec3(1.0f);
 
     glm::vec3 Renderer::ToLinear(const glm::vec3& c){
         if (!s_LinearLighting) { return c; }
@@ -89,6 +96,8 @@ namespace Phoenix{
         s_OutlineShader = Shader::Create("assets/shaders/outline.glsl");
         s_WaterShader = Shader::Create("assets/shaders/water.glsl");
         s_ShadowShader = Shader::Create("assets/shaders/shadow_depth.glsl");
+        s_SkyShader = Shader::Create("assets/shaders/sky.glsl");
+        glGenVertexArrays(1, &s_SkyVAO);
 
         s_DirAtlas.Init(DIR_ATLAS_W, DIR_ATLAS_H);
         s_PointAtlas.Init(POINT_ATLAS_W, POINT_ATLAS_H);
@@ -219,17 +228,31 @@ namespace Phoenix{
         s_PointShadowInfo[lightIndex] = glm::vec4(POINT_NEAR, range, 1.0f / (float)tile, POINT_TAN_HALF_FOV);
     }
 
-    void Renderer::SubmitShadow(const Ref<VertexArray>& vertexArray, const glm::mat4& transform){
+    static void BindShadowAlpha(const Ref<Shader>& shader, const Ref<Texture2D>& alphaMap, float alphaCutoff){
+        if (alphaMap && alphaCutoff > 0.0f){
+            alphaMap->Bind(0);
+            shader->SetInt("u_AlphaMap", 0);
+            shader->SetFloat("u_AlphaCutoff", alphaCutoff);
+        }
+        else{
+            shader->SetFloat("u_AlphaCutoff", 0.0f);
+        }
+    }
+
+    void Renderer::SubmitShadow(const Ref<VertexArray>& vertexArray, const glm::mat4& transform,
+            const Ref<Texture2D>& alphaMap, float alphaCutoff){
         s_ShadowShader->SetMat4("model", transform);
         s_ShadowShader->SetInt("u_Animated", 0);
+        BindShadowAlpha(s_ShadowShader, alphaMap, alphaCutoff);
         vertexArray->Bind();
         RenderCommand::DrawIndexed(vertexArray);
     }
 
     void Renderer::SubmitShadowAnimated(const Ref<VertexArray>& vertexArray, const glm::mat4& transform,
-            const std::vector<glm::mat4>& boneMatrices){
+            const std::vector<glm::mat4>& boneMatrices, const Ref<Texture2D>& alphaMap, float alphaCutoff){
         s_ShadowShader->SetMat4("model", transform);
         s_ShadowShader->SetInt("u_Animated", 1);
+        BindShadowAlpha(s_ShadowShader, alphaMap, alphaCutoff);
         if (!boneMatrices.empty())
             s_ShadowShader->SetMat4Array("u_BoneMatrices", boneMatrices.data(), (uint32_t)boneMatrices.size());
         vertexArray->Bind();
@@ -284,12 +307,12 @@ namespace Phoenix{
         shader->SetFloat4Array("u_DirShadowRect", s_ShadowsEnabled ? s_DirShadowRect : noRects, MAX_DIR_LIGHTS);
         shader->SetFloat4Array("u_DirShadowParams", s_DirShadowParams, MAX_DIR_LIGHTS);
         shader->SetFloat4Array("u_DirShadowInfo", s_DirShadowInfo, MAX_DIR_LIGHTS);
+        BindSkyUniforms(shader);
         shader->SetMat4Array("u_PointShadowMatrices", s_PointShadowMatrix, MAX_POINT_LIGHTS * 6);
         shader->SetFloat4Array("u_PointShadowRect", s_ShadowsEnabled ? s_PointShadowRect : noRects, MAX_POINT_LIGHTS * 6);
         shader->SetFloat4Array("u_PointShadowParams", s_PointShadowParams, MAX_POINT_LIGHTS);
         shader->SetFloat4Array("u_PointShadowInfo", s_PointShadowInfo, MAX_POINT_LIGHTS);
         shader->SetInt("u_ShadowSamples", s_ShadowSamples);
-        shader->SetInt("u_LinearLighting", s_LinearLighting ? 1 : 0);
     }
 
     // Uniform names for the light arrays, built once rather than every frame.
@@ -382,10 +405,11 @@ namespace Phoenix{
 
     static const uint32_t NORMAL_MAP_UNIT = 2;
 
-    // Upload material params + bind its textures. The material's own diffuse path (set via
-    // the Textures panel) overrides the mesh-embedded `diffuseMap`; the normal path adds
-    // tangent-space detail. Both are resolved from path through Texture2D's path cache.
-    static void BindMaterial(const Ref<Shader>& shader, const Material& material, const Ref<Texture2D>& diffuseMap){
+    // Upload material params + bind its textures. The material's own diffuse / normal paths
+    // (set via the Textures panel) override the mesh-embedded `diffuseMap` / `normalMap`;
+    // paths are resolved through Texture2D's path cache.
+    static void BindMaterial(const Ref<Shader>& shader, const Material& material, const Ref<Texture2D>& diffuseMap,
+            const Ref<Texture2D>& normalMap, float alphaCutoff){
         shader->SetFloat3("material.ambient", Renderer::ToLinear(material.ambient));
         shader->SetFloat3("material.diffuse", Renderer::ToLinear(material.diffuse));
         shader->SetFloat3("material.specular", Renderer::ToLinear(material.specular));
@@ -403,26 +427,24 @@ namespace Phoenix{
         else{
             shader->SetInt("u_HasDiffuseMap", 0);
         }
+        // The cutoff tests the diffuse map's alpha, so it needs one.
+        shader->SetFloat("u_AlphaCutoff", diffuse ? alphaCutoff : 0.0f);
 
-        if (!material.normalPath.empty()){
-            Ref<Texture2D> normal = Texture2D::Create(material.normalPath);
-            if (normal){
-                normal->Bind(NORMAL_MAP_UNIT);
-                shader->SetInt("u_NormalMap", (int)NORMAL_MAP_UNIT);
-                shader->SetInt("u_HasNormalMap", 1);
-            }
-            else{
-                shader->SetInt("u_HasNormalMap", 0);
-            }
+        Ref<Texture2D> normal = !material.normalPath.empty() ? Texture2D::Create(material.normalPath) : normalMap;
+        if (normal){
+            normal->Bind(NORMAL_MAP_UNIT);
+            shader->SetInt("u_NormalMap", (int)NORMAL_MAP_UNIT);
+            shader->SetInt("u_HasNormalMap", 1);
         }
         else{
             shader->SetInt("u_HasNormalMap", 0);
         }
     }
 
-    void Renderer::Submit(const Ref<VertexArray>& vertexArray, const Material& material, const glm::mat4& transform, const Ref<Texture2D>& diffuseMap){
+    void Renderer::Submit(const Ref<VertexArray>& vertexArray, const Material& material, const glm::mat4& transform,
+            const Ref<Texture2D>& diffuseMap, const Ref<Texture2D>& normalMap, float alphaCutoff){
         auto& shader = s_RenderLightCube->m_Shader;
-        BindMaterial(shader, material, diffuseMap);
+        BindMaterial(shader, material, diffuseMap, normalMap, alphaCutoff);
         shader->SetMat4("model", transform);
         shader->UploadUniformMat3("u_NormalMatrix", glm::transpose(glm::inverse(glm::mat3(transform))));
         shader->SetInt("u_Animated", 0);
@@ -432,9 +454,10 @@ namespace Phoenix{
     }
 
     void Renderer::SubmitAnimated(const Ref<VertexArray>& vertexArray, const Material& material, const glm::mat4& transform,
-            const std::vector<glm::mat4>& boneMatrices, const Ref<Texture2D>& diffuseMap){
+            const std::vector<glm::mat4>& boneMatrices, const Ref<Texture2D>& diffuseMap,
+            const Ref<Texture2D>& normalMap, float alphaCutoff){
         auto& shader = s_RenderLightCube->m_Shader;
-        BindMaterial(shader, material, diffuseMap);
+        BindMaterial(shader, material, diffuseMap, normalMap, alphaCutoff);
         shader->SetMat4("model", transform);
         shader->UploadUniformMat3("u_NormalMatrix", glm::transpose(glm::inverse(glm::mat3(transform))));
         shader->SetInt("u_Animated", 1);
@@ -603,6 +626,8 @@ namespace Phoenix{
         s_WaterShader->SetFloat("u_Foam", params.foam);
         s_WaterShader->SetFloat("u_WaterSize", params.size);
 
+        BindSkyUniforms(s_WaterShader);
+
         // The sun's (directional light 0's) shadow darkens the water and hides its glint.
         s_WaterShader->SetInt("u_ShadowMap", (int)DIR_SHADOW_UNIT);
         glBindTextureUnit(DIR_SHADOW_UNIT, s_DirAtlas.texture);
@@ -625,6 +650,58 @@ namespace Phoenix{
 
         s_WaterShader->Unbind();
         glDepthMask(GL_TRUE);
+    }
+
+    // Panorama on its own unit: 0 diffuse, 1 shadow atlas, 2 normal map, 3 ripples, 4-6 atlases.
+    static const uint32_t SKY_PANORAMA_UNIT = 7;
+
+    void Renderer::SetSky(const SkySettings& sky, bool hasSun, const glm::vec3& sunDir, const glm::vec3& sunColor){
+        s_Sky = sky;
+        // Texture2D caches by path (failures too), so this is a lookup after the first frame.
+        s_SkyPanorama = (sky.mode == SkySettings::Mode::Panorama && !sky.panorama.empty())
+            ? Texture2D::Create(sky.panorama) : nullptr;
+        s_HasSun = hasSun;
+        s_SunDir = glm::length(sunDir) > 1e-6f ? glm::normalize(sunDir) : glm::vec3(0.0f, 1.0f, 0.0f);
+        s_SunColor = sunColor;
+    }
+
+    // Sky colours / panorama for SampleEnvironment (reflections) and the sky pass.
+    void Renderer::BindSkyUniforms(const Ref<Shader>& shader){
+        shader->SetFloat3("u_SkyZenith", ToLinear(s_Sky.zenith));
+        shader->SetFloat3("u_SkyHorizon", ToLinear(s_Sky.horizon));
+        shader->SetFloat3("u_SkyGround", ToLinear(s_Sky.ground));
+        shader->SetFloat("u_SkyIntensity", std::max(s_Sky.intensity, 0.0f));
+        shader->SetFloat("u_SkyRotation", glm::radians(s_Sky.rotation));
+        shader->SetInt("u_SkyHasPanorama", s_SkyPanorama ? 1 : 0);
+        // Always on its own unit, even unused, so it never shares one with another sampler type.
+        shader->SetInt("u_SkyPanorama", (int)SKY_PANORAMA_UNIT);
+        if (s_SkyPanorama) { s_SkyPanorama->Bind(SKY_PANORAMA_UNIT, s_LinearLighting); }
+    }
+
+    void Renderer::DrawSky(){
+        if (s_Sky.mode == SkySettings::Mode::Color || !s_SkyShader) { return; }
+        s_SkyShader->Bind();
+        // Directions only: drop the view's translation so the sky stays at infinity.
+        glm::mat4 rotationOnly = glm::mat4(glm::mat3(s_SceneData->ViewMatrix));
+        s_SkyShader->SetMat4("u_InvViewProj", glm::inverse(s_SceneData->ProjectionMatrix * rotationOnly));
+        s_SkyShader->SetInt("u_SkyMode", (int)s_Sky.mode);
+        BindSkyUniforms(s_SkyShader);
+        s_SkyShader->SetInt("u_SunDisc", (s_Sky.sunDisc && s_HasSun) ? 1 : 0);
+        s_SkyShader->SetFloat3("u_SunDir", s_SunDir);
+        s_SkyShader->SetFloat3("u_SunColor", ToLinear(s_SunColor));
+        s_SkyShader->SetFloat("u_SunCos", std::cos(glm::radians(glm::clamp(s_Sky.sunSize, 0.05f, 20.0f))));
+
+        GLboolean depthWasOn = glIsEnabled(GL_DEPTH_TEST);
+        glDisable(GL_DEPTH_TEST);
+        glDepthMask(GL_FALSE);
+        glBindVertexArray(s_SkyVAO);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glBindVertexArray(0);
+        glDepthMask(GL_TRUE);
+        if (depthWasOn) { glEnable(GL_DEPTH_TEST); }
+
+        // Geometry submitted next expects the lighting shader bound (BeginScene state).
+        s_RenderLightCube->m_Shader->Bind();
     }
 
 	void Renderer::EndScene(){

@@ -23,7 +23,7 @@ namespace EditorUI{
         Minimize, Maximize, Restore, Close,
         Select, Move, Rotate, Scale,
         Plus, Search, More, Local, World, Magnet,
-        Eye, StepForward, Reset, Bolt,
+        Eye, StepForward, Reset, Bolt, Fly,
     };
 
     // Draw icon centred on c, fitting a size x size box.
@@ -180,6 +180,14 @@ namespace EditorUI{
                 dl->AddConvexPolyFilled(q, 4, col);
                 ImVec2 r[] = { p[0], p[1], p[2], p[5] };
                 dl->AddConvexPolyFilled(r, 4, col);
+                break;
+            }
+            case Icon::Fly:{
+                // A paper plane seen from above, nose up-right.
+                ImVec2 nose(c.x + h * 0.85f, c.y - h * 0.75f), tail(c.x - h * 0.85f, c.y + h * 0.05f);
+                ImVec2 fold(c.x - h * 0.1f, c.y + h * 0.15f), keel(c.x + h * 0.05f, c.y + h * 0.85f);
+                dl->AddTriangleFilled(nose, tail, fold, col);
+                dl->AddTriangleFilled(nose, fold, keel, col);
                 break;
             }
             case Icon::Magnet:{

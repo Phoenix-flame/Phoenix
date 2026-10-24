@@ -11,6 +11,7 @@
 #include <Phoenix/renderer/Mesh.h>
 #include <Phoenix/renderer/WaterRipples.h>
 #include <Phoenix/Scene/ScriptableEntity.h>
+#include <Phoenix/Scene/Sky.h>
 #include <string>
 #include <vector>
 namespace Phoenix{
@@ -67,8 +68,9 @@ namespace Phoenix{
         float reflectivity = 0.0f;
         // Optional textures loaded from disk (assigned via the Textures panel). The
         // diffuse map overrides the flat diffuse colour / any mesh-embedded texture; the
-        // normal map adds tangent-space surface detail. Stored by path (serialized); the
-        // GL texture is resolved/cached from the path at draw time.
+        // normal map adds tangent-space surface detail (overriding a mesh-embedded one).
+        // Stored by path (serialized); the GL texture is resolved/cached from the path at
+        // draw time.
         std::string diffusePath;
         std::string normalPath;
         // Shadow participation: castShadows puts the object into the lights' shadow maps;

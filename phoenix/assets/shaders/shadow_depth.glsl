@@ -1,15 +1,18 @@
 // Depth-only pass: render the scene from the light's point of view to fill the
-// shadow map. Fragment shader is empty (we only need depth).
+// shadow map. The fragment shader only discards cut-out texels (alpha-tested leaves).
 
 #type vertex
 #version 300 es
 precision highp float;
 layout(location = 0) in vec3 aPos;
+layout(location = 2) in vec2 aTexCoords;
 layout(location = 3) in vec4 aBoneIDs;
 layout(location = 4) in vec4 aWeights;
 
 uniform mat4 u_LightSpaceMatrix;
 uniform mat4 model;
+
+out vec2 TexCoords;
 
 // Skin animated casters so their shadow matches the posed mesh.
 const int MAX_BONES = 100;
@@ -29,11 +32,18 @@ void main(){
         if (total > 0.0) { localPos = vec3(skin * vec4(aPos, 1.0)); }
     }
     gl_Position = u_LightSpaceMatrix * model * vec4(localPos, 1.0);
+    TexCoords = aTexCoords;
 }
 
 #type fragment
 #version 300 es
 precision mediump float;
 
+in vec2 TexCoords;
+
+uniform sampler2D u_AlphaMap;
+uniform float u_AlphaCutoff; // 0 = opaque caster, no texture lookup
+
 void main(){
+    if (u_AlphaCutoff > 0.0 && texture(u_AlphaMap, TexCoords).a < u_AlphaCutoff) { discard; }
 }

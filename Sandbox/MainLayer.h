@@ -117,6 +117,10 @@ private:
     // shadows falling on other objects, and two orbiting point lights with cube shadows.
     void BuildShadowShowcase();
 
+    // Populate m_Scene with the Crytek Sponza atrium (textured glTF, normal maps,
+    // alpha-tested foliage) lit by a shadow-casting sun.
+    void BuildSponzaShowcase();
+
     // Populate m_Scene with the vehicle test track (car, ramp, cones, crates, ragdoll dummies).
     void BuildVehicleShowcase();
 
@@ -132,7 +136,6 @@ private:
     bool m_ViewportFocused = false, m_ViewportHovered = false;
     glm::vec2 m_ViewportSize = { 0.0f, 0.0f };
     
-    glm::vec3 m_BackgroundColor = { 0.0, 0.0, 0.0 };
     EditorCamera m_MainCamera;
     Ref<Phoenix::SceneEditor> m_SceneEditor;
     Ref<Phoenix::Scene> m_Scene;
@@ -150,6 +153,11 @@ private:
     bool m_GizmoWorld = false; // world- instead of local-space handles
     bool m_GizmoSnap = false;  // snap to increments (Ctrl inverts while dragging)
 
+    // Free flight: while playing (without a primary scene camera) the viewport camera flies
+    // with WASD + right-mouse look instead of orbiting. Toolbar / View menu toggle.
+    bool m_FreeFlight = false;
+    bool IsFlying() const { return m_FreeFlight && m_Scene->IsRunning(); }
+
     // Shown in the title bar: the loaded showcase / file name.
     std::string m_SceneName = "Untitled";
     std::string m_ScenePath = "scene.phx";
@@ -159,6 +167,7 @@ private:
     bool m_ShowProfiler = true;
     bool m_ShowShaderLibrary = true;
     bool m_OpenImportShader = false;
+    bool m_OpenSkyPanorama = false;
     bool m_OpenShortcuts = false;
     bool m_OpenAbout = false;
 

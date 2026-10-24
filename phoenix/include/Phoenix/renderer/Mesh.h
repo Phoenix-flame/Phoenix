@@ -27,6 +27,8 @@ namespace Phoenix{
         std::vector<Vertex> vertices;
         std::vector<uint32_t> indices;
         std::string diffusePath; // absolute path; empty if the mesh has no diffuse map
+        std::string normalPath;  // tangent-space normal map; empty if none
+        float alphaCutoff = 0.0f; // alpha-tested (cut-out) when > 0, e.g. glTF alphaMode MASK
     };
 
     // Everything the worker thread extracts from a model file: geometry plus the
@@ -48,6 +50,13 @@ namespace Phoenix{
 
         void SetDiffuseMap(const Ref<Texture2D>& diffuseMap) { m_DiffuseMap = diffuseMap; }
         const Ref<Texture2D>& GetDiffuseMap() const { return m_DiffuseMap; }
+        void SetNormalMap(const Ref<Texture2D>& normalMap) { m_NormalMap = normalMap; }
+        const Ref<Texture2D>& GetNormalMap() const { return m_NormalMap; }
+
+        // Fragments whose diffuse-map alpha is below this are discarded (foliage, chains,
+        // fences); 0 draws the mesh opaque.
+        void SetAlphaCutoff(float cutoff) { m_AlphaCutoff = cutoff; }
+        float GetAlphaCutoff() const { return m_AlphaCutoff; }
 
         // CPU-side geometry retained for physics collider generation.
         const std::vector<glm::vec3>& GetPositions() const { return m_Positions; }
@@ -56,6 +65,8 @@ namespace Phoenix{
         Ref<VertexArray> m_VertexArray;
         uint32_t m_IndexCount = 0;
         Ref<Texture2D> m_DiffuseMap;
+        Ref<Texture2D> m_NormalMap;
+        float m_AlphaCutoff = 0.0f;
         std::vector<glm::vec3> m_Positions;
         std::vector<uint32_t> m_Indices;
     };

@@ -2479,6 +2479,50 @@ void MainLayer::BuildShadowShowcase() {
     }
 }
 
+void MainLayer::BuildSponzaShowcase() {
+    // Crytek Sponza (Frank Meinl / Crytek, via the Khronos glTF sample models): a large
+    // textured interior with normal-mapped stone, cloth banners and alpha-tested foliage
+    // and chains. Sunlight falls through the open roof and casts shadows across the
+    // atrium floor. Load time is a few seconds (262k triangles, 69 textures).
+    m_Scene->AmbientColor() = glm::vec3(0.16f, 0.16f, 0.18f);
+
+    {
+        auto sponza = m_Scene->CreateEntity("Sponza");
+        auto& mesh = sponza.AddComponent<MeshComponent>();
+        mesh.model = CreateRef<Model>("assets/models/sponza/Sponza.gltf");
+        mesh.material.ambient = glm::vec3(1.0f);
+        mesh.material.diffuse = glm::vec3(1.0f);
+        mesh.material.specular = glm::vec3(0.12f);
+        mesh.material.shininess = 16.0f;
+        // The glTF scales its root node by 0.008 (the loader ignores node transforms),
+        // giving an atrium about 30 x 12 x 18 m.
+        sponza.GetComponent<TransformComponent>().Scale = glm::vec3(0.008f);
+    }
+
+    {
+        auto sun = m_Scene->CreateDirLightEntity("Sun");
+        auto& t = sun.GetComponent<TransformComponent>();
+        t.Translation = { 0.0f, 16.0f, 0.0f };
+        t.Rotation = AimLight(SunDirection(80.0f, 165.0f));
+        auto& dl = sun.GetComponent<DirLightComponent>();
+        dl.ambient  = glm::vec3(0.04f);
+        dl.diffuse  = glm::vec3(1.0f, 0.93f, 0.8f);
+        dl.specular = glm::vec3(0.6f);
+        dl.shadow.softness = 0.6f;
+    }
+
+    // A gradient sky (with the sun disc) through the open roof.
+    m_Scene->Sky().mode = SkySettings::Mode::Gradient;
+    m_Scene->Sky().zenith = glm::vec3(0.22f, 0.45f, 0.85f);
+    m_Scene->Sky().horizon = glm::vec3(0.70f, 0.78f, 0.88f);
+
+    // Eye level at the east end, looking down the atrium toward the lion relief, as in the
+    // classic screenshots; orbiting swings around the middle of the atrium. Press Play to
+    // fly through it (free flight).
+    m_MainCamera.Focus({ -1.0f, 2.6f, -0.3f }, 8.5f, -90.0f, 5.0f);
+    m_FreeFlight = true;
+}
+
 void MainLayer::SculptTerrain(TerrainComponent& terrain, const glm::vec3& terrainPos,
                               const glm::vec3& terrainScale, const glm::vec3& rayOrigin,
                               const glm::vec3& rayDir, float dt) {
@@ -2763,6 +2807,7 @@ void MainLayer::SetActiveScene(const Ref<Scene>& scene) {
 void MainLayer::LoadShowcase(void (MainLayer::*build)(), const char* name) {
     SetActiveScene(CreateRef<Scene>());
     m_SceneName = name;
+    m_FreeFlight = false; // builders that are made for flying turn it on
     (this->*build)(); // builders populate m_Scene
     m_LastSnapshot = SceneSerializer(m_Scene).SerializeToString();
 }
@@ -2874,6 +2919,7 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
     }
 
     // Update
+    m_MainCamera.SetFlyMode(IsFlying());
     if (m_ViewportHovered){
         PHX_PROFILE("MainCamera Update");
         m_MainCamera.OnUpdate(ts);
@@ -2890,7 +2936,7 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
         // Render the scene to the HDR target, then bloom + composite into m_Framebuffer.
         m_Bloom.Resize((uint32_t)m_ViewportSize.x, (uint32_t)m_ViewportSize.y, (uint32_t)m_MSAASamples);
         m_Bloom.BindHDRTarget();
-        Phoenix::RenderCommand::SetClearColor(glm::vec4(Phoenix::Renderer::ToLinear(m_BackgroundColor), 1.0));
+        Phoenix::RenderCommand::SetClearColor(glm::vec4(Phoenix::Renderer::ToLinear(m_Scene->Sky().color), 1.0));
         Phoenix::RenderCommand::Clear();
         {
             PHX_PROFILE("Scene Update");
@@ -2901,7 +2947,7 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
     }
     else{
         m_Framebuffer->Bind();
-        Phoenix::RenderCommand::SetClearColor(glm::vec4(m_BackgroundColor, 1.0));
+        Phoenix::RenderCommand::SetClearColor(glm::vec4(m_Scene->Sky().color, 1.0));
         Phoenix::RenderCommand::Clear();
         {
             PHX_PROFILE("Scene Update");
@@ -3417,6 +3463,7 @@ void MainLayer::DrawMenus(){
             if (ImGui::MenuItem("Robot"))            { LoadShowcase(&MainLayer::BuildRobotShowcase, "Robot Showcase"); }
             if (ImGui::MenuItem("Multi-Shadow"))     { LoadShowcase(&MainLayer::BuildMultiShadowShowcase, "Multi-Shadow Showcase"); }
             if (ImGui::MenuItem("Soft Shadows"))     { LoadShowcase(&MainLayer::BuildShadowShowcase, "Shadow Showcase"); }
+            if (ImGui::MenuItem("Sponza"))           { LoadShowcase(&MainLayer::BuildSponzaShowcase, "Sponza Showcase"); }
             if (ImGui::MenuItem("Physics"))          { LoadShowcase(&MainLayer::BuildPhysicsShowcase, "Physics Showcase"); }
             if (ImGui::MenuItem("Vehicles"))         { LoadShowcase(&MainLayer::BuildVehicleShowcase, "Vehicle Showcase"); }
             if (ImGui::MenuItem("Maze A*"))          { LoadShowcase(&MainLayer::BuildMazeShowcase, "Maze A* Showcase"); }
@@ -3473,6 +3520,7 @@ void MainLayer::DrawMenus(){
         ImGui::MenuItem("Training", nullptr, &m_AIPanels.showTraining);
         ImGui::MenuItem("Agent Monitor", nullptr, &m_AIPanels.showAgentMonitor);
         ImGui::MenuItem("AI Overlays", nullptr, &m_AIPanels.showOverlays);
+        ImGui::MenuItem("Free Flight (Play)", nullptr, &m_FreeFlight);
         ImGui::Separator();
         ImGui::MenuItem("Settings", nullptr, &m_ShowSettings);
         ImGui::MenuItem("Profiler", nullptr, &m_ShowProfiler);
@@ -3606,7 +3654,7 @@ void MainLayer::DrawViewportOverlay(const ImVec2& imageMin, const ImVec2& imageS
     const int toolCount = IM_ARRAYSIZE(tools);
     const float dividerW = 9.0f;
     ImVec2 stripMin(imageMin.x + margin, imageMin.y + margin);
-    ImVec2 stripSize(inner * 2.0f + (toolCount + 3) * button + (toolCount + 2) * gap + dividerW, button + inner * 2.0f);
+    ImVec2 stripSize(inner * 2.0f + (toolCount + 4) * button + (toolCount + 3) * gap + dividerW, button + inner * 2.0f);
     dl->AddRectFilled(stripMin, ImVec2(stripMin.x + stripSize.x, stripMin.y + stripSize.y), IM_COL32(18, 19, 22, 215), 7.0f);
     dl->AddRect(stripMin, ImVec2(stripMin.x + stripSize.x, stripMin.y + stripSize.y), IM_COL32(255, 255, 255, 18), 7.0f);
 
@@ -3635,6 +3683,11 @@ void MainLayer::DrawViewportOverlay(const ImVec2& imageMin, const ImVec2& imageS
     if (EditorUI::IconButton("##ToolAIOverlay", EditorUI::Icon::Eye, ImVec2(button, button), m_AIPanels.showOverlays,
             "AI overlays: ray sensors, reward zones, spawn ranges"))
         m_AIPanels.showOverlays = !m_AIPanels.showOverlays;
+    x += button + gap;
+    ImGui::SetCursorScreenPos(ImVec2(x, y));
+    if (EditorUI::IconButton("##ToolFly", EditorUI::Icon::Fly, ImVec2(button, button), m_FreeFlight,
+            "Free flight in Play: WASD fly, hold right mouse to look (scenes without a primary camera)"))
+        m_FreeFlight = !m_FreeFlight;
 
     // Play state: accent frame + badge (top-right).
     if (running){
@@ -3645,6 +3698,16 @@ void MainLayer::DrawViewportOverlay(const ImVec2& imageMin, const ImVec2& imageS
         ImVec2 size = EditorUI::PillSize(text, 5.0f);
         EditorUI::DrawPill(dl, ImVec2(imageMin.x + imageSize.x - size.x - margin, imageMin.y + margin + inner),
             text, EditorUI::Danger(), IM_COL32(18, 19, 22, 215), 5.0f);
+    }
+
+    // Free flight controls (bottom-centre).
+    if (IsFlying()){
+        char text[160];
+        std::snprintf(text, sizeof(text), "Free flight  -  hold right mouse to look   WASD fly   E / Space up   Q down   "
+            "Shift fast   wheel speed (%.1f m/s)", m_MainCamera.GetFlySpeed());
+        ImVec2 size = EditorUI::PillSize(text, 5.0f);
+        EditorUI::DrawPill(dl, ImVec2(imageMin.x + (imageSize.x - size.x) * 0.5f, imageMin.y + imageSize.y - size.y - margin),
+            text, EditorUI::Accent(), IM_COL32(18, 19, 22, 215), 5.0f);
     }
 
     // Sculpt tool hint (bottom-centre).
@@ -3699,7 +3762,48 @@ void MainLayer::DrawSettingsPanel(){
     }
 
     if (ImGui::CollapsingHeader("Environment", ImGuiTreeNodeFlags_DefaultOpen)){
-        ImGui::ColorEdit3("Background", glm::value_ptr(m_BackgroundColor));
+        SkySettings& sky = m_Scene->Sky();
+        const char* modes[] = { "Color", "Gradient Sky", "Panorama" };
+        int mode = (int)sky.mode;
+        if (ImGui::Combo("Background", &mode, modes, IM_ARRAYSIZE(modes)))
+            sky.mode = (SkySettings::Mode)mode;
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("What fills the view behind the scene. Reflective materials and water\n"
+                              "mirror the panorama in Panorama mode, else the gradient.");
+        if (sky.mode == SkySettings::Mode::Color){
+            ImGui::ColorEdit3("Color", glm::value_ptr(sky.color));
+        }
+        if (sky.mode == SkySettings::Mode::Gradient || sky.mode == SkySettings::Mode::Color){
+            // In Color mode the gradient still feeds reflections.
+            ImGui::ColorEdit3("Zenith", glm::value_ptr(sky.zenith));
+            ImGui::ColorEdit3("Horizon", glm::value_ptr(sky.horizon));
+            ImGui::ColorEdit3("Ground", glm::value_ptr(sky.ground));
+        }
+        if (sky.mode == SkySettings::Mode::Gradient){
+            ImGui::Checkbox("Sun Disc", &sky.sunDisc);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Drawn where the first directional light shines from, in its colour.");
+            if (sky.sunDisc)
+                ImGui::SliderFloat("Sun Size", &sky.sunSize, 0.2f, 8.0f, "%.1f deg");
+        }
+        if (sky.mode == SkySettings::Mode::Panorama){
+            char path[512];
+            std::snprintf(path, sizeof(path), "%s", sky.panorama.c_str());
+            ImGui::PushItemWidth(-130.0f - 34.0f);
+            if (ImGui::InputText("##Panorama", path, sizeof(path)))
+                sky.panorama = path;
+            ImGui::PopItemWidth();
+            ImGui::SameLine(0.0f, 4.0f);
+            if (ImGui::Button("...", ImVec2(30.0f, 0.0f))) { m_OpenSkyPanorama = true; }
+            ImGui::SameLine();
+            ImGui::TextUnformatted("Image");
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Equirectangular (2:1) panorama: .jpg, .png or .hdr.\nRelative paths start at the executable.");
+            ImGui::SliderFloat("Rotation", &sky.rotation, -180.0f, 180.0f, "%.0f deg");
+        }
+        if (sky.mode != SkySettings::Mode::Color)
+            ImGui::DragFloat("Sky Intensity", &sky.intensity, 0.01f, 0.0f, 8.0f, "%.2f");
+        ImGui::Spacing();
         ImGui::ColorEdit3("Ambient Light", glm::value_ptr(m_Scene->AmbientColor()));
         ImGui::Spacing();
     }
@@ -3849,6 +3953,7 @@ void MainLayer::DrawShaderLibraryPanel(){
 void MainLayer::DrawHelpPopups(){
     // Opened from the menus / shortcuts via flags: OpenPopup must run in this ID scope.
     if (m_OpenImportShader){ ImGui::OpenPopup("Import Shader"); m_OpenImportShader = false; }
+    if (m_OpenSkyPanorama) { ImGui::OpenPopup("Open Sky Panorama"); m_OpenSkyPanorama = false; }
     if (m_OpenShortcuts)   { ImGui::OpenPopup("Keyboard Shortcuts"); m_OpenShortcuts = false; }
     if (m_OpenAbout)       { ImGui::OpenPopup("About Phoenix"); m_OpenAbout = false; }
     if (m_OpenGuide)       { ImGui::OpenPopup("AI Sandbox Guide"); m_OpenGuide = false; }
@@ -3856,6 +3961,12 @@ void MainLayer::DrawHelpPopups(){
     if (file_dialog.showFileDialog("Import Shader", imgui_addons::ImGuiFileBrowser::DialogMode::OPEN, ImVec2(700, 310), ".glsl"))
     {
         m_ShaderLibrary->Add(Shader::Create(file_dialog.selected_path));
+    }
+    if (file_dialog.showFileDialog("Open Sky Panorama", imgui_addons::ImGuiFileBrowser::DialogMode::OPEN, ImVec2(700, 310),
+            ".jpg,.jpeg,.png,.hdr,.tga"))
+    {
+        m_Scene->Sky().panorama = file_dialog.selected_path;
+        m_Scene->Sky().mode = SkySettings::Mode::Panorama;
     }
 
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
@@ -3875,6 +3986,8 @@ void MainLayer::DrawHelpPopups(){
             { "Play / Stop",                    "F5" },
             { "Pause / Step one decision",      "F6 / F7" },
             { "Frame selection",                "F" },
+            { "Free flight (Play, fly tool on)", "WASD, E / Q, hold RMB to look" },
+            { "Free flight speed",              "Shift (4x) / Wheel" },
             { "Drive a Keyboard-policy agent",  "WASD / arrows" },
             { "This window",                    "F1" },
         };
@@ -3983,8 +4096,10 @@ void MainLayer::HandleShortcuts(){
         m_Environment->paused = true;
         m_Environment->StepDecision();
     }
-    // Frame the selection (keeps the current viewing angle).
-    if (!control && pressed(ImGuiKey_F)){
+    // Frame the selection (keeps the current viewing angle). While flying, letter keys
+    // steer the camera instead.
+    const bool flying = IsFlying();
+    if (!control && !flying && pressed(ImGuiKey_F)){
         Entity selected = m_SceneEditor->GetSelectedEntity();
         if (selected && selected.HasComponent<TransformComponent>()){
             const auto& t = selected.GetComponent<TransformComponent>();
@@ -3999,7 +4114,7 @@ void MainLayer::HandleShortcuts(){
         m_SceneEditor->SetSelectedEntity({});
 
     // Gizmo operation shortcuts (only when not mid-manipulation).
-    if (!control && !ImGuizmo::IsUsing()){
+    if (!control && !flying && !ImGuizmo::IsUsing()){
         if (pressed(ImGuiKey_Q)) { m_GizmoType = -1; } // none
         if (pressed(ImGuiKey_W)) { m_GizmoType = 0; }  // translate
         if (pressed(ImGuiKey_E)) { m_GizmoType = 1; }  // rotate

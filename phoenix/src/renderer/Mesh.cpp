@@ -10,6 +10,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <chrono>
 #include <algorithm>
+#include <cctype>
 
 namespace Phoenix{
 
@@ -133,6 +134,21 @@ namespace Phoenix{
                 material->GetTexture(aiTextureType_DIFFUSE, 0, &name);
                 data.diffusePath = directory + "/" + std::string(name.C_Str());
             }
+            // Only explicit normal maps (glTF normalTexture, OBJ "norm"): OBJ map_Bump
+            // usually holds a height map, which isn't a tangent-space normal.
+            if (material->GetTextureCount(aiTextureType_NORMALS) > 0){
+                aiString name;
+                material->GetTexture(aiTextureType_NORMALS, 0, &name);
+                data.normalPath = directory + "/" + std::string(name.C_Str());
+            }
+            // glTF cut-out materials (leaves, chains): alpha-test against the cutoff.
+            aiString alphaMode;
+            if (material->Get("$mat.gltf.alphaMode", 0, 0, alphaMode) == AI_SUCCESS
+                && std::string(alphaMode.C_Str()) == "MASK"){
+                float cutoff = 0.5f;
+                material->Get("$mat.gltf.alphaCutoff", 0, 0, cutoff);
+                data.alphaCutoff = std::max(cutoff, 1e-3f);
+            }
         }
 
         out.push_back(std::move(data));
@@ -209,10 +225,15 @@ namespace Phoenix{
         // expects. Without this, FBX (e.g. Mixamo) animations are scattered across
         // synthetic single-purpose nodes and reconstruct incorrectly (splayed limbs).
         importer.SetPropertyBool(AI_CONFIG_IMPORT_FBX_PRESERVE_PIVOTS, false);
+        // Assimp's glTF importer already flips V to the bottom-left origin that matches
+        // our flipped-on-load textures; flipping again would turn glTF textures upside down.
+        std::string ext = path.substr(path.find_last_of('.') + 1);
+        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c){ return (char)std::tolower(c); });
+        const bool gltf = ext == "gltf" || ext == "glb";
         const aiScene* scene = importer.ReadFile(path,
             aiProcess_Triangulate
             | aiProcess_GenSmoothNormals
-            | aiProcess_FlipUVs
+            | (gltf ? 0 : aiProcess_FlipUVs)
             | aiProcess_JoinIdenticalVertices
             | aiProcess_LimitBoneWeights);
 
@@ -254,6 +275,9 @@ namespace Phoenix{
             Ref<Mesh> mesh = CreateRef<Mesh>(md.vertices, md.indices);
             if (!md.diffusePath.empty())
                 mesh->SetDiffuseMap(Texture2D::Create(md.diffusePath));
+            if (!md.normalPath.empty())
+                mesh->SetNormalMap(Texture2D::Create(md.normalPath));
+            mesh->SetAlphaCutoff(md.alphaCutoff);
             m_Meshes.push_back(mesh);
         }
 

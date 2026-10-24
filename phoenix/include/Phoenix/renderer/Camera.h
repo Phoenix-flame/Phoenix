@@ -42,6 +42,13 @@ namespace Phoenix{
         void Focus(const glm::vec3& target, float radius);
         void Focus(const glm::vec3& target, float radius, float yawDegrees, float pitchDegrees);
         void Pan(float xoffset, float yoffset);
+
+        // Free flight: right mouse looks around from the eye (instead of orbiting),
+        // W/S/A/D fly along the view, E/Space rise, Q sinks, Shift is 4x faster and the
+        // wheel sets the speed (instead of zooming).
+        void SetFlyMode(bool enabled) { m_FlyMode = enabled; }
+        bool IsFlyMode() const { return m_FlyMode; }
+        float GetFlySpeed() const { return m_FlySpeed; }
         const glm::mat4& GetViewProjectionMatrix() const { return m_ViewProjectionMatrix; }
         
         void SetFOV(float fov);
@@ -55,6 +62,8 @@ namespace Phoenix{
     private:
         void UpdateProjection(float fov, float aspect, float near, float far);
         void RecalculateViewMatrix();
+        void LookAround(float xoffset, float yoffset);
+        void Fly(Timestep ts);
         bool OnMouseScrolled(MouseScrolledEvent& e);
 		bool OnWindowResized(WindowResizeEvent& e);
 
@@ -76,6 +85,8 @@ namespace Phoenix{
         float m_ViewportWidth, m_ViewportHeight;
 
         bool m_IsActivated = false;
+        bool m_FlyMode = false;
+        float m_FlySpeed = 4.0f; // world units per second
 
 
         friend class SceneEditor;
