@@ -207,6 +207,9 @@ namespace Phoenix{
         // While playing: replace a terrain's collider after its heights changed
         // (rebuilds the mesh too).
         void RebuildTerrainBody(entt::entity entity);
+        // Particle fluids back to their starting blocks, pool spray cleared (Play start
+        // and every RL episode).
+        void ResetFluids();
 
         // Runtime physics body for an entity: its rigid body, terrain collider or
         // character capsule (InvalidBody if none / not running).
@@ -246,8 +249,11 @@ namespace Phoenix{
         void CreateTerrainBody(entt::entity entity);
         // Builds a pool's basin collider and resets its water (play mode).
         void CreatePoolBody(entt::entity entity);
-        // One physics step of every pool: body displacement, waves, buoyancy.
+        // One physics step of every pool: body displacement, waves, buoyancy, spray.
         void UpdatePools(float dt);
+        // One physics step of every particle fluid (and pool spray), with the hand-off
+        // of particles into pools.
+        void UpdateFluids(float dt);
         // Starts the entity's enabled scripts; `args` becomes their SPAWN table.
         void StartScripts(Entity entity, const ScriptArgs* args);
         // Destroys everything QueueDestroy collected.

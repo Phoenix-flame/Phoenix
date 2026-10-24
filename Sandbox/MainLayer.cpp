@@ -2,6 +2,7 @@
 #include <Phoenix/Compute/Compute.h>
 #include <Phoenix/renderer/WaterRipples.h>
 #include <Phoenix/Scene/TerrainGenerator.h>
+#include <Phoenix/Physics/ParticleFluid.h>
 #include <Phoenix/Scene/PhysicsPrefabs.h>
 
 #include <Phoenix/core/base.h>
@@ -412,6 +413,33 @@ void MainLayer::BuildPoolShowcase() {
     }
 
     m_MainCamera.Focus({ 0.0f, -0.6f, 0.0f }, 11.0f, 205.0f, -32.0f);
+}
+
+// The pool, plus particle water: a block on the deck that collapses over the edge into
+// the pool (a dam break), and a stream poured into the water. Particles reaching the
+// pool become ripples; the floats dropped in throw up spray.
+void MainLayer::BuildFluidShowcase() {
+    BuildPoolShowcase();
+    {
+        auto e = m_Scene->CreateEntity("Water Block");
+        e.GetComponent<TransformComponent>().Translation = { -2.4f, 0.52f, -3.45f };
+        auto& f = e.AddComponent<FluidComponent>();
+        f.blockSize = { 1.6f, 1.0f, 0.9f };
+        f.maxParticles = 16000;
+    }
+    {
+        auto e = m_Scene->CreateEntity("Pour");
+        e.GetComponent<TransformComponent>().Translation = { 2.4f, 2.2f, 0.8f };
+        auto& f = e.AddComponent<FluidComponent>();
+        f.fillBlock = false;
+        f.pour = true;
+        f.pourSpeed = 2.5f;
+        f.nozzleRadius = 0.07f;
+        f.spacing = 0.03f;          // finer than the block, so the stream can stay a column
+        f.surfaceTension = 0.5f;
+        f.maxParticles = 8000;
+    }
+    m_MainCamera.Focus({ -0.8f, -0.4f, -1.2f }, 8.5f, 200.0f, -30.0f);
 }
 
 void MainLayer::BuildRobotShowcase() {
@@ -3500,6 +3528,7 @@ void MainLayer::DrawMenus(){
             if (ImGui::MenuItem("Bloom & Shadows"))  { LoadShowcase(&MainLayer::BuildShowcaseScene, "Showcase"); }
             if (ImGui::MenuItem("Water"))            { LoadShowcase(&MainLayer::BuildWaterShowcase, "Water Showcase"); }
             if (ImGui::MenuItem("Pool"))             { LoadShowcase(&MainLayer::BuildPoolShowcase, "Pool Showcase"); }
+            if (ImGui::MenuItem("Fluid"))            { LoadShowcase(&MainLayer::BuildFluidShowcase, "Fluid Showcase"); }
             if (ImGui::MenuItem("Robot"))            { LoadShowcase(&MainLayer::BuildRobotShowcase, "Robot Showcase"); }
             if (ImGui::MenuItem("Multi-Shadow"))     { LoadShowcase(&MainLayer::BuildMultiShadowShowcase, "Multi-Shadow Showcase"); }
             if (ImGui::MenuItem("Soft Shadows"))     { LoadShowcase(&MainLayer::BuildShadowShowcase, "Shadow Showcase"); }
@@ -3799,6 +3828,11 @@ void MainLayer::DrawSettingsPanel(){
             ImGui::SetTooltip("Step ripple grids of %d x %d cells or more on the device (Water > Ripple\n"
                               "Resolution). Smaller grids are faster on the CPU. Same waves either way.",
                               Phoenix::WaterRipples::minDeviceResolution, Phoenix::WaterRipples::minDeviceResolution);
+        bool fluids = Phoenix::ParticleFluid::DefaultOpenCL();
+        if (ImGui::Checkbox("Particle Fluids", &fluids)) { Phoenix::ParticleFluid::SetDefaultOpenCL(fluids); }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Step particle liquids of %d particles or more on the device. Same motion either way.",
+                              Phoenix::ParticleFluid::minDeviceParticles);
         bool terrain = Phoenix::TerrainGenerator::UsesOpenCL();
         if (ImGui::Checkbox("Terrain Generation", &terrain)) { Phoenix::TerrainGenerator::SetUseOpenCL(terrain); }
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))

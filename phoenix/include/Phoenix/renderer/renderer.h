@@ -294,6 +294,19 @@ namespace Phoenix{
 		static void DrawPoolUnderwater(const PoolParams& params, float surfaceY);
 		static void SubmitPoolWater(const Ref<VertexArray>& surface, const PoolParams& params, bool cameraUnderwater);
 
+		// Particle liquids (FluidComponent, pool spray) drawn as one smooth surface each
+		// (screen-space fluid rendering). Call after CaptureScene: the liquid refracts that
+		// copy and is hidden behind its depth.
+		struct FluidParams{
+			float radius = 0.025f;                              // particle radius
+			glm::vec3 color = glm::vec3(0.55f, 0.82f, 0.95f);   // tint of thick liquid
+			float clarity = 2.0f;                               // metres before most light is absorbed
+			glm::vec3 lightDir = glm::vec3(0.0f, -1.0f, 0.0f);
+			glm::vec3 sunColor = glm::vec3(1.0f);
+			glm::vec3 ambient = glm::vec3(0.2f);
+		};
+		static void RenderFluid(const std::vector<glm::vec4>& positions, const FluidParams& params);
+
 		// Linear lighting (opt-in; off keeps the original look). When on, colour textures
 		// are sampled through their sRGB views, colours picked in the editor (materials,
 		// lights, ambient, water, gizmos) are converted from sRGB to linear before shading,
@@ -326,6 +339,18 @@ namespace Phoenix{
             int colorFormat = 0;
         };
         static SceneCopy s_SceneCopy;
+
+        // Screen-space fluid targets (the scene copy's size) and the particle buffer.
+        static Ref<Shader> s_FluidParticleShader, s_FluidSmoothShader, s_FluidCompositeShader;
+        struct FluidTargets{
+            uint32_t depthFBO = 0, depthTex = 0, depthBuffer = 0;      // pass 1: sphere depth
+            uint32_t blurFBO = 0, blurTex = 0;                          // pass 3 ping-pong
+            uint32_t thickFBO = 0, thickTex = 0;                        // pass 2
+            uint32_t vao = 0, vbo = 0;
+            size_t capacity = 0;
+            int width = 0, height = 0;
+        };
+        static FluidTargets s_FluidTargets;
         // Binds the sun's shadow (directional light 0) for a shader that declares it.
         static void BindSunShadow(const Ref<Shader>& shader);
 

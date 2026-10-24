@@ -29,6 +29,7 @@ Gymnasium-compatible API. Phoenix provides the environment; the learning algorit
   - [Terrain](#terrain)
   - [Water](#water)
   - [Pools](#pools)
+  - [Particle Fluids](#particle-fluids)
   - [Lua Scripting](#lua-scripting)
   - [Scene Serialization](#scene-serialization)
   - [The Editor](#the-editor)
@@ -518,6 +519,32 @@ coping, its own static collider while playing, and simulated water.
   **under water** the view is hazed by distance and the surface shows **Snell's window**:
   the world above inside it, the pool mirrored outside it (total internal reflection).
 - The **Pool** showcase drops a beach ball, a float, a wooden crate and a bowling ball in.
+- **Spray**: a body hitting the water fast throws up a crown of droplets (a particle fluid,
+  below) that rain back as ripples.
+
+### Particle Fluids
+
+`FluidComponent` (**Create > Particle Fluid**) is a liquid made of particles, for what a
+surface can't do: pouring, splashing, spilling across the floor. It starts as a block at the
+entity (on Play and every RL episode) and/or pours from the entity along its local -Y.
+
+- **Solver**: Position Based Fluids (Macklin & Müller 2013) with a one-sided density
+  constraint (it resists compression; pulling under-dense surface particles in makes PBF
+  clump and explode), anti-clumping pressure, XSPH viscosity and a light surface tension.
+  It collides with the box / sphere / capsule / cylinder colliders of nearby bodies (the
+  shapes mirrored from Jolt for ray sensors), taking contact normals from where each
+  particle started the step so overlapping solids can't push it through, with friction,
+  and pushes dynamic bodies back. It steps inside the fixed physics step: deterministic.
+- **Pools**: particles that reach a pool's water join it as ripples (and pools throw
+  spray), so the two simulations hand off where they meet.
+- **Rendering**: screen-space fluid rendering (Green 2010): particles as sphere depths,
+  bilateral smoothing into one surface, thickness for absorption, then refraction of the
+  scene, Fresnel reflection and sun glints.
+- **Performance**: the CPU path runs on all cores; Settings > OpenCL > Particle Fluids
+  steps fluids of 2000+ particles on the device, bit-identical to the CPU (neighbours come
+  from a stable counting sort, so every sum adds up in the same order).
+- The **Fluid** showcase adds a dam break on the pool deck and a stream poured into the
+  water to the Pool showcase.
 
 ### Lua Scripting
 
@@ -636,6 +663,8 @@ Open via **File → Showcases**:
 - **Pool** — a swimming pool in a stone deck; press **Play** and a beach ball, a float, a
   wooden crate and a bowling ball drop in (splashes, wakes, caustics). Orbit the camera
   below the surface for the underwater view.
+- **Fluid** — the pool plus particle water: a block on the deck collapses and spills over
+  the edge into the pool, and a stream pours into it.
 - **Robot** — skeletal animation: a rigged character on a shadow-receiving
   floor with a follow camera. Press **Play**, click the viewport, then drive it with the
   arrow keys (Shift runs, Space jumps); a Lua state machine crossfades idle / walk / run /
@@ -754,7 +783,7 @@ the next launch. The engine's own runtime assets (its shaders and the UI fonts) 
 ### OpenCL (optional, experimental)
 
 `-DPHOENIX_OPENCL=ON` (needs `ocl-icd-opencl-dev` and an OpenCL driver) adds a shared OpenCL
-device (a GPU if one is found) and a **Settings > OpenCL** section with three switches, all off
+device (a GPU if one is found) and a **Settings > OpenCL** section with four switches, all off
 by default:
 
 - **Ray Sensors**: every agent's Ray Sensor rays are cast in one batch against Reward Zones
@@ -768,6 +797,7 @@ by default:
   on the device; smaller ones are faster on the CPU.
 - **Terrain Generation**: noise terrain (Generate, and per-episode randomization) is computed
   on the device.
+- **Particle Fluids**: fluids of 2000 particles or more step on the device.
 
 Each feature keeps a CPU path that runs the same code and gives bit-identical results (on
 devices with correctly rounded division and square root): small workloads stay on the CPU,
@@ -777,7 +807,8 @@ and as OpenCL C.
 
 Two tools check the device against the CPU and time them:
 `cmake --build build --target ray_batch_bench` (also checks mirrored bodies against Jolt) and
-`cmake --build build --target compute_bench` (water ripples and terrain generation).
+`cmake --build build --target compute_bench` (water ripples, pool grids, terrain generation
+and a particle-fluid dam break).
 
 ---
 

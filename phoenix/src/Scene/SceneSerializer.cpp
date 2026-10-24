@@ -536,6 +536,29 @@ namespace Phoenix{
             out << YAML::Key << "LinearDrag" << YAML::Value << p.linearDrag;
             out << YAML::Key << "AngularDrag" << YAML::Value << p.angularDrag;
             out << YAML::Key << "GenerateCollider" << YAML::Value << p.generateCollider;
+            out << YAML::Key << "Spray" << YAML::Value << p.spray;
+            out << YAML::Key << "SprayAmount" << YAML::Value << p.sprayAmount;
+            out << YAML::EndMap;
+        }
+
+        if (entity.HasComponent<FluidComponent>()){
+            auto& f = entity.GetComponent<FluidComponent>();
+            out << YAML::Key << "FluidComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "FillBlock" << YAML::Value << f.fillBlock;
+            out << YAML::Key << "BlockSize" << YAML::Value << f.blockSize;
+            out << YAML::Key << "Pour" << YAML::Value << f.pour;
+            out << YAML::Key << "PourSpeed" << YAML::Value << f.pourSpeed;
+            out << YAML::Key << "NozzleRadius" << YAML::Value << f.nozzleRadius;
+            out << YAML::Key << "Spacing" << YAML::Value << f.spacing;
+            out << YAML::Key << "MaxParticles" << YAML::Value << f.maxParticles;
+            out << YAML::Key << "Iterations" << YAML::Value << f.iterations;
+            out << YAML::Key << "Viscosity" << YAML::Value << f.viscosity;
+            out << YAML::Key << "Cohesion" << YAML::Value << f.cohesion;
+            out << YAML::Key << "Friction" << YAML::Value << f.friction;
+            out << YAML::Key << "SurfaceTension" << YAML::Value << f.surfaceTension;
+            out << YAML::Key << "Lifetime" << YAML::Value << f.lifetime;
+            out << YAML::Key << "Color" << YAML::Value << f.color;
+            out << YAML::Key << "Clarity" << YAML::Value << f.clarity;
             out << YAML::EndMap;
         }
 
@@ -1051,10 +1074,34 @@ namespace Phoenix{
             p.linearDrag = n["LinearDrag"].as<float>(def.linearDrag);
             p.angularDrag = n["AngularDrag"].as<float>(def.angularDrag);
             p.generateCollider = n["GenerateCollider"].as<bool>(def.generateCollider);
+            p.spray = n["Spray"].as<bool>(def.spray);
+            p.sprayAmount = n["SprayAmount"].as<float>(def.sprayAmount);
             p.water = nullptr;
             p.dirty = true;
         }
         else if (entity.HasComponent<PoolComponent>()) entity.RemoveComponent<PoolComponent>();
+
+        if (auto n = node["FluidComponent"]){
+            auto& f = entity.HasComponent<FluidComponent>() ? entity.GetComponent<FluidComponent>() : entity.AddComponent<FluidComponent>();
+            const FluidComponent def{}; // fallbacks for keys missing from the file
+            f.fillBlock = n["FillBlock"].as<bool>(def.fillBlock);
+            f.blockSize = ReadVec3(n["BlockSize"], def.blockSize);
+            f.pour = n["Pour"].as<bool>(def.pour);
+            f.pourSpeed = n["PourSpeed"].as<float>(def.pourSpeed);
+            f.nozzleRadius = n["NozzleRadius"].as<float>(def.nozzleRadius);
+            f.spacing = n["Spacing"].as<float>(def.spacing);
+            f.maxParticles = n["MaxParticles"].as<int>(def.maxParticles);
+            f.iterations = n["Iterations"].as<int>(def.iterations);
+            f.viscosity = n["Viscosity"].as<float>(def.viscosity);
+            f.cohesion = n["Cohesion"].as<float>(def.cohesion);
+            f.friction = n["Friction"].as<float>(def.friction);
+            f.surfaceTension = n["SurfaceTension"].as<float>(def.surfaceTension);
+            f.lifetime = n["Lifetime"].as<float>(def.lifetime);
+            f.color = ReadVec3(n["Color"], def.color);
+            f.clarity = n["Clarity"].as<float>(def.clarity);
+            f.fluid = nullptr;
+        }
+        else if (entity.HasComponent<FluidComponent>()) entity.RemoveComponent<FluidComponent>();
 
         if (auto n = node["AnimationComponent"]){
             auto& a = entity.HasComponent<AnimationComponent>() ? entity.GetComponent<AnimationComponent>() : entity.AddComponent<AnimationComponent>();

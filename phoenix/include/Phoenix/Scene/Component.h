@@ -11,6 +11,8 @@
 #include <Phoenix/renderer/Mesh.h>
 #include <Phoenix/Scene/TerrainGenerator.h>
 #include <Phoenix/renderer/PoolWater.h>
+#include <Phoenix/Physics/ParticleFluid.h>
+#include <unordered_set>
 #include <Phoenix/renderer/WaterRipples.h>
 #include <Phoenix/Scene/ScriptableEntity.h>
 #include <string>
@@ -540,11 +542,19 @@ namespace Phoenix{
         float angularDrag = 0.4f;
         bool generateCollider = true;
 
+        // Spray: bodies hitting the water fast throw up droplets (particle fluid) that rain
+        // back as ripples.
+        bool spray = true;
+        float sprayAmount = 1.0f;
+
         Ref<PoolWater> water;               // simulation + textures; not serialized
+        Ref<ParticleFluid> sprayFluid;      // live droplets; not serialized
         Ref<Mesh> shellMesh, surfaceMesh;   // generated; not serialized
         bool dirty = true;                  // meshes need rebuilding
         uint32_t runtimeBodyID = 0xffffffff;
         std::vector<float> columns;         // scratch: body displacement per grid vertex
+        std::unordered_set<uint32_t> wetBodies; // bodies in the water last step (for spray on entry)
+        uint32_t splashes = 0;              // splash counter (seeds the spray pattern)
 
         PoolComponent() = default;
         PoolComponent(const PoolComponent& o)
@@ -554,11 +564,61 @@ namespace Phoenix{
               tileColor(o.tileColor), groutColor(o.groutColor), tileSize(o.tileSize),
               waterColor(o.waterColor), clarity(o.clarity), causticStrength(o.causticStrength),
               buoyancy(o.buoyancy), linearDrag(o.linearDrag), angularDrag(o.angularDrag),
-              generateCollider(o.generateCollider) {}
+              generateCollider(o.generateCollider), spray(o.spray), sprayAmount(o.sprayAmount) {}
 
         // Still water surface and floor heights in the pool's local frame.
         float WaterLevel() const { return -freeboard; }
         float Floor() const { return -depth; }
+    };
+
+    // A particle liquid (Position Based Fluids, see ParticleFluid): a block of it at the
+    // entity when Play starts (and every RL episode), and/or a stream poured from the
+    // entity along its local -Y. It flows around and pushes physics bodies (their box /
+    // sphere / capsule / cylinder colliders), and particles that fall into a pool join
+    // its water as ripples. Drawn as a smooth liquid surface (screen-space fluid).
+    struct FluidComponent{
+        bool fillBlock = true;
+        glm::vec3 blockSize = glm::vec3(0.8f, 1.0f, 0.8f);   // metres, centred on the entity
+        // Pouring: a disc of particles (nozzleRadius, at the rest spacing) leaves the
+        // entity along its local -Y each time the last one moved a spacing away.
+        bool pour = false;
+        float pourSpeed = 2.0f;             // m/s
+        float nozzleRadius = 0.08f;
+
+        float spacing = 0.05f;              // particle size: smaller = finer, many more particles
+        int maxParticles = 12000;
+        int iterations = 4;
+        float viscosity = 0.02f;
+        float cohesion = 0.1f;
+        float friction = 0.1f;
+        float surfaceTension = 1.0f;        // keeps streams and drops together
+        float lifetime = 0.0f;              // seconds (0 = forever)
+
+        glm::vec3 color = glm::vec3(0.35f, 0.72f, 0.88f);   // tint of thick liquid
+        float clarity = 1.2f;               // metres of liquid before most light is absorbed
+
+        Ref<ParticleFluid> fluid;           // live particles; not serialized
+        float pourAccumulator = 0.0f;       // seconds since the last disc
+
+        FluidComponent() = default;
+        FluidComponent(const FluidComponent& o)
+            : fillBlock(o.fillBlock), blockSize(o.blockSize), pour(o.pour), pourSpeed(o.pourSpeed),
+              nozzleRadius(o.nozzleRadius), spacing(o.spacing), maxParticles(o.maxParticles), iterations(o.iterations),
+              viscosity(o.viscosity), cohesion(o.cohesion), friction(o.friction), surfaceTension(o.surfaceTension),
+              lifetime(o.lifetime),
+              color(o.color), clarity(o.clarity) {}
+
+        FluidSettings Settings() const{
+            FluidSettings s;
+            s.spacing = spacing;
+            s.iterations = iterations;
+            s.viscosity = viscosity;
+            s.cohesion = cohesion;
+            s.friction = friction;
+            s.surfaceTension = surfaceTension;
+            s.lifetime = lifetime;
+            return s;
+        }
     };
 
     // An animation event: fire OnAnimationEvent(name) in the entity's Lua script when the

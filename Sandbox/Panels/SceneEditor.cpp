@@ -101,6 +101,10 @@ namespace Phoenix{
             m_SelectedEntity = m_ActiveScene->CreateEntity("Pool");
             m_SelectedEntity.AddComponent<PoolComponent>();
         }
+        if (ImGui::MenuItem("Particle Fluid")){
+            m_SelectedEntity = m_ActiveScene->CreateEntity("Fluid");
+            m_SelectedEntity.AddComponent<FluidComponent>();
+        }
     }
 
     void SceneEditor::ScenePanel(){
@@ -389,7 +393,7 @@ namespace Phoenix{
             dl->AddTriangleFilled(ImVec2(c.x - r, c.y + r * 0.7f), ImVec2(c.x - r * 0.15f, c.y - r * 0.8f), ImVec2(c.x + r * 0.7f, c.y + r * 0.7f), col);
             dl->AddTriangleFilled(ImVec2(c.x, c.y + r * 0.7f), ImVec2(c.x + r * 0.55f, c.y - r * 0.2f), ImVec2(c.x + r * 1.1f, c.y + r * 0.7f), col);
         }
-        else if (entity.HasComponent<WaterComponent>() || entity.HasComponent<PoolComponent>()){
+        else if (entity.HasComponent<WaterComponent>() || entity.HasComponent<PoolComponent>() || entity.HasComponent<FluidComponent>()){
             ImU32 col = IM_COL32(90, 200, 230, 255);
             for (int row = 0; row < 2; row++){
                 float y = c.y - r * 0.3f + row * r * 0.75f;
@@ -1542,6 +1546,43 @@ namespace Phoenix{
 			ImGui::SliderFloat("Linear Drag", &component.linearDrag, 0.0f, 3.0f);
 			ImGui::SliderFloat("Angular Drag", &component.angularDrag, 0.0f, 3.0f);
 			ImGui::Checkbox("Basin Collider", &component.generateCollider);
+			ImGui::Checkbox("Spray", &component.spray);
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Bodies hitting the water fast throw up droplets (particle fluid).");
+			if (component.spray) { ImGui::SliderFloat("Spray Amount", &component.sprayAmount, 0.0f, 3.0f, "%.2f"); }
+		});
+
+		DrawComponent<FluidComponent>("Particle Fluid", entity, [](FluidComponent& component){
+			ImGui::Checkbox("Starting Block", &component.fillBlock);
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Liquid filling an axis-aligned box at the entity when Play starts (and every RL episode).");
+			if (component.fillBlock) { ImGui::DragFloat3("Block Size", glm::value_ptr(component.blockSize), 0.02f, 0.0f, 50.0f, "%.2f m"); }
+			ImGui::Checkbox("Pour", &component.pour);
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("A stream from the entity along its local -Y (rotate the entity to aim it).");
+			if (component.pour){
+				ImGui::DragFloat("Pour Speed", &component.pourSpeed, 0.05f, 0.1f, 30.0f, "%.2f m/s");
+				ImGui::DragFloat("Nozzle Radius", &component.nozzleRadius, 0.005f, 0.0f, 2.0f, "%.3f m");
+			}
+			ImGui::Separator();
+			ImGui::TextDisabled("Simulation");
+			ImGui::DragFloat("Particle Size", &component.spacing, 0.002f, 0.01f, 0.5f, "%.3f m");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Spacing at rest. Halving it means 8x the particles for the same volume.");
+			ImGui::DragInt("Max Particles", &component.maxParticles, 100.0f, 100, 200000);
+			if (component.fluid){
+				ImGui::SameLine();
+				ImGui::TextDisabled("%d live", component.fluid->Count());
+			}
+			ImGui::SliderInt("Iterations", &component.iterations, 1, 10);
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Density solver passes per step: more = less compressible, slower.");
+			ImGui::SliderFloat("Viscosity", &component.viscosity, 0.0f, 0.3f, "%.3f");
+			ImGui::SliderFloat("Surface Tension", &component.surfaceTension, 0.0f, 5.0f, "%.2f");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Holds streams, sheets and drops together.");
+			ImGui::SliderFloat("Anti-Clumping", &component.cohesion, 0.0f, 0.5f, "%.3f");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Keeps particles from bunching up (PBF's artificial pressure).");
+			ImGui::SliderFloat("Wall Friction", &component.friction, 0.0f, 1.0f, "%.2f");
+			ImGui::DragFloat("Lifetime", &component.lifetime, 0.1f, 0.0f, 600.0f, component.lifetime > 0.0f ? "%.1f s" : "forever");
+			ImGui::Separator();
+			ImGui::TextDisabled("Look");
+			ImGui::ColorEdit3("Colour", glm::value_ptr(component.color));
+			ImGui::DragFloat("Clarity", &component.clarity, 0.05f, 0.05f, 100.0f, "%.2f m");
 		});
 
 		DrawComponent<WaterComponent>("Water", entity, [](WaterComponent& component){

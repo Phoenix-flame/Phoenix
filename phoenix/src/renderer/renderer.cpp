@@ -90,6 +90,9 @@ namespace Phoenix{
         s_PoolWaterShader = Shader::Create("assets/shaders/pool_water.glsl");
         s_PoolCausticsShader = Shader::Create("assets/shaders/pool_caustics.glsl");
         s_PoolUnderwaterShader = Shader::Create("assets/shaders/pool_underwater.glsl");
+        s_FluidParticleShader = Shader::Create("assets/shaders/fluid_particles.glsl");
+        s_FluidSmoothShader = Shader::Create("assets/shaders/fluid_smooth.glsl");
+        s_FluidCompositeShader = Shader::Create("assets/shaders/fluid_composite.glsl");
         s_ShadowShader = Shader::Create("assets/shaders/shadow_depth.glsl");
 
         s_DirAtlas.Init(DIR_ATLAS_W, DIR_ATLAS_H);
