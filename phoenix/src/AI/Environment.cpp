@@ -40,33 +40,62 @@ namespace Phoenix{
         }
     }
 
-    // Segment origin + t * delta (t in [0, 1]) against a zone's oriented box. Returns the
-    // entry fraction (0 when starting inside).
-    static bool SegmentHitsZone(const glm::vec3& origin, const glm::vec3& delta, const glm::mat4& model,
-                                const glm::vec3& halfExtents, float& outT){
-        glm::mat4 inv = glm::inverse(model);
-        glm::vec3 o = glm::vec3(inv * glm::vec4(origin, 1.0f));
-        glm::vec3 d = glm::vec3(inv * glm::vec4(delta, 0.0f));
-        float tMin = 0.0f, tMax = 1.0f;
-        for (int i = 0; i < 3; i++){
-            if (std::abs(d[i]) < 1e-8f){
-                if (o[i] < -halfExtents[i] || o[i] > halfExtents[i]) { return false; }
-                continue;
-            }
-            float t1 = (-halfExtents[i] - o[i]) / d[i];
-            float t2 = ( halfExtents[i] - o[i]) / d[i];
-            if (t1 > t2) { std::swap(t1, t2); }
-            tMin = std::max(tMin, t1);
-            tMax = std::min(tMax, t2);
-            if (tMin > tMax) { return false; }
-        }
-        outT = tMin;
-        return true;
-    }
-
     static bool InsideZone(const glm::vec3& point, const glm::mat4& model, const glm::vec3& halfExtents){
         glm::vec3 p = glm::vec3(glm::inverse(model) * glm::vec4(point, 1.0f));
         return std::abs(p.x) <= halfExtents.x && std::abs(p.y) <= halfExtents.y && std::abs(p.z) <= halfExtents.z;
+    }
+
+    void Environment::SyncRayBackend(){
+        if (gpuRaySensors == m_RayBackendRequest) { return; }
+        m_RayBackendRequest = gpuRaySensors;
+        bool on = m_RayCaster.UseOpenCL(gpuRaySensors);
+        if (on) { PHX_CORE_INFO("Ray sensors: OpenCL on {}", m_RayCaster.Status()); }
+        else if (gpuRaySensors) { PHX_CORE_WARN("Ray sensors: OpenCL unavailable ({}), using the CPU", m_RayCaster.Status()); }
+    }
+
+    // Reward Zone hits of the given agents' ray sensors, as one batch (so the OpenCL
+    // backend gets enough work); CollectObservation merges them with the physics casts.
+    void Environment::CastSensorZones(const std::vector<AgentState*>& agents){
+        SyncRayBackend();
+        auto& registry = m_Scene->m_Registry;
+        m_RayZones.clear();
+        m_RayZoneEntities.clear();
+        auto zones = registry.view<RewardZoneComponent, TransformComponent>();
+        for (auto zone : zones){
+            const auto& rz = zones.get<RewardZoneComponent>(zone);
+            if (!rz.visibleToRays) { continue; }
+            m_RayZones.push_back({ glm::inverse(zones.get<TransformComponent>(zone).GetTransform()), rz.halfExtents });
+            m_RayZoneEntities.push_back(zone);
+        }
+
+        m_SensorRays.clear();
+        std::vector<glm::vec3> dirs;
+        glm::vec3 origin;
+        for (AgentState* agent : agents){
+            auto* sensor = registry.try_get<RaySensorComponent>(agent->entity);
+            if (!sensor) { continue; }
+            const auto& t = registry.get<TransformComponent>(agent->entity);
+            SensorRays(t.Translation, t.Rotation.y, *sensor, dirs, origin);
+            const float length = std::max(0.01f, sensor->length);
+            // An agent that is itself a zone doesn't see it.
+            auto self = std::find(m_RayZoneEntities.begin(), m_RayZoneEntities.end(), agent->entity);
+            int ignore = self == m_RayZoneEntities.end() ? -1 : (int)(self - m_RayZoneEntities.begin());
+            for (const auto& dir : dirs) { m_SensorRays.push_back({ origin, dir * length, ignore }); }
+        }
+        m_RayCaster.Cast(m_RayZones, m_SensorRays, m_SensorHits);
+
+        size_t next = 0;
+        for (AgentState* agent : agents){
+            agent->zoneHits.clear();
+            agent->zoneHitsReady = false;
+            auto* sensor = registry.try_get<RaySensorComponent>(agent->entity);
+            if (!sensor) { continue; }
+            for (int r = 0; r < std::max(1, sensor->rays); r++, next++){
+                const auto& hit = m_SensorHits[next];
+                agent->zoneHits.push_back({ hit.t, hit.zone >= 0 ? m_RayZoneEntities[(size_t)hit.zone] : entt::entity(entt::null) });
+            }
+            agent->zoneHitsReady = true;
+        }
     }
 
     Environment::Environment(Scene* scene, EpisodeLog* log)
@@ -219,6 +248,9 @@ namespace Phoenix{
         m_Scene->DrainContacts();
 
         m_Episode++;
+        m_SensorBatch.clear();
+        for (auto& agent : m_Agents) { m_SensorBatch.push_back(&agent); }
+        CastSensorZones(m_SensorBatch);
         for (auto& agent : m_Agents) { BeginAgentEpisode(agent); }
 
         // Scripts (scene logic, custom agents) restart their episode state.
@@ -316,7 +348,8 @@ namespace Phoenix{
                     if (sensor->detectableTags[k] == tag) { return (int)k; }
                 return -1;
             };
-            auto zones = registry.view<RewardZoneComponent, TransformComponent>();
+            if (!agent.zoneHitsReady) { CastSensorZones({ &agent }); }
+            agent.zoneHitsReady = false;
             for (size_t r = 0; r < dirs.size(); r++){
                 float best = 1.0f;
                 int tag = -1;
@@ -328,14 +361,10 @@ namespace Phoenix{
                     Entity hit = m_Scene->FindEntityByBodyID(rayHit.body);
                     tag = hit ? tagIndex((entt::entity)hit) : -1;
                 }
-                for (auto zone : zones){
-                    if (zone == agent.entity || !zones.get<RewardZoneComponent>(zone).visibleToRays) { continue; }
-                    float tz;
-                    if (SegmentHitsZone(origin, dirs[r] * length, zones.get<TransformComponent>(zone).GetTransform(),
-                                        zones.get<RewardZoneComponent>(zone).halfExtents, tz) && tz < best){
-                        best = tz;
-                        tag = tagIndex(zone);
-                    }
+                const auto& zoneHit = agent.zoneHits[r];
+                if (zoneHit.zone != entt::null && zoneHit.t < best){
+                    best = zoneHit.t;
+                    tag = tagIndex(zoneHit.zone);
                 }
                 agent.rayFractions[r] = best;
                 agent.rayTags[r] = tag;
@@ -583,6 +612,13 @@ namespace Phoenix{
 
         m_Scene->StepSimulation(dt);
         m_PhysicsSteps++;
+
+        // Agents whose decision ends now get their sensor zone hits in one batch.
+        // (A decision cut short by a terminal event casts on its own.)
+        m_SensorBatch.clear();
+        for (auto& agent : m_Agents)
+            if (!agent.done && agent.stepsUntilDecision == 1) { m_SensorBatch.push_back(&agent); }
+        if (!m_SensorBatch.empty()) { CastSensorZones(m_SensorBatch); }
 
         for (auto& agent : m_Agents){
             if (agent.done || agent.stepsUntilDecision <= 0) { continue; }

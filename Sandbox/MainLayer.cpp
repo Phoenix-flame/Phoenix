@@ -2843,6 +2843,7 @@ void MainLayer::UpdateSimulation(float frameSeconds) {
     Environment& env = *m_Environment;
     env.timeScale = m_TimeScale;
     env.maxSpeed = m_MaxSpeed;
+    env.gpuRaySensors = m_GpuRaySensors;
     env.paused = m_Paused;
     env.externalControl = m_BridgeEnabled;
     env.clientConnected = m_Bridge.HasClient();
@@ -3680,6 +3681,20 @@ void MainLayer::DrawSettingsPanel(){
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("Seeds episode randomization (spawn randomizers, random policies). 0 = different every run.");
         ImGui::EndDisabled();
+
+        ImGui::BeginDisabled(!Phoenix::RayZoneCaster::OpenCLCompiled());
+        ImGui::Checkbox("GPU Ray Sensors", &m_GpuRaySensors);
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip(Phoenix::RayZoneCaster::OpenCLCompiled()
+                ? "Test Ray Sensors against Reward Zones on an OpenCL device, batched over all agents.\n"
+                  "Pays off with many agents, rays and zones; small batches stay on the CPU."
+                : "Needs an engine built with -DPHOENIX_OPENCL=ON.");
+        if (m_GpuRaySensors && m_Environment){
+            const auto& caster = m_Environment->RayCaster();
+            ImGui::TextDisabled("%s; last batch: %zu rays on the %s", caster.Status().c_str(),
+                m_Environment->LastRayBatch(), caster.LastCastOnDevice() ? "device" : "CPU");
+        }
         ImGui::Spacing();
     }
 
