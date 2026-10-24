@@ -91,6 +91,22 @@ target_link_libraries(${APP_TARGET} fmt::fmt spdlog::spdlog)
 target_link_libraries(${APP_TARGET} glfw OpenGL::GL ${GLEW_LIBRARIES})
 target_link_libraries(${APP_TARGET} Threads::Threads ${CMAKE_DL_LIBS})
 
+# OpenCL (optional): Ray Sensor vs Reward Zone tests on a GPU, toggled in the editor
+# (Settings > Simulation). Without it the same tests run on the CPU.
+option(PHOENIX_OPENCL "Build the OpenCL backend for batched ray sensor tests" OFF)
+if(PHOENIX_OPENCL)
+    find_package(OpenCL REQUIRED)
+    target_compile_definitions(${APP_TARGET} PRIVATE PHOENIX_OPENCL)
+    target_link_libraries(${APP_TARGET} OpenCL::OpenCL)
+
+    # CPU vs OpenCL check and timing for the caster alone: `make ray_zone_bench`.
+    add_executable(ray_zone_bench EXCLUDE_FROM_ALL tools/ray_zone_bench.cpp src/AI/RayZoneCaster.cpp)
+    target_include_directories(ray_zone_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${GLM_INCLUDE_DIRS})
+    target_compile_definitions(ray_zone_bench PRIVATE PHOENIX_OPENCL)
+    target_compile_features(ray_zone_bench PRIVATE cxx_std_17)
+    target_link_libraries(ray_zone_bench OpenCL::OpenCL)
+endif()
+
 # Runtime assets the engine itself loads by relative path (its shaders and the ImGui
 # fonts). Every app calls this so they land in <exe dir>/assets, and the app chdirs to
 # its executable's directory at startup. Extra directories passed after the target

@@ -712,6 +712,16 @@ cmake --build build -j$(nproc)
 Pass `-DCMAKE_BUILD_TYPE=Debug` to enable engine asserts and the OpenGL debug-message
 callback.
 
+### OpenCL ray sensors (optional, experimental)
+
+`-DPHOENIX_OPENCL=ON` (needs `ocl-icd-opencl-dev` and an OpenCL driver) builds a backend that
+tests every agent's Ray Sensor rays against all Reward Zones in one batch on an OpenCL
+device (a GPU if one is found). Turn it on with **Settings > Simulation > GPU Ray Sensors**.
+Physics bodies are still ray cast by Jolt on the CPU, and batches under ~16k ray-zone pairs
+stay on the CPU, where they are cheaper. Hits match the CPU path bit for bit on devices with
+correctly rounded division. `cmake --build build --target ray_zone_bench` builds a tool that
+checks the two backends against each other and times them.
+
 Assets are copied next to each executable on every build, so shader edits are picked up on
 the next launch. The engine's own runtime assets (its shaders and the UI fonts) live in
 `phoenix/assets/`; an app gets them with `phoenix_copy_assets(<target>)` in its

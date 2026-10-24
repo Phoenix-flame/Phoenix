@@ -193,6 +193,7 @@ private:
     int m_BridgeFailedPort = 0; // don't retry a port that failed to bind every frame
     float m_TimeScale = 1.0f;
     bool m_MaxSpeed = false;
+    bool m_GpuRaySensors = false;   // Ray Sensor zone tests on OpenCL
     bool m_RenderAtMaxSpeed = true;
     bool m_Paused = false;
     bool m_OpenGuide = false;

@@ -1,5 +1,6 @@
 #pragma once
 #include <Phoenix/core/base.h>
+#include <Phoenix/AI/RayZoneCaster.h>
 #include <Phoenix/Scene/Component.h>
 #include <entt/entt.hpp>
 #include <glm/glm.hpp>
@@ -54,6 +55,12 @@ namespace Phoenix{
         std::vector<float> rayFractions;
         std::vector<int> rayTags;
 
+        // Reward Zone hits of the ray sensor, cast ahead in a batch with other agents
+        // (zone null = none); consumed by the next observation.
+        struct ZoneRayHit{ float t; entt::entity zone; };
+        std::vector<ZoneRayHit> zoneHits;
+        bool zoneHitsReady = false;
+
         // Internals.
         int stepsUntilDecision = 0;
         bool awaitingAction = false;        // External: observation ready, waiting for the client
@@ -95,6 +102,11 @@ namespace Phoenix{
         bool maxSpeed = false;      // run as many steps as fit in the frame budget
         bool paused = false;
         float frameBudgetMs = 14.0f;
+        // Ray Sensor vs Reward Zone tests on an OpenCL device (falls back to the CPU when
+        // unavailable; small batches stay on the CPU either way).
+        bool gpuRaySensors = false;
+        const RayZoneCaster& RayCaster() const { return m_RayCaster; }
+        size_t LastRayBatch() const { return m_SensorRays.size(); }
 
         // ---- External (Python) lockstep ----
         bool HasExternalAgents() const;
@@ -148,6 +160,8 @@ namespace Phoenix{
         void BeginAgentEpisode(AgentState& agent);
         void Decide(AgentState& agent);
         void CollectObservation(AgentState& agent);
+        void CastSensorZones(const std::vector<AgentState*>& agents);
+        void SyncRayBackend();
         void ChooseAction(AgentState& agent);
         void ApplyAction(AgentState& agent, float dt);
         void EvaluateZones(AgentState& agent, float dt);
@@ -163,6 +177,14 @@ namespace Phoenix{
         std::vector<AgentState> m_Agents;
         std::unordered_map<uint32_t, TransformComponent> m_InitialTransforms;
         std::mt19937 m_Rng;
+
+        RayZoneCaster m_RayCaster;
+        bool m_RayBackendRequest = false;
+        std::vector<RayZoneCaster::Zone> m_RayZones;
+        std::vector<entt::entity> m_RayZoneEntities;
+        std::vector<RayZoneCaster::Ray> m_SensorRays;
+        std::vector<RayZoneCaster::Hit> m_SensorHits;
+        std::vector<AgentState*> m_SensorBatch;
 
         int m_Episode = 0;
         long long m_PhysicsSteps = 0;
