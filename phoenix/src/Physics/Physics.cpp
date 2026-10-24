@@ -118,9 +118,10 @@ namespace Phoenix{
     class QueryBodyFilter : public JPH::BodyFilter{
     public:
         explicit QueryBodyFilter(const PhysicsWorld::QueryFilter& f)
-            : m_Ignore(f.ignoreBody), m_Sensors(f.includeSensors) {}
+            : m_Ignore(f.ignoreBody), m_Sensors(f.includeSensors), m_Only(f.onlyBodies) {}
         virtual bool ShouldCollide(const JPH::BodyID& inBodyID) const override {
-            return inBodyID.GetIndexAndSequenceNumber() != m_Ignore;
+            uint32_t id = inBodyID.GetIndexAndSequenceNumber();
+            return id != m_Ignore && (!m_Only || std::binary_search(m_Only->begin(), m_Only->end(), id));
         }
         virtual bool ShouldCollideLocked(const JPH::Body& inBody) const override {
             return m_Sensors || !inBody.IsSensor();
@@ -128,6 +129,7 @@ namespace Phoenix{
     private:
         uint32_t m_Ignore;
         bool m_Sensors;
+        const std::vector<uint32_t>* m_Only;
     };
 
     // Records contact begin/end pairs. Jolt calls these from its worker threads
@@ -1241,6 +1243,89 @@ namespace Phoenix{
         box.SetEmbedded();
         return Overlap(m_Impl->physicsSystem, box,
             JPH::RMat44::sRotationTranslation(ToJolt(EulerXYZToQuat(rotationEuler)), ToJoltR(center)), filter);
+    }
+
+    void PhysicsWorld::CollectRayPrimitives(const glm::vec3& boundsMin, const glm::vec3& boundsMax, const QueryFilter& filter,
+                                            std::vector<RayPrimitive>& outPrimitives, std::vector<RayBounds>& outOthers) const{
+        using namespace JPH;
+        // Leaves arrive with their world centre-of-mass transform. Box/sphere/capsule/
+        // cylinder are symmetric, so that is also their centre.
+        class Collector : public TransformedShapeCollector{
+        public:
+            std::vector<RayPrimitive>* primitives;
+            std::vector<RayBounds>* others;
+            virtual void AddHit(const TransformedShape& leaf) override{
+                using Type = RayPrimitive::Type;
+                RayPrimitive p;
+                p.body = leaf.mBodyID.GetIndexAndSequenceNumber();
+                const bool unscaled = leaf.GetShapeScale().IsClose(Vec3::sOne(), 1e-12f);
+                switch (unscaled ? leaf.mShape->GetSubType() : EShapeSubType::Empty){
+                    case EShapeSubType::Box:
+                        p.type = Type::Box;
+                        p.halfExtents = ToGlm(static_cast<const BoxShape*>(leaf.mShape.GetPtr())->GetHalfExtent());
+                        break;
+                    case EShapeSubType::Sphere:
+                        p.type = Type::Sphere;
+                        p.radius = static_cast<const SphereShape*>(leaf.mShape.GetPtr())->GetRadius();
+                        break;
+                    case EShapeSubType::Capsule:{
+                        auto* capsule = static_cast<const CapsuleShape*>(leaf.mShape.GetPtr());
+                        p.type = Type::Capsule;
+                        p.radius = capsule->GetRadius();
+                        p.halfHeight = capsule->GetHalfHeightOfCylinder();
+                        break;
+                    }
+                    case EShapeSubType::Cylinder:{
+                        auto* cylinder = static_cast<const CylinderShape*>(leaf.mShape.GetPtr());
+                        p.type = Type::Cylinder;
+                        p.radius = cylinder->GetRadius();
+                        p.halfHeight = cylinder->GetHalfHeight();
+                        break;
+                    }
+                    default:{
+                        AABox bounds = leaf.GetWorldSpaceBounds();
+                        others->push_back({ p.body, ToGlm(bounds.mMin), ToGlm(bounds.mMax) });
+                        return;
+                    }
+                }
+                p.position = ToGlmR(leaf.mShapePositionCOM);
+                Quat q = leaf.mShapeRotation;
+                p.rotation = glm::quat(q.GetW(), q.GetX(), q.GetY(), q.GetZ());
+                primitives->push_back(p);
+            }
+        };
+        outPrimitives.clear();
+        outOthers.clear();
+        Collector collector;
+        collector.primitives = &outPrimitives;
+        collector.others = &outOthers;
+        PhysicsQueryFilter all = filter;
+        all.ignoreBody = InvalidBody; // per ray, decided by the caller
+        LayerMaskFilter layers(all.layerMask);
+        QueryBodyFilter bodies(all);
+        AABox box(ToJolt(boundsMin), ToJolt(boundsMax));
+        m_Impl->physicsSystem.GetNarrowPhaseQuery().CollectTransformedShapes(box, collector, {}, layers, bodies);
+        // One entry per body: the union of its leaves' bounds.
+        std::sort(outOthers.begin(), outOthers.end(), [](const RayBounds& a, const RayBounds& b){ return a.body < b.body; });
+        size_t kept = 0;
+        for (size_t i = 0; i < outOthers.size(); i++){
+            if (kept > 0 && outOthers[kept - 1].body == outOthers[i].body){
+                outOthers[kept - 1].boundsMin = glm::min(outOthers[kept - 1].boundsMin, outOthers[i].boundsMin);
+                outOthers[kept - 1].boundsMax = glm::max(outOthers[kept - 1].boundsMax, outOthers[i].boundsMax);
+            }
+            else { outOthers[kept++] = outOthers[i]; }
+        }
+        outOthers.resize(kept);
+    }
+
+    bool PhysicsWorld::GetBodyBounds(uint32_t bodyID, glm::vec3& outMin, glm::vec3& outMax) const{
+        if (bodyID == InvalidBody) { return false; }
+        JPH::BodyLockRead lock(m_Impl->physicsSystem.GetBodyLockInterface(), JPH::BodyID(bodyID));
+        if (!lock.Succeeded()) { return false; }
+        const JPH::AABox& box = lock.GetBody().GetWorldSpaceBounds();
+        outMin = ToGlm(box.mMin);
+        outMax = ToGlm(box.mMax);
+        return true;
     }
 
     void PhysicsWorld::ResetBody(uint32_t bodyID, const glm::vec3& position, const glm::vec3& rotationEuler){

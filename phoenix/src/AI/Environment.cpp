@@ -6,6 +6,7 @@
 #include <Phoenix/core/Input.h>
 #include <Phoenix/core/keyCodes.h>
 #include <Phoenix/core/log.h>
+#include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -53,22 +54,90 @@ namespace Phoenix{
         else if (gpuRaySensors) { PHX_CORE_WARN("Ray sensors: OpenCL unavailable ({}), using the CPU", m_RayCaster.Status()); }
     }
 
-    // Reward Zone hits of the given agents' ray sensors, as one batch (so the OpenCL
-    // backend gets enough work); CollectObservation merges them with the physics casts.
-    void Environment::CastSensorZones(const std::vector<AgentState*>& agents){
+    // Whether the segment origin + t * delta (t in [0, 1]) touches the box (with a
+    // millimetre of slack, so it never skips a body Jolt would hit).
+    static bool SegmentTouchesBounds(const glm::vec3& origin, const glm::vec3& delta, const glm::vec3& lo, const glm::vec3& hi){
+        float tMin = 0.0f, tMax = 1.0f;
+        for (int i = 0; i < 3; i++){
+            const float a = lo[i] - 1e-3f, b = hi[i] + 1e-3f;
+            if (std::abs(delta[i]) < 1e-12f){
+                if (origin[i] < a || origin[i] > b) { return false; }
+                continue;
+            }
+            float t1 = (a - origin[i]) / delta[i], t2 = (b - origin[i]) / delta[i];
+            if (t1 > t2) { std::swap(t1, t2); }
+            tMin = std::max(tMin, t1);
+            tMax = std::min(tMax, t2);
+            if (tMin > tMax) { return false; }
+        }
+        return true;
+    }
+
+    // A Jolt leaf shape as a batch-caster shape (local frame, size, bounding sphere).
+    static RayBatchCaster::Shape MirrorShape(const PhysicsWorld::RayPrimitive& p){
+        using Type = PhysicsWorld::RayPrimitive::Type;
+        RayBatchCaster::Shape shape;
+        switch (p.type){
+            case Type::Box:
+                shape.type = RayBatchCaster::Shape::Type::Box;
+                shape.size = p.halfExtents;
+                shape.radius = glm::length(p.halfExtents);
+                break;
+            case Type::Sphere:
+                shape.type = RayBatchCaster::Shape::Type::Sphere;
+                shape.size = glm::vec3(p.radius, 0.0f, 0.0f);
+                shape.radius = p.radius;
+                break;
+            case Type::Capsule:
+                shape.type = RayBatchCaster::Shape::Type::Capsule;
+                shape.size = glm::vec3(p.halfHeight, p.radius, 0.0f);
+                shape.radius = p.halfHeight + p.radius;
+                break;
+            case Type::Cylinder:
+                shape.type = RayBatchCaster::Shape::Type::Cylinder;
+                shape.size = glm::vec3(p.halfHeight, p.radius, 0.0f);
+                shape.radius = std::sqrt(p.halfHeight * p.halfHeight + p.radius * p.radius);
+                break;
+        }
+        shape.inverse = glm::inverse(glm::translate(glm::mat4(1.0f), p.position) * glm::mat4_cast(p.rotation));
+        shape.center = p.position;
+        shape.owner = (int)p.body;
+        return shape;
+    }
+
+    // Ray Sensor casts for several agents at once, so the OpenCL backend gets enough
+    // work. Reward Zones always go through the batch caster. With gpuRaySensors,
+    // physics bodies with simple shapes do too (mirrored from Jolt, on the device or,
+    // without one, on the CPU with the same results); CollectObservation casts the
+    // remaining bodies with Jolt and merges everything.
+    void Environment::CastSensors(const std::vector<AgentState*>& agents){
         SyncRayBackend();
         auto& registry = m_Scene->m_Registry;
-        m_RayZones.clear();
-        m_RayZoneEntities.clear();
+        PhysicsWorld* physics = m_Scene->GetPhysicsWorld();
+        const bool mirror = physics && gpuRaySensors;
+
+        m_ZoneShapes.clear();
         auto zones = registry.view<RewardZoneComponent, TransformComponent>();
         for (auto zone : zones){
             const auto& rz = zones.get<RewardZoneComponent>(zone);
             if (!rz.visibleToRays) { continue; }
-            m_RayZones.push_back({ glm::inverse(zones.get<TransformComponent>(zone).GetTransform()), rz.halfExtents });
-            m_RayZoneEntities.push_back(zone);
+            RayBatchCaster::Shape shape;
+            shape.type = RayBatchCaster::Shape::Type::Zone;
+            const glm::mat4 model = zones.get<TransformComponent>(zone).GetTransform();
+            shape.inverse = glm::inverse(model);
+            shape.size = rz.halfExtents;
+            shape.center = glm::vec3(model[3]);
+            shape.radius = rz.halfExtents.x * glm::length(glm::vec3(model[0])) + rz.halfExtents.y * glm::length(glm::vec3(model[1]))
+                         + rz.halfExtents.z * glm::length(glm::vec3(model[2]));
+            shape.owner = (int)(uint32_t)zone;   // an agent that is itself a zone doesn't see it
+            m_ZoneShapes.push_back(shape);
         }
 
         m_SensorRays.clear();
+        m_BodyRays.clear();
+        m_SensorGroups.clear();
+        m_FanBounds.clear();
+        glm::vec3 boundsMin(std::numeric_limits<float>::max()), boundsMax(-std::numeric_limits<float>::max());
         std::vector<glm::vec3> dirs;
         glm::vec3 origin;
         for (AgentState* agent : agents){
@@ -77,24 +146,61 @@ namespace Phoenix{
             const auto& t = registry.get<TransformComponent>(agent->entity);
             SensorRays(t.Translation, t.Rotation.y, *sensor, dirs, origin);
             const float length = std::max(0.01f, sensor->length);
-            // An agent that is itself a zone doesn't see it.
-            auto self = std::find(m_RayZoneEntities.begin(), m_RayZoneEntities.end(), agent->entity);
-            int ignore = self == m_RayZoneEntities.end() ? -1 : (int)(self - m_RayZoneEntities.begin());
-            for (const auto& dir : dirs) { m_SensorRays.push_back({ origin, dir * length, ignore }); }
+            uint32_t body = PhysicsWorld::InvalidBody;
+            if (auto* rb = registry.try_get<RigidBodyComponent>(agent->entity)) { body = rb->runtimeBodyID; }
+            // Each agent's fan is one culling group (body rays line up with zone rays).
+            m_SensorGroups.push_back({ (int)m_SensorRays.size(), (int)dirs.size() });
+            glm::vec3 fanMin = origin, fanMax = origin;
+            for (const auto& dir : dirs){
+                m_SensorRays.push_back({ origin, dir * length, (int)(uint32_t)agent->entity });
+                fanMin = glm::min(fanMin, origin + dir * length);
+                fanMax = glm::max(fanMax, origin + dir * length);
+                if (mirror) { m_BodyRays.push_back({ origin, dir * length, (int)body }); }
+            }
+            m_FanBounds.push_back(fanMin);
+            m_FanBounds.push_back(fanMax);
+            boundsMin = glm::min(boundsMin, fanMin);
+            boundsMax = glm::max(boundsMax, fanMax);
         }
-        m_RayCaster.Cast(m_RayZones, m_SensorRays, m_SensorHits);
+        m_RayCaster.Cast(m_ZoneShapes, m_SensorRays, m_SensorGroups, 1.0f, m_SensorHits);
 
-        size_t next = 0;
+        m_BodyShapes.clear();
+        m_OtherBodies.clear();
+        if (mirror && !m_BodyRays.empty()){
+            // Sensors are skipped, as in the Jolt cast (QueryFilter's default).
+            const glm::vec3 margin(0.01f);
+            physics->CollectRayPrimitives(boundsMin - margin, boundsMax + margin, PhysicsWorld::QueryFilter(),
+                                          m_BodyPrimitives, m_OtherBodies);
+            using Type = PhysicsWorld::RayPrimitive::Type;
+            for (const auto& p : m_BodyPrimitives) { m_BodyShapes.push_back(MirrorShape(p)); }
+            // Jolt accepts hits up to its initial fraction, 1 + FLT_EPSILON.
+            m_RayCaster.Cast(m_BodyShapes, m_BodyRays, m_SensorGroups, 1.0f + std::numeric_limits<float>::epsilon(), m_BodyHits);
+        }
+
+        size_t next = 0, fan = 0;
         for (AgentState* agent : agents){
             agent->zoneHits.clear();
-            agent->zoneHitsReady = false;
+            agent->bodyHits.clear();
+            agent->otherBodies.clear();
+            agent->sensorHitsReady = false;
+            agent->bodiesMirrored = false;
             auto* sensor = registry.try_get<RaySensorComponent>(agent->entity);
             if (!sensor) { continue; }
             for (int r = 0; r < std::max(1, sensor->rays); r++, next++){
                 const auto& hit = m_SensorHits[next];
-                agent->zoneHits.push_back({ hit.t, hit.zone >= 0 ? m_RayZoneEntities[(size_t)hit.zone] : entt::entity(entt::null) });
+                agent->zoneHits.push_back({ hit.t, hit.shape >= 0 ? (entt::entity)(uint32_t)m_ZoneShapes[(size_t)hit.shape].owner : entt::entity(entt::null) });
+                if (!mirror) { continue; }
+                const auto& bodyHit = m_BodyHits.empty() ? RayBatchCaster::Hit{} : m_BodyHits[next];
+                agent->bodyHits.push_back({ bodyHit.t, bodyHit.shape >= 0 ? (uint32_t)m_BodyShapes[(size_t)bodyHit.shape].owner : PhysicsWorld::InvalidBody });
             }
-            agent->zoneHitsReady = true;
+            // Bodies left to Jolt that this agent's rays could reach.
+            const glm::vec3 fanMin = m_FanBounds[fan * 2], fanMax = m_FanBounds[fan * 2 + 1];
+            fan++;
+            for (const auto& other : m_OtherBodies)
+                if (glm::all(glm::lessThanEqual(other.boundsMin, fanMax)) && glm::all(glm::lessThanEqual(fanMin, other.boundsMax)))
+                    agent->otherBodies.push_back(other);
+            agent->bodiesMirrored = mirror;
+            agent->sensorHitsReady = true;
         }
     }
 
@@ -231,6 +337,21 @@ namespace Phoenix{
             if (r.randomYaw) { t.Rotation.y = std::uniform_real_distribution<float>(0.0f, glm::two_pi<float>())(m_Rng); }
         }
 
+        // Terrains that randomize get a fresh landscape (and collider) every episode.
+        for (auto entity : registry.view<TerrainComponent>()){
+            auto& terrain = registry.get<TerrainComponent>(entity);
+            if (!terrain.randomizeEachEpisode) { continue; }
+            TerrainNoise noise = terrain.noise;
+            noise.seed = (uint32_t)m_Rng();
+            TerrainGenerator::Generate(terrain.resolution, terrain.size, noise, terrain.heights);
+            m_Scene->RebuildTerrainBody(entity);
+        }
+
+        // Pools start every episode with still water, fluids with their starting blocks.
+        for (auto entity : registry.view<PoolComponent>())
+            if (auto& water = registry.get<PoolComponent>(entity).water) { water->Reset(); }
+        m_Scene->ResetFluids();
+
         // Teleport the physics bodies to match and stop them.
         if (physics){
             auto bodies = registry.view<RigidBodyComponent, TransformComponent>();
@@ -250,7 +371,7 @@ namespace Phoenix{
         m_Episode++;
         m_SensorBatch.clear();
         for (auto& agent : m_Agents) { m_SensorBatch.push_back(&agent); }
-        CastSensorZones(m_SensorBatch);
+        CastSensors(m_SensorBatch);
         for (auto& agent : m_Agents) { BeginAgentEpisode(agent); }
 
         // Scripts (scene logic, custom agents) restart their episode state.
@@ -348,17 +469,37 @@ namespace Phoenix{
                     if (sensor->detectableTags[k] == tag) { return (int)k; }
                 return -1;
             };
-            if (!agent.zoneHitsReady) { CastSensorZones({ &agent }); }
-            agent.zoneHitsReady = false;
+            if (!agent.sensorHitsReady) { CastSensors({ &agent }); }
+            agent.sensorHitsReady = false;
             for (size_t r = 0; r < dirs.size(); r++){
                 float best = 1.0f;
-                int tag = -1;
+                uint32_t hitBody = PhysicsWorld::InvalidBody;
                 PhysicsWorld::Hit rayHit;
                 PhysicsWorld::QueryFilter filter;
                 filter.ignoreBody = body;
-                if (physics && physics->RayCast(origin, dirs[r], length, rayHit, filter)){
+                if (agent.bodiesMirrored){
+                    // Mirrored bodies were cast in the batch; Jolt only tests the others
+                    // whose bounds this ray passes through.
+                    const auto& bodyHit = agent.bodyHits[r];
+                    if (bodyHit.body != PhysicsWorld::InvalidBody) { best = bodyHit.t; hitBody = bodyHit.body; }
+                    m_RayOthers.clear();
+                    for (const auto& other : agent.otherBodies)
+                        if (other.body != body && SegmentTouchesBounds(origin, dirs[r] * length, other.boundsMin, other.boundsMax))
+                            m_RayOthers.push_back(other.body);
+                    filter.onlyBodies = &m_RayOthers;
+                    if (!m_RayOthers.empty() && physics->RayCast(origin, dirs[r], length, rayHit, filter)
+                        && rayHit.distance / length < best){
+                        best = rayHit.distance / length;
+                        hitBody = rayHit.body;
+                    }
+                }
+                else if (physics && physics->RayCast(origin, dirs[r], length, rayHit, filter)){
                     best = rayHit.distance / length;
-                    Entity hit = m_Scene->FindEntityByBodyID(rayHit.body);
+                    hitBody = rayHit.body;
+                }
+                int tag = -1;
+                if (hitBody != PhysicsWorld::InvalidBody){
+                    Entity hit = m_Scene->FindEntityByBodyID(hitBody);
                     tag = hit ? tagIndex((entt::entity)hit) : -1;
                 }
                 const auto& zoneHit = agent.zoneHits[r];
@@ -618,7 +759,7 @@ namespace Phoenix{
         m_SensorBatch.clear();
         for (auto& agent : m_Agents)
             if (!agent.done && agent.stepsUntilDecision == 1) { m_SensorBatch.push_back(&agent); }
-        if (!m_SensorBatch.empty()) { CastSensorZones(m_SensorBatch); }
+        if (!m_SensorBatch.empty()) { CastSensors(m_SensorBatch); }
 
         for (auto& agent : m_Agents){
             if (agent.done || agent.stepsUntilDecision <= 0) { continue; }

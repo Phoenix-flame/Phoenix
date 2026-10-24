@@ -29,6 +29,8 @@ Gymnasium-compatible API. Phoenix provides the environment; the learning algorit
   - [Physics](#physics)
   - [Terrain](#terrain)
   - [Water](#water)
+  - [Pools](#pools)
+  - [Particle Fluids](#particle-fluids)
   - [Lua Scripting](#lua-scripting)
   - [Scene Serialization](#scene-serialization)
   - [The Editor](#the-editor)
@@ -494,19 +496,74 @@ collider has a **Fit to Shape** button that sizes it to the mesh or primitive.
   points and normals.
 
 ### Terrain
-### Terrain
 
 `TerrainComponent` is an editable heightmap (resolution × resolution grid) rendered as a mesh
 with analytic normals and an optional static triangle-mesh collider. A Blender-style
 **sculpt tool** (raise / lower / smooth brush, configurable radius & strength) lets you carve
 hills, valleys, and riverbeds directly in the viewport.
 
+**Generate from Noise** (in the Terrain inspector) fills the heights with fractal Perlin noise
+(seed, frequency, octaves, height, persistence, lacunarity, and a ridged blend for sharp
+crests). With **New Terrain Every Episode**, each RL episode regenerates the landscape and its
+collider from a fresh seed drawn from the simulation seed, as domain randomization; Stop
+restores the edit-time heights. Agents keep their edit-time poses, so keep spawn areas clear
+of tall terrain.
+
 ### Water
 
 `WaterComponent` is an animated, transparent surface (a flat grid displaced by a sum-of-sines
 wave in the shader) with Fresnel environment reflection, sun specular, and configurable
 colour/alpha/amplitude/wave-scale/speed. Place one over a sculpted terrain basin to make a
-lake.
+lake. Interactive ripples (a damped wave equation on a grid of **Ripple Resolution** cells per
+side) react to bodies splashing in and moving through the water.
+
+### Pools
+
+`PoolComponent` (**Create > Pool**) is a rectangular swimming pool: a tiled basin with a stone
+coping, its own static collider while playing, and simulated water.
+
+- **Waves**: a damped wave equation on a grid spanning the pool (cell size, wave speed and
+  damping are settings), with reflecting walls. While playing it advances inside the fixed
+  physics step, so it is deterministic and in step with the bodies. Bodies push water aside:
+  each step, vertical ray casts measure how much of every water column a body occupies, and
+  a share of the change (**Wave Strength**) raises or lowers the surface, which spreads as
+  splash rings and wakes. Bodies float or sink by density against the simulated surface,
+  with drag. Every RL episode starts with still water.
+- **Rendering**: the floor and walls are lit by sunlight refracted through the moving
+  surface, so they show **caustics** (the surface grid is rasterised where its refracted
+  light lands, brightened where it converges), and the light dims with depth. The surface
+  **refracts** what lies below (traced in screen space from a copy of the scene, with a
+  depth check), absorbs and tints it per channel over the path through the water (red goes
+  first), and mixes in the reflected sky and sun glints by **Fresnel**. With the camera
+  **under water** the view is hazed by distance and the surface shows **Snell's window**:
+  the world above inside it, the pool mirrored outside it (total internal reflection).
+- The **Pool** showcase drops a beach ball, a float, a wooden crate and a bowling ball in.
+- **Spray**: a body hitting the water fast throws up a crown of droplets (a particle fluid,
+  below) that rain back as ripples.
+
+### Particle Fluids
+
+`FluidComponent` (**Create > Particle Fluid**) is a liquid made of particles, for what a
+surface can't do: pouring, splashing, spilling across the floor. It starts as a block at the
+entity (on Play and every RL episode) and/or pours from the entity along its local -Y.
+
+- **Solver**: Position Based Fluids (Macklin & Müller 2013) with a one-sided density
+  constraint (it resists compression; pulling under-dense surface particles in makes PBF
+  clump and explode), anti-clumping pressure, XSPH viscosity and a light surface tension.
+  It collides with the box / sphere / capsule / cylinder colliders of nearby bodies (the
+  shapes mirrored from Jolt for ray sensors), taking contact normals from where each
+  particle started the step so overlapping solids can't push it through, with friction,
+  and pushes dynamic bodies back. It steps inside the fixed physics step: deterministic.
+- **Pools**: particles that reach a pool's water join it as ripples (and pools throw
+  spray), so the two simulations hand off where they meet.
+- **Rendering**: screen-space fluid rendering (Green 2010): particles as sphere depths,
+  bilateral smoothing into one surface, thickness for absorption, then refraction of the
+  scene, Fresnel reflection and sun glints.
+- **Performance**: the CPU path runs on all cores; Settings > OpenCL > Particle Fluids
+  steps fluids of 2000+ particles on the device, bit-identical to the CPU (neighbours come
+  from a stable counting sort, so every sum adds up in the same order).
+- The **Fluid** showcase adds a dam break on the pool deck and a stream poured into the
+  water to the Pool showcase.
 
 ### Lua Scripting
 
@@ -622,6 +679,11 @@ Open via **File → Showcases**:
   shadows, a textured backpack dropping with a convex collider, and a Lua-scripted cube.
 - **Water** — a sculpted terrain lake basin filled with animated water and
   glowing buoys.
+- **Pool** — a swimming pool in a stone deck; press **Play** and a beach ball, a float, a
+  wooden crate and a bowling ball drop in (splashes, wakes, caustics). Orbit the camera
+  below the surface for the underwater view.
+- **Fluid** — the pool plus particle water: a block on the deck collapses and spills over
+  the edge into the pool, and a stream pours into it.
 - **Robot** — skeletal animation: a rigged character on a shadow-receiving
   floor with a follow camera. Press **Play**, click the viewport, then drive it with the
   arrow keys (Shift runs, Space jumps); a Lua state machine crossfades idle / walk / run /
@@ -738,21 +800,41 @@ cmake --build build -j$(nproc)
 Pass `-DCMAKE_BUILD_TYPE=Debug` to enable engine asserts and the OpenGL debug-message
 callback.
 
-### OpenCL ray sensors (optional, experimental)
-
-`-DPHOENIX_OPENCL=ON` (needs `ocl-icd-opencl-dev` and an OpenCL driver) builds a backend that
-tests every agent's Ray Sensor rays against all Reward Zones in one batch on an OpenCL
-device (a GPU if one is found). Turn it on with **Settings > Simulation > GPU Ray Sensors**.
-Physics bodies are still ray cast by Jolt on the CPU, and batches under ~16k ray-zone pairs
-stay on the CPU, where they are cheaper. Hits match the CPU path bit for bit on devices with
-correctly rounded division. `cmake --build build --target ray_zone_bench` builds a tool that
-checks the two backends against each other and times them.
-
 Assets are copied next to each executable on every build, so shader edits are picked up on
 the next launch. The engine's own runtime assets (its shaders and the UI fonts) live in
 `phoenix/assets/`; an app gets them with `phoenix_copy_assets(<target>)` in its
 `CMakeLists.txt`, then copies its own assets on top. Apps load assets by relative path, so
 `main()` changes to the executable's directory first (see `Example/main.cpp`).
+
+### OpenCL (optional, experimental)
+
+`-DPHOENIX_OPENCL=ON` (needs `ocl-icd-opencl-dev` and an OpenCL driver) adds a shared OpenCL
+device (a GPU if one is found) and a **Settings > OpenCL** section with four switches, all off
+by default:
+
+- **Ray Sensors**: every agent's Ray Sensor rays are cast in one batch against Reward Zones
+  and against physics bodies made of boxes, spheres, capsules and cylinders, which are
+  mirrored from Jolt each decision step (compounds and offsets included). Jolt still casts
+  the rays that pass near bodies it alone can test (convex hulls, triangle meshes such as
+  terrain). Each agent's rays only test the shapes near them (a grid over their bounding
+  spheres). Mirrored casts follow Jolt's own ray tests: they hit the same bodies, at
+  distances that can differ from Jolt's in the last float bits.
+- **Water Ripples**: ripple grids (water surfaces and pools) of 512 × 512 cells or more step
+  on the device; smaller ones are faster on the CPU.
+- **Terrain Generation**: noise terrain (Generate, and per-episode randomization) is computed
+  on the device.
+- **Particle Fluids**: fluids of 2000 particles or more step on the device.
+
+Each feature keeps a CPU path that runs the same code and gives bit-identical results (on
+devices with correctly rounded division and square root): small workloads stay on the CPU,
+and a scene behaves the same with or without a device. Kernel code is written once in
+`PHX_SHARED_SOURCE` blocks (`phoenix/src/Compute/SharedSource.h`) and compiled both as C++
+and as OpenCL C.
+
+Two tools check the device against the CPU and time them:
+`cmake --build build --target ray_batch_bench` (also checks mirrored bodies against Jolt) and
+`cmake --build build --target compute_bench` (water ripples, pool grids, terrain generation
+and a particle-fluid dam break).
 
 ---
 

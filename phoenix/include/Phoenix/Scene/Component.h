@@ -9,6 +9,10 @@
 #include <Phoenix/renderer/shader.h>
 #include <Phoenix/renderer/VertexArray.h>
 #include <Phoenix/renderer/Mesh.h>
+#include <Phoenix/Scene/TerrainGenerator.h>
+#include <Phoenix/renderer/PoolWater.h>
+#include <Phoenix/Physics/ParticleFluid.h>
+#include <unordered_set>
 #include <Phoenix/renderer/WaterRipples.h>
 #include <Phoenix/Scene/ScriptableEntity.h>
 #include <Phoenix/Scene/Sky.h>
@@ -449,6 +453,12 @@ namespace Phoenix{
         Material material;
         bool generateCollider = true;
 
+        // Noise generation (Generate in the inspector), and domain randomization: with
+        // randomizeEachEpisode, every RL episode regenerates the heights from these
+        // settings with a fresh seed (Stop restores the edit-time heights).
+        TerrainNoise noise;
+        bool randomizeEachEpisode = false;
+
         Ref<Mesh> mesh;             // generated; not serialized
         bool dirty = true;
         uint32_t runtimeBodyID = 0xffffffff;
@@ -456,7 +466,8 @@ namespace Phoenix{
         TerrainComponent(){ heights.resize((size_t)resolution * resolution, 0.0f); }
         TerrainComponent(const TerrainComponent& o)
             : resolution(o.resolution), size(o.size), heights(o.heights),
-              material(o.material), generateCollider(o.generateCollider), dirty(true) {}
+              material(o.material), generateCollider(o.generateCollider),
+              noise(o.noise), randomizeEachEpisode(o.randomizeEachEpisode), dirty(true) {}
     };
 
     // An animated transparent water surface: Gerstner waves in the shader plus an
@@ -494,6 +505,122 @@ namespace Phoenix{
               choppiness(o.choppiness), foam(o.foam),
               interactiveRipples(o.interactiveRipples), rippleResolution(o.rippleResolution),
               buoyancy(o.buoyancy), linearDrag(o.linearDrag), angularDrag(o.angularDrag) {}
+    };
+
+    // A rectangular swimming pool: a tiled basin (with its own static collider while
+    // playing) holding simulated water. The entity's origin is the centre of the rim;
+    // the pool turns with the entity's yaw (rotation about X/Z and scale are ignored).
+    // While playing, bodies in it push the water aside and make waves, float or sink by
+    // density, and are slowed by drag. Drawn with refraction, caustics, depth-dependent
+    // colour, reflections and an underwater view. The water mesh, simulation and
+    // collider are transient (not serialized / reset on copy).
+    struct PoolComponent{
+        glm::vec2 size = { 8.0f, 5.0f };    // inner width (x) and length (z), metres
+        float depth = 2.0f;                 // rim down to the floor
+        float freeboard = 0.2f;             // rim down to the still water surface
+        float coping = 0.35f;               // tiled border around the rim (also the wall thickness)
+
+        // Waves.
+        float cellSize = 0.05f;             // simulation cell: smaller = finer waves, costlier
+        float waveSpeed = 1.2f;             // m/s (pool ripples of a few dm travel ~0.5-1.5 m/s)
+        float waveDamping = 0.6f;           // wave height lost per second (fraction)
+        // Share of the water a body pushes aside that shows up as waves. The surface model
+        // can't form a crater and crown, so the full volume would make metre-high swells;
+        // ~0.1 gives splashes and wakes of realistic height.
+        float waveStrength = 0.08f;
+        bool interactive = true;            // bodies make waves
+
+        // Look.
+        glm::vec3 tileColor = glm::vec3(0.86f, 0.93f, 0.97f);
+        glm::vec3 groutColor = glm::vec3(0.55f, 0.66f, 0.72f);
+        float tileSize = 0.25f;
+        glm::vec3 waterColor = glm::vec3(0.12f, 0.55f, 0.68f);  // light scattered back by deep water
+        float clarity = 25.0f;              // metres one can see under water (clean pool: 20-30)
+        float causticStrength = 0.8f;
+
+        // Physics coupling while playing (as WaterComponent's).
+        float buoyancy = 1.0f;
+        float linearDrag = 0.8f;
+        float angularDrag = 0.4f;
+        bool generateCollider = true;
+
+        // Spray: bodies hitting the water fast throw up droplets (particle fluid) that rain
+        // back as ripples.
+        bool spray = true;
+        float sprayAmount = 1.0f;
+
+        Ref<PoolWater> water;               // simulation + textures; not serialized
+        Ref<ParticleFluid> sprayFluid;      // live droplets; not serialized
+        Ref<Mesh> shellMesh, surfaceMesh;   // generated; not serialized
+        bool dirty = true;                  // meshes need rebuilding
+        uint32_t runtimeBodyID = 0xffffffff;
+        std::vector<float> columns;         // scratch: body displacement per grid vertex
+        std::unordered_set<uint32_t> wetBodies; // bodies in the water last step (for spray on entry)
+        uint32_t splashes = 0;              // splash counter (seeds the spray pattern)
+
+        PoolComponent() = default;
+        PoolComponent(const PoolComponent& o)
+            : size(o.size), depth(o.depth), freeboard(o.freeboard), coping(o.coping),
+              cellSize(o.cellSize), waveSpeed(o.waveSpeed), waveDamping(o.waveDamping), waveStrength(o.waveStrength),
+              interactive(o.interactive),
+              tileColor(o.tileColor), groutColor(o.groutColor), tileSize(o.tileSize),
+              waterColor(o.waterColor), clarity(o.clarity), causticStrength(o.causticStrength),
+              buoyancy(o.buoyancy), linearDrag(o.linearDrag), angularDrag(o.angularDrag),
+              generateCollider(o.generateCollider), spray(o.spray), sprayAmount(o.sprayAmount) {}
+
+        // Still water surface and floor heights in the pool's local frame.
+        float WaterLevel() const { return -freeboard; }
+        float Floor() const { return -depth; }
+    };
+
+    // A particle liquid (Position Based Fluids, see ParticleFluid): a block of it at the
+    // entity when Play starts (and every RL episode), and/or a stream poured from the
+    // entity along its local -Y. It flows around and pushes physics bodies (their box /
+    // sphere / capsule / cylinder colliders), and particles that fall into a pool join
+    // its water as ripples. Drawn as a smooth liquid surface (screen-space fluid).
+    struct FluidComponent{
+        bool fillBlock = true;
+        glm::vec3 blockSize = glm::vec3(0.8f, 1.0f, 0.8f);   // metres, centred on the entity
+        // Pouring: a disc of particles (nozzleRadius, at the rest spacing) leaves the
+        // entity along its local -Y each time the last one moved a spacing away.
+        bool pour = false;
+        float pourSpeed = 2.0f;             // m/s
+        float nozzleRadius = 0.08f;
+
+        float spacing = 0.05f;              // particle size: smaller = finer, many more particles
+        int maxParticles = 12000;
+        int iterations = 4;
+        float viscosity = 0.02f;
+        float cohesion = 0.1f;
+        float friction = 0.1f;
+        float surfaceTension = 1.0f;        // keeps streams and drops together
+        float lifetime = 0.0f;              // seconds (0 = forever)
+
+        glm::vec3 color = glm::vec3(0.35f, 0.72f, 0.88f);   // tint of thick liquid
+        float clarity = 1.2f;               // metres of liquid before most light is absorbed
+
+        Ref<ParticleFluid> fluid;           // live particles; not serialized
+        float pourAccumulator = 0.0f;       // seconds since the last disc
+
+        FluidComponent() = default;
+        FluidComponent(const FluidComponent& o)
+            : fillBlock(o.fillBlock), blockSize(o.blockSize), pour(o.pour), pourSpeed(o.pourSpeed),
+              nozzleRadius(o.nozzleRadius), spacing(o.spacing), maxParticles(o.maxParticles), iterations(o.iterations),
+              viscosity(o.viscosity), cohesion(o.cohesion), friction(o.friction), surfaceTension(o.surfaceTension),
+              lifetime(o.lifetime),
+              color(o.color), clarity(o.clarity) {}
+
+        FluidSettings Settings() const{
+            FluidSettings s;
+            s.spacing = spacing;
+            s.iterations = iterations;
+            s.viscosity = viscosity;
+            s.cohesion = cohesion;
+            s.friction = friction;
+            s.surfaceTension = surfaceTension;
+            s.lifetime = lifetime;
+            return s;
+        }
     };
 
     // An animation event: fire OnAnimationEvent(name) in the entity's Lua script when the

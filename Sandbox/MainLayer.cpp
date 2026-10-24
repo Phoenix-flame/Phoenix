@@ -1,4 +1,8 @@
 #include "MainLayer.h"
+#include <Phoenix/Compute/Compute.h>
+#include <Phoenix/renderer/WaterRipples.h>
+#include <Phoenix/Scene/TerrainGenerator.h>
+#include <Phoenix/Physics/ParticleFluid.h>
 #include <Phoenix/Scene/PhysicsPrefabs.h>
 
 #include <Phoenix/core/base.h>
@@ -327,6 +331,115 @@ void MainLayer::BuildWaterShowcase() {
         rb.density = 4000.0f; // denser than water: sinks
         e.AddComponent<SphereColliderComponent>();
     }
+}
+
+// A swimming pool in a stone deck: floats, a wooden crate and a heavy ball dropped in
+// on Play (waves, caustics, refraction; the camera can dive under the surface).
+void MainLayer::BuildPoolShowcase() {
+    m_Scene->AmbientColor() = glm::vec3(0.16f, 0.18f, 0.22f);
+    {
+        auto sun = m_Scene->CreateDirLightEntity("Sun");
+        auto& t = sun.GetComponent<TransformComponent>();
+        t.Translation = { 6.0f, 12.0f, 8.0f };
+        t.Rotation = { glm::radians(-58.0f), glm::radians(35.0f), 0.0f };
+        auto& dl = sun.GetComponent<DirLightComponent>();
+        dl.ambient = glm::vec3(0.05f);
+        dl.diffuse = glm::vec3(1.0f, 0.96f, 0.88f);
+        dl.specular = glm::vec3(1.0f);
+    }
+
+    const glm::vec2 size = { 8.0f, 5.0f };
+    {
+        auto e = m_Scene->CreateEntity("Pool");
+        auto& pool = e.AddComponent<PoolComponent>();
+        pool.size = size;
+        pool.depth = 1.8f;
+    }
+
+    // Deck around the coping: four static slabs, top flush with the rim.
+    const float coping = PoolComponent().coping, deck = 4.0f;
+    const glm::vec2 hole = size * 0.5f + coping;
+    struct Slab { glm::vec3 center; glm::vec3 scale; };
+    const Slab slabs[] = {
+        { { 0.0f, -0.25f, -hole.y - deck * 0.5f }, { hole.x * 2.0f + deck * 2.0f, 0.5f, deck } },
+        { { 0.0f, -0.25f,  hole.y + deck * 0.5f }, { hole.x * 2.0f + deck * 2.0f, 0.5f, deck } },
+        { { -hole.x - deck * 0.5f, -0.25f, 0.0f }, { deck, 0.5f, hole.y * 2.0f } },
+        { {  hole.x + deck * 0.5f, -0.25f, 0.0f }, { deck, 0.5f, hole.y * 2.0f } },
+    };
+    for (int i = 0; i < 4; i++){
+        auto e = m_Scene->CreateEntity("Deck " + std::to_string(i + 1));
+        auto& c = e.AddComponent<CubeComponent>();
+        c.material.ambient = glm::vec3(0.45f, 0.42f, 0.38f);
+        c.material.diffuse = glm::vec3(0.78f, 0.74f, 0.68f);
+        c.material.specular = glm::vec3(0.05f);
+        auto& t = e.GetComponent<TransformComponent>();
+        t.Translation = slabs[i].center;
+        t.Scale = slabs[i].scale;
+        e.AddComponent<RigidBodyComponent>().type = RigidBodyComponent::Type::Static;
+        e.AddComponent<BoxColliderComponent>();
+    }
+
+    auto ball = [&](const char* name, glm::vec3 position, float scale, glm::vec3 color, float density){
+        auto e = m_Scene->CreateEntity(name);
+        auto& p = e.AddComponent<PrimitiveComponent>(PrimitiveComponent::Type::Sphere);
+        p.material.ambient = color * 0.5f;
+        p.material.diffuse = color;
+        p.material.specular = glm::vec3(0.5f);
+        p.material.shininess = 64.0f;
+        auto& t = e.GetComponent<TransformComponent>();
+        t.Translation = position;
+        t.Scale = glm::vec3(scale);
+        auto& rb = e.AddComponent<RigidBodyComponent>();
+        rb.density = density;
+        rb.restitution = 0.2f;
+        e.AddComponent<SphereColliderComponent>();
+    };
+    ball("Beach Ball", { -2.2f, 2.5f, -0.8f }, 0.7f, { 1.0f, 0.35f, 0.25f }, 90.0f);
+    ball("Float", { 1.2f, 3.5f, 1.1f }, 0.5f, { 1.0f, 0.85f, 0.2f }, 250.0f);
+    ball("Bowling Ball", { 2.6f, 4.5f, -1.0f }, 0.35f, { 0.15f, 0.2f, 0.45f }, 1800.0f);
+    {
+        auto e = m_Scene->CreateEntity("Crate");
+        auto& c = e.AddComponent<CubeComponent>();
+        c.material.ambient = glm::vec3(0.4f, 0.3f, 0.18f);
+        c.material.diffuse = glm::vec3(0.72f, 0.54f, 0.32f);
+        c.material.specular = glm::vec3(0.1f);
+        auto& t = e.GetComponent<TransformComponent>();
+        t.Translation = { -0.3f, 5.5f, 0.6f };
+        t.Rotation = { 0.4f, 0.6f, 0.2f };
+        t.Scale = glm::vec3(0.6f);
+        auto& rb = e.AddComponent<RigidBodyComponent>();
+        rb.density = 550.0f; // wood: floats half under
+        e.AddComponent<BoxColliderComponent>();
+    }
+
+    m_MainCamera.Focus({ 0.0f, -0.6f, 0.0f }, 11.0f, 205.0f, -32.0f);
+}
+
+// The pool, plus particle water: a block on the deck that collapses over the edge into
+// the pool (a dam break), and a stream poured into the water. Particles reaching the
+// pool become ripples; the floats dropped in throw up spray.
+void MainLayer::BuildFluidShowcase() {
+    BuildPoolShowcase();
+    {
+        auto e = m_Scene->CreateEntity("Water Block");
+        e.GetComponent<TransformComponent>().Translation = { -2.4f, 0.52f, -3.45f };
+        auto& f = e.AddComponent<FluidComponent>();
+        f.blockSize = { 1.6f, 1.0f, 0.9f };
+        f.maxParticles = 16000;
+    }
+    {
+        auto e = m_Scene->CreateEntity("Pour");
+        e.GetComponent<TransformComponent>().Translation = { 2.4f, 2.2f, 0.8f };
+        auto& f = e.AddComponent<FluidComponent>();
+        f.fillBlock = false;
+        f.pour = true;
+        f.pourSpeed = 2.5f;
+        f.nozzleRadius = 0.07f;
+        f.spacing = 0.03f;          // finer than the block, so the stream can stay a column
+        f.surfaceTension = 0.5f;
+        f.maxParticles = 8000;
+    }
+    m_MainCamera.Focus({ -0.8f, -0.4f, -1.2f }, 8.5f, 200.0f, -30.0f);
 }
 
 void MainLayer::BuildRobotShowcase() {
@@ -3460,6 +3573,8 @@ void MainLayer::DrawMenus(){
             ImGui::TextDisabled("Engine");
             if (ImGui::MenuItem("Bloom & Shadows"))  { LoadShowcase(&MainLayer::BuildShowcaseScene, "Showcase"); }
             if (ImGui::MenuItem("Water"))            { LoadShowcase(&MainLayer::BuildWaterShowcase, "Water Showcase"); }
+            if (ImGui::MenuItem("Pool"))             { LoadShowcase(&MainLayer::BuildPoolShowcase, "Pool Showcase"); }
+            if (ImGui::MenuItem("Fluid"))            { LoadShowcase(&MainLayer::BuildFluidShowcase, "Fluid Showcase"); }
             if (ImGui::MenuItem("Robot"))            { LoadShowcase(&MainLayer::BuildRobotShowcase, "Robot Showcase"); }
             if (ImGui::MenuItem("Multi-Shadow"))     { LoadShowcase(&MainLayer::BuildMultiShadowShowcase, "Multi-Shadow Showcase"); }
             if (ImGui::MenuItem("Soft Shadows"))     { LoadShowcase(&MainLayer::BuildShadowShowcase, "Shadow Showcase"); }
@@ -3744,20 +3859,50 @@ void MainLayer::DrawSettingsPanel(){
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("Seeds episode randomization (spawn randomizers, random policies). 0 = different every run.");
         ImGui::EndDisabled();
+        ImGui::Spacing();
+    }
 
-        ImGui::BeginDisabled(!Phoenix::RayZoneCaster::OpenCLCompiled());
-        ImGui::Checkbox("GPU Ray Sensors", &m_GpuRaySensors);
-        ImGui::EndDisabled();
+    // OpenCL offloads. Each has a CPU path with identical results, so these trade
+    // speed only; they are off by default and only kick in for large enough work.
+    if (ImGui::CollapsingHeader("OpenCL")){
+        const bool compiled = Phoenix::Compute::Compiled();
+        if (compiled && !m_ComputeStatusQueried){
+            // Setting up the device can take a moment: only once the section is opened.
+            Phoenix::Compute::Available();
+            m_ComputeStatusQueried = true;
+        }
+        ImGui::TextDisabled("Device: %s", compiled ? Phoenix::Compute::Status().c_str() : "none (build with -DPHOENIX_OPENCL=ON)");
+        ImGui::BeginDisabled(!compiled);
+        ImGui::Checkbox("Ray Sensors", &m_GpuRaySensors);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip(Phoenix::RayZoneCaster::OpenCLCompiled()
-                ? "Test Ray Sensors against Reward Zones on an OpenCL device, batched over all agents.\n"
-                  "Pays off with many agents, rays and zones; small batches stay on the CPU."
-                : "Needs an engine built with -DPHOENIX_OPENCL=ON.");
+            ImGui::SetTooltip("Cast Ray Sensors in one batch over all agents: Reward Zones, and physics bodies\n"
+                              "with box/sphere/capsule/cylinder shapes (mirrored from Jolt, which keeps meshes\n"
+                              "and hulls). Pays off with many agents, rays and shapes; small batches, or machines\n"
+                              "without a device, run the same casts on the CPU with the same results.\n"
+                              "Distances to bodies can differ from Jolt's in the last float bits.");
         if (m_GpuRaySensors && m_Environment){
             const auto& caster = m_Environment->RayCaster();
-            ImGui::TextDisabled("%s; last batch: %zu rays on the %s", caster.Status().c_str(),
-                m_Environment->LastRayBatch(), caster.LastCastOnDevice() ? "device" : "CPU");
+            ImGui::TextDisabled("  last batch: %zu rays, %zu mirrored shapes, on the %s",
+                m_Environment->LastRayBatch(), m_Environment->LastMirroredShapes(), caster.LastCastOnDevice() ? "device" : "CPU");
         }
+        bool ripples = Phoenix::WaterRipples::UsesOpenCL();
+        if (ImGui::Checkbox("Water Ripples", &ripples)) { Phoenix::WaterRipples::SetUseOpenCL(ripples); }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Step ripple grids of %d x %d cells or more on the device (Water > Ripple\n"
+                              "Resolution). Smaller grids are faster on the CPU. Same waves either way.",
+                              Phoenix::WaterRipples::minDeviceResolution, Phoenix::WaterRipples::minDeviceResolution);
+        bool fluids = Phoenix::ParticleFluid::DefaultOpenCL();
+        if (ImGui::Checkbox("Particle Fluids", &fluids)) { Phoenix::ParticleFluid::SetDefaultOpenCL(fluids); }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Step particle liquids of %d particles or more on the device. Same motion either way.",
+                              Phoenix::ParticleFluid::minDeviceParticles);
+        bool terrain = Phoenix::TerrainGenerator::UsesOpenCL();
+        if (ImGui::Checkbox("Terrain Generation", &terrain)) { Phoenix::TerrainGenerator::SetUseOpenCL(terrain); }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Generate noise terrain of %d x %d vertices or more on the device (Terrain >\n"
+                              "Generate, and per-episode randomization). Same heights either way.",
+                              Phoenix::TerrainGenerator::minDeviceResolution, Phoenix::TerrainGenerator::minDeviceResolution);
+        ImGui::EndDisabled();
         ImGui::Spacing();
     }
 

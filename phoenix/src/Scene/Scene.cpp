@@ -108,6 +108,163 @@ namespace Phoenix{
         return CreateRef<Mesh>(vertices, indices);
     }
 
+    // ---- Pools ----------------------------------------------------------------------
+
+    // The basin in the pool's local frame (rim centre at the origin): floor, four inner
+    // walls and the coping ring around the rim. The shader tiles it from positions.
+    static Ref<Mesh> BuildPoolShellMesh(const PoolComponent& pool){
+        const float hx = pool.size.x * 0.5f, hz = pool.size.y * 0.5f, d = pool.depth, c = pool.coping;
+        std::vector<Vertex> vertices;
+        std::vector<uint32_t> indices;
+        auto quad = [&](glm::vec3 a, glm::vec3 b, glm::vec3 e, glm::vec3 f, glm::vec3 n){
+            uint32_t base = (uint32_t)vertices.size();
+            for (const glm::vec3& p : { a, b, e, f }) { vertices.push_back({ p, n, glm::vec2(0.0f) }); }
+            for (uint32_t i : { 0u, 1u, 2u, 0u, 2u, 3u }) { indices.push_back(base + i); }
+        };
+        quad({ -hx, -d, -hz }, { hx, -d, -hz }, { hx, -d, hz }, { -hx, -d, hz }, { 0, 1, 0 });       // floor
+        quad({ -hx, -d, -hz }, { -hx, -d, hz }, { -hx, 0, hz }, { -hx, 0, -hz }, { 1, 0, 0 });       // walls, facing in
+        quad({ hx, -d, -hz }, { hx, -d, hz }, { hx, 0, hz }, { hx, 0, -hz }, { -1, 0, 0 });
+        quad({ -hx, -d, -hz }, { hx, -d, -hz }, { hx, 0, -hz }, { -hx, 0, -hz }, { 0, 0, 1 });
+        quad({ -hx, -d, hz }, { hx, -d, hz }, { hx, 0, hz }, { -hx, 0, hz }, { 0, 0, -1 });
+        quad({ -hx - c, 0, -hz - c }, { hx + c, 0, -hz - c }, { hx + c, 0, -hz }, { -hx - c, 0, -hz }, { 0, 1, 0 }); // coping
+        quad({ -hx - c, 0, hz }, { hx + c, 0, hz }, { hx + c, 0, hz + c }, { -hx - c, 0, hz + c }, { 0, 1, 0 });
+        quad({ -hx - c, 0, -hz }, { -hx, 0, -hz }, { -hx, 0, hz }, { -hx - c, 0, hz }, { 0, 1, 0 });
+        quad({ hx, 0, -hz }, { hx + c, 0, -hz }, { hx + c, 0, hz }, { hx, 0, hz }, { 0, 1, 0 });
+        return CreateRef<Mesh>(vertices, indices);
+    }
+
+    // The water surface: one vertex per simulation vertex, wall to wall, at the still
+    // level (the shader lifts each by its height). TexCoords address the height texel.
+    static Ref<Mesh> BuildPoolSurfaceMesh(const PoolComponent& pool, const PoolWater& water){
+        const int w = water.Grid().GetWidth(), h = water.Grid().GetHeight();
+        std::vector<Vertex> vertices;
+        vertices.reserve((size_t)w * h);
+        for (int j = 0; j < h; j++){
+            for (int i = 0; i < w; i++){
+                glm::vec2 p = water.CellPosition(i, j);
+                vertices.push_back({ glm::vec3(p.x, pool.WaterLevel(), p.y), glm::vec3(0, 1, 0),
+                                     glm::vec2(((float)i + 0.5f) / w, ((float)j + 0.5f) / h) });
+            }
+        }
+        std::vector<uint32_t> indices;
+        indices.reserve((size_t)(w - 1) * (h - 1) * 6);
+        for (int j = 0; j < h - 1; j++){
+            for (int i = 0; i < w - 1; i++){
+                uint32_t a = (uint32_t)(j * w + i), b = a + 1, c = a + (uint32_t)w, d = c + 1;
+                for (uint32_t k : { a, c, b, b, c, d }) { indices.push_back(k); }
+            }
+        }
+        return CreateRef<Mesh>(vertices, indices);
+    }
+
+    // (Re)creates a pool's simulation and meshes when its settings changed. GL thread.
+    static void EnsurePoolResources(PoolComponent& pool){
+        pool.size = glm::max(pool.size, glm::vec2(0.5f));
+        pool.depth = std::max(pool.depth, 0.2f);
+        pool.freeboard = std::clamp(pool.freeboard, 0.0f, pool.depth - 0.1f);
+        pool.cellSize = std::clamp(pool.cellSize, 0.01f, 0.5f);
+        if (!pool.water || !pool.water->Matches(pool.size, pool.cellSize)){
+            pool.water = CreateRef<PoolWater>(pool.size, pool.cellSize);
+            pool.columns.clear();
+            pool.dirty = true;
+        }
+        pool.water->Grid().UseOpenCL(WaterRipples::UsesOpenCL()
+            && pool.water->Grid().GetWidth() * pool.water->Grid().GetHeight()
+               >= WaterRipples::minDeviceResolution * WaterRipples::minDeviceResolution);
+        if (pool.dirty || !pool.shellMesh || !pool.surfaceMesh){
+            pool.shellMesh = BuildPoolShellMesh(pool);
+            pool.surfaceMesh = BuildPoolSurfaceMesh(pool, *pool.water);
+            pool.dirty = false;
+        }
+    }
+
+    // Pool frame: the entity's position and yaw.
+    static glm::vec3 PoolToWorld(const TransformComponent& t, const glm::vec3& p){
+        float c = std::cos(t.Rotation.y), s = std::sin(t.Rotation.y);
+        return t.Translation + glm::vec3(p.x * c + p.z * s, p.y, -p.x * s + p.z * c);
+    }
+    static glm::vec3 WorldToPool(const TransformComponent& t, const glm::vec3& w){
+        float c = std::cos(t.Rotation.y), s = std::sin(t.Rotation.y);
+        glm::vec3 d = w - t.Translation;
+        return { d.x * c - d.z * s, d.y, d.x * s + d.z * c };
+    }
+    static glm::mat4 PoolModel(const TransformComponent& t){
+        return glm::rotate(glm::translate(glm::mat4(1.0f), t.Translation), t.Rotation.y, glm::vec3(0, 1, 0));
+    }
+
+    // ---- Particle fluids -------------------------------------------------------------
+
+    // Deterministic values in [0, 1) (spray patterns).
+    static float Hash01(uint32_t a, uint32_t b){
+        uint32_t h = a * 0x9e3779b1u ^ (b + 0x7f4a7c15u) * 0x85ebca6bu;
+        h ^= h >> 15; h *= 0x2c1b3c6du;
+        h ^= h >> 12; h *= 0x297a2d39u;
+        h ^= h >> 15;
+        return (float)(h & 0xffffffu) / 16777216.0f;
+    }
+
+    // Pool spray: small, short-lived droplets.
+    static FluidSettings SpraySettings(){
+        FluidSettings s;
+        s.spacing = 0.03f;
+        s.iterations = 2;
+        s.viscosity = 0.0f;
+        s.cohesion = 0.05f;
+        s.friction = 0.2f;
+        s.lifetime = 4.0f;
+        return s;
+    }
+
+    // Empties a fluid and fills its block (axis-aligned, centred on the entity).
+    static void RefillFluid(FluidComponent& f, const TransformComponent& t){
+        f.maxParticles = std::clamp(f.maxParticles, 1, 200000);
+        if (!f.fluid || f.fluid->Capacity() != f.maxParticles) { f.fluid = CreateRef<ParticleFluid>(f.maxParticles); }
+        f.fluid->SetSettings(f.Settings());
+        f.fluid->Clear();
+        f.pourAccumulator = 0.0f;
+        if (f.fillBlock) { f.fluid->AddBlock(t.Translation, glm::max(f.blockSize, glm::vec3(0.0f)) * 0.5f, glm::vec3(0.0f)); }
+    }
+
+    // One disc of particles from the nozzle, moving along the entity's -Y; `age` seconds
+    // after it left (several discs can leave within one step: each starts as far down
+    // the stream as it has travelled since, instead of on top of the others).
+    static void PourDisc(FluidComponent& f, const TransformComponent& t, float age){
+        glm::mat3 rotation = glm::mat3(t.GetTransform());
+        for (int c = 0; c < 3; c++) { rotation[c] = glm::normalize(rotation[c]); }
+        const glm::vec3 axis = -rotation[1], u = rotation[0], v = rotation[2];
+        const float d = f.fluid->GetSettings().spacing;
+        const int r = std::max(0, (int)std::floor(f.nozzleRadius / d));
+        for (int b = -r; b <= r; b++)
+            for (int a = -r; a <= r; a++){
+                if ((float)(a * a + b * b) * d * d > f.nozzleRadius * f.nozzleRadius + 1e-6f) { continue; }
+                f.fluid->AddParticle(t.Translation + u * ((float)a * d) + v * ((float)b * d) + axis * (f.pourSpeed * age),
+                                     axis * f.pourSpeed);
+            }
+    }
+
+    // A crown of droplets where a body hit a pool's surface fast: rings of particles (at
+    // the spray spacing, so they don't start overlapping) thrown out and up.
+    static void SpawnSpray(PoolComponent& pool, const glm::vec2& center, float radius, float speed, float surfaceY){
+        if (!pool.sprayFluid){
+            pool.sprayFluid = CreateRef<ParticleFluid>(4000);
+            pool.sprayFluid->SetSettings(SpraySettings());
+        }
+        const uint32_t seed = ++pool.splashes;
+        const float d = SpraySettings().spacing;
+        radius = std::max(radius, 0.05f);
+        const int perRing = std::max(8, (int)std::floor(2.0f * 3.14159265f * radius / d));
+        const int count = std::min(600, (int)(pool.sprayAmount * speed * 50.0f));
+        for (int k = 0; k < count; k++){
+            const int ring = k / perRing;
+            const float a = 2.0f * 3.14159265f * ((float)(k % perRing) + 0.5f * (float)(ring & 1)) / (float)perRing;
+            const glm::vec3 dir(std::cos(a), 0.0f, std::sin(a));
+            const float u1 = Hash01(seed, (uint32_t)k), u2 = Hash01(seed, (uint32_t)k + 7919u);
+            const glm::vec3 p = glm::vec3(center.x, surfaceY + 0.02f + ring * d, center.y) + dir * radius;
+            const glm::vec3 vel = dir * (speed * (0.15f + 0.3f * u1)) + glm::vec3(0.0f, speed * (0.3f + 0.45f * u2), 0.0f);
+            if (!pool.sprayFluid->AddParticle(p, vel)) { break; }
+        }
+    }
+
     Scene::Scene() = default;
     Scene::~Scene() = default;
 
@@ -398,6 +555,272 @@ namespace Phoenix{
         rb.synced = rb.runtimeBodyID != PhysicsWorld::InvalidBody;
     }
 
+    void Scene::CreateTerrainBody(entt::entity entity){
+        auto& terrain = m_Registry.get<TerrainComponent>(entity);
+        if (!terrain.generateCollider) { return; }
+        if (terrain.dirty || !terrain.mesh){
+            terrain.mesh = BuildTerrainMesh(terrain);
+            terrain.dirty = false;
+        }
+        auto& transform = m_Registry.get<TransformComponent>(entity);
+        PhysicsWorld::ShapeDesc d;
+        d.type = PhysicsWorld::ShapeDesc::Type::TriangleMesh;
+        d.points.reserve(terrain.mesh->GetPositions().size());
+        for (const auto& p : terrain.mesh->GetPositions()) { d.points.push_back(p * transform.Scale); }
+        d.indices = terrain.mesh->GetIndices();
+        PhysicsWorld::BodyProps props;
+        props.friction = 0.8f;
+        terrain.runtimeBodyID = m_PhysicsWorld->CreateBody({ d }, transform.Translation, transform.Rotation,
+            PhysicsWorld::BodyType::Static, props);
+        if (terrain.runtimeBodyID != PhysicsWorld::InvalidBody) { m_BodyToEntity[terrain.runtimeBodyID] = entity; }
+    }
+
+    void Scene::CreatePoolBody(entt::entity entity){
+        auto& pool = m_Registry.get<PoolComponent>(entity);
+        EnsurePoolResources(pool);
+        pool.water->Reset();
+        if (!pool.generateCollider) { return; }
+        const auto& transform = m_Registry.get<TransformComponent>(entity);
+        const float hx = pool.size.x * 0.5f, hz = pool.size.y * 0.5f, d = pool.depth;
+        const float t = std::max(pool.coping, 0.1f);
+        auto box = [](glm::vec3 center, glm::vec3 half){
+            PhysicsWorld::ShapeDesc s;
+            s.type = PhysicsWorld::ShapeDesc::Type::Box;
+            s.halfExtents = half;
+            s.offset = center;
+            return s;
+        };
+        std::vector<PhysicsWorld::ShapeDesc> shapes = {
+            box({ 0, -d - t * 0.5f, 0 }, { hx + t, t * 0.5f, hz + t }),                  // floor
+            box({ -hx - t * 0.5f, -(d + t) * 0.5f, 0 }, { t * 0.5f, (d + t) * 0.5f, hz + t }), // walls
+            box({ hx + t * 0.5f, -(d + t) * 0.5f, 0 }, { t * 0.5f, (d + t) * 0.5f, hz + t }),
+            box({ 0, -(d + t) * 0.5f, -hz - t * 0.5f }, { hx, (d + t) * 0.5f, t * 0.5f }),
+            box({ 0, -(d + t) * 0.5f, hz + t * 0.5f }, { hx, (d + t) * 0.5f, t * 0.5f }),
+        };
+        PhysicsWorld::BodyProps props;
+        props.friction = 0.6f;
+        pool.runtimeBodyID = m_PhysicsWorld->CreateBody(shapes, transform.Translation, { 0.0f, transform.Rotation.y, 0.0f },
+            PhysicsWorld::BodyType::Static, props);
+        if (pool.runtimeBodyID != PhysicsWorld::InvalidBody) { m_BodyToEntity[pool.runtimeBodyID] = entity; }
+    }
+
+    // Pools while playing, once per physics step: bodies in the water push it aside
+    // (the change in the water they occupy raises or lowers the surface, which then
+    // spreads as waves), the waves advance, and bodies get buoyancy and drag from the
+    // surface around them.
+    void Scene::UpdatePools(float dt){
+        auto pools = m_Registry.view<PoolComponent, TransformComponent>();
+        auto bodies = m_Registry.view<RigidBodyComponent, TransformComponent>();
+        for (auto pEntity : pools){
+            auto& pool = pools.get<PoolComponent>(pEntity);
+            const auto& pt = pools.get<TransformComponent>(pEntity);
+            EnsurePoolResources(pool);
+            PoolWater& water = *pool.water;
+            const int gw = water.Grid().GetWidth(), gh = water.Grid().GetHeight();
+            const float hx = pool.size.x * 0.5f, hz = pool.size.y * 0.5f;
+            const float stillY = pt.Translation.y + pool.WaterLevel(), floorY = pt.Translation.y + pool.Floor();
+
+            // Displacement: the vertical extent of each body inside the still water column,
+            // per grid vertex, measured with two vertical rays (down and up) against the body.
+            pool.columns.assign((size_t)gw * gh, 0.0f);
+            bool displaced = false;
+            std::unordered_set<uint32_t> wetNow;
+            if (pool.interactive){
+                std::vector<uint32_t> only(1);
+                PhysicsWorld::QueryFilter filter;
+                filter.onlyBodies = &only;
+                for (auto entity : bodies){
+                    const auto& rb = bodies.get<RigidBodyComponent>(entity);
+                    if (rb.runtimeBodyID == PhysicsWorld::InvalidBody || rb.type == RigidBodyComponent::Type::Static) { continue; }
+                    glm::vec3 lo, hi;
+                    if (!m_PhysicsWorld->GetBodyBounds(rb.runtimeBodyID, lo, hi) || m_PhysicsWorld->IsSensor(rb.runtimeBodyID)) { continue; }
+                    if (lo.y >= stillY || hi.y <= floorY) { continue; }
+                    // Footprint in the pool frame.
+                    glm::vec2 llo(std::numeric_limits<float>::max()), lhi(-std::numeric_limits<float>::max());
+                    for (float x : { lo.x, hi.x })
+                        for (float z : { lo.z, hi.z }){
+                            glm::vec3 l = WorldToPool(pt, { x, 0.0f, z });
+                            llo = glm::min(llo, glm::vec2(l.x, l.z));
+                            lhi = glm::max(lhi, glm::vec2(l.x, l.z));
+                        }
+                    int i0 = std::max(0, (int)std::ceil((llo.x / pool.size.x + 0.5f) * (gw - 1)));
+                    int i1 = std::min(gw - 1, (int)std::floor((lhi.x / pool.size.x + 0.5f) * (gw - 1)));
+                    int j0 = std::max(0, (int)std::ceil((llo.y / pool.size.y + 0.5f) * (gh - 1)));
+                    int j1 = std::min(gh - 1, (int)std::floor((lhi.y / pool.size.y + 0.5f) * (gh - 1)));
+                    if (i0 > i1 || j0 > j1) { continue; }
+                    // Big bodies are sampled on a coarser lattice (about 2k rays each way).
+                    const int cells = (i1 - i0 + 1) * (j1 - j0 + 1);
+                    const int stride = std::max(1, (int)std::ceil(std::sqrt(cells / 2048.0f)));
+                    only[0] = rb.runtimeBodyID;
+                    const float span = hi.y - lo.y + 0.1f;
+                    bool wet = false;
+                    for (int j = j0; j <= j1; j += stride){
+                        for (int i = i0; i <= i1; i += stride){
+                            glm::vec2 p = water.CellPosition(i, j);
+                            glm::vec3 w = PoolToWorld(pt, { p.x, 0.0f, p.y });
+                            PhysicsWorld::Hit down, up;
+                            if (!m_PhysicsWorld->RayCast({ w.x, hi.y + 0.05f, w.z }, { 0, -1, 0 }, span, down, filter)) { continue; }
+                            float top = hi.y + 0.05f - down.distance;
+                            float bottom = m_PhysicsWorld->RayCast({ w.x, lo.y - 0.05f, w.z }, { 0, 1, 0 }, span, up, filter)
+                                ? lo.y - 0.05f + up.distance : top;
+                            float column = (std::min(top, stillY) - std::max(bottom, floorY)) * pool.waveStrength;
+                            if (column <= 0.0f) { continue; }
+                            for (int jj = j; jj < std::min(j + stride, j1 + 1); jj++)
+                                for (int ii = i; ii < std::min(i + stride, i1 + 1); ii++)
+                                    pool.columns[(size_t)jj * gw + ii] += column;
+                            displaced = true;
+                            wet = true;
+                        }
+                    }
+                    if (!wet) { continue; }
+                    // Entering the water fast throws up spray.
+                    if (pool.spray && pool.sprayAmount > 0.0f && !pool.wetBodies.count(rb.runtimeBodyID)){
+                        glm::vec3 v = m_PhysicsWorld->GetLinearVelocity(rb.runtimeBodyID);
+                        if (v.y < -1.5f){
+                            glm::vec3 c = rb.currPosition;
+                            SpawnSpray(pool, { c.x, c.z }, 0.5f * std::max(hi.x - lo.x, hi.z - lo.z), -v.y, stillY);
+                        }
+                    }
+                    wetNow.insert(rb.runtimeBodyID);
+                }
+            }
+            pool.wetBodies.swap(wetNow);
+            water.SetDisplacement(displaced ? pool.columns : std::vector<float>());
+            water.Step(dt, pool.waveSpeed, pool.waveDamping);
+
+            // Buoyancy and drag against the surface just around each body.
+            if (pool.buoyancy <= 0.0f) { continue; }
+            for (auto entity : bodies){
+                auto& rb = bodies.get<RigidBodyComponent>(entity);
+                if (rb.runtimeBodyID == PhysicsWorld::InvalidBody || rb.type != RigidBodyComponent::Type::Dynamic) { continue; }
+                const glm::vec3 local = WorldToPool(pt, rb.currPosition);
+                if (std::abs(local.x) > hx || std::abs(local.z) > hz || local.y > pool.WaterLevel() + 4.0f) { continue; }
+                glm::vec3 lo, hi;
+                glm::vec2 reach(water.GetSpacing());
+                if (m_PhysicsWorld->GetBodyBounds(rb.runtimeBodyID, lo, hi)) { reach += glm::vec2(hi.x - lo.x, hi.z - lo.z) * 0.5f; }
+                float around = 0.25f * (water.SurfaceHeight(local.x - reach.x, local.z) + water.SurfaceHeight(local.x + reach.x, local.z)
+                                      + water.SurfaceHeight(local.x, local.z - reach.y) + water.SurfaceHeight(local.x, local.z + reach.y));
+                float surfaceY = stillY + around;
+                float factor = std::min(8.0f, pool.buoyancy * 1000.0f / std::max(1.0f, rb.density));
+                m_PhysicsWorld->ApplyBuoyancy(rb.runtimeBodyID, { rb.currPosition.x, surfaceY, rb.currPosition.z }, { 0.0f, 1.0f, 0.0f },
+                    factor, pool.linearDrag, pool.angularDrag, dt);
+            }
+        }
+    }
+
+    void Scene::ResetFluids(){
+        for (auto entity : m_Registry.view<FluidComponent, TransformComponent>())
+            RefillFluid(m_Registry.get<FluidComponent>(entity), m_Registry.get<TransformComponent>(entity));
+        for (auto entity : m_Registry.view<PoolComponent>()){
+            auto& pool = m_Registry.get<PoolComponent>(entity);
+            if (pool.sprayFluid) { pool.sprayFluid->Clear(); }
+            pool.wetBodies.clear();
+            pool.splashes = 0;
+        }
+    }
+
+    // Particle fluids, once per physics step (after the pools): pour, step every fluid
+    // (each FluidComponent and each pool's spray) against the bodies around them, push
+    // the dynamic bodies back, and hand particles that reach a pool's water to its
+    // surface as ripples.
+    void Scene::UpdateFluids(float dt){
+        std::vector<ParticleFluid*> fluids;
+        for (auto entity : m_Registry.view<FluidComponent, TransformComponent>()){
+            auto& f = m_Registry.get<FluidComponent>(entity);
+            const auto& t = m_Registry.get<TransformComponent>(entity);
+            if (!f.fluid) { RefillFluid(f, t); }
+            f.fluid->SetSettings(f.Settings());
+            if (f.pour){
+                f.pourAccumulator += dt;
+                const float interval = f.fluid->GetSettings().spacing / std::max(f.pourSpeed, 0.05f);
+                for (int layers = 0; f.pourAccumulator >= interval && layers < 8; layers++){
+                    f.pourAccumulator -= interval;
+                    PourDisc(f, t, f.pourAccumulator);
+                }
+            }
+            fluids.push_back(f.fluid.get());
+        }
+        for (auto entity : m_Registry.view<PoolComponent>()){
+            auto& pool = m_Registry.get<PoolComponent>(entity);
+            if (pool.sprayFluid) { fluids.push_back(pool.sprayFluid.get()); }
+        }
+
+        // Colliders: the mirrorable leaves of every body near any particle.
+        glm::vec3 lo(std::numeric_limits<float>::max()), hi(-std::numeric_limits<float>::max());
+        for (ParticleFluid* fluid : fluids)
+            for (const glm::vec4& p : fluid->Positions()){
+                lo = glm::min(lo, glm::vec3(p));
+                hi = glm::max(hi, glm::vec3(p));
+            }
+        if (lo.x > hi.x) { return; }
+        std::vector<PhysicsWorld::RayPrimitive> primitives;
+        std::vector<PhysicsWorld::RayBounds> others;
+        m_PhysicsWorld->CollectRayPrimitives(lo - glm::vec3(1.0f), hi + glm::vec3(1.0f), PhysicsWorld::QueryFilter(), primitives, others);
+        std::vector<FluidCollider> colliders;
+        colliders.reserve(primitives.size());
+        for (const auto& p : primitives){
+            FluidCollider c;
+            using Type = PhysicsWorld::RayPrimitive::Type;
+            switch (p.type){
+                case Type::Box:      c.type = FluidCollider::Type::Box; c.size = p.halfExtents; c.radius = glm::length(p.halfExtents); break;
+                case Type::Sphere:   c.type = FluidCollider::Type::Sphere; c.size = glm::vec3(p.radius, 0, 0); c.radius = p.radius; break;
+                case Type::Capsule:  c.type = FluidCollider::Type::Capsule; c.size = glm::vec3(p.halfHeight, p.radius, 0); c.radius = p.halfHeight + p.radius; break;
+                case Type::Cylinder: c.type = FluidCollider::Type::Cylinder; c.size = glm::vec3(p.halfHeight, p.radius, 0);
+                                     c.radius = std::sqrt(p.halfHeight * p.halfHeight + p.radius * p.radius); break;
+            }
+            c.inverse = glm::inverse(glm::translate(glm::mat4(1.0f), p.position) * glm::mat4_cast(p.rotation));
+            c.center = p.position;
+            c.body = p.body;
+            c.dynamic = m_PhysicsWorld->IsDynamic(p.body);
+            colliders.push_back(c);
+        }
+
+        std::vector<ParticleFluid::BodyImpulse> impulses;
+        for (ParticleFluid* fluid : fluids){
+            fluid->UseOpenCL(ParticleFluid::DefaultOpenCL() && fluid->Count() >= ParticleFluid::minDeviceParticles);
+            fluid->Step(dt, colliders, impulses);
+            for (const auto& impulse : impulses)
+                m_PhysicsWorld->ApplyImpulseAtPoint(impulse.body, impulse.impulse, impulse.point);
+        }
+
+        // Particles in a pool's water become part of it: each leaves a dip (its volume,
+        // deeper the faster it came) that spreads as ripples.
+        auto pools = m_Registry.view<PoolComponent, TransformComponent>();
+        for (ParticleFluid* fluid : fluids){
+            const float d = fluid->GetSettings().spacing;
+            for (auto pEntity : pools){
+                auto& pool = pools.get<PoolComponent>(pEntity);
+                if (!pool.water) { continue; }
+                const auto& pt = pools.get<TransformComponent>(pEntity);
+                PoolWater& water = *pool.water;
+                const glm::vec2 half = pool.size * 0.5f;
+                const float cellArea = (pool.size.x / (water.Grid().GetWidth() - 1)) * (pool.size.y / (water.Grid().GetHeight() - 1));
+                const float column = d * d * d / cellArea;
+                fluid->Filter([&](int i){
+                    const glm::vec3 local = WorldToPool(pt, glm::vec3(fluid->Positions()[i]));
+                    if (std::abs(local.x) >= half.x || std::abs(local.z) >= half.y || local.y < pool.Floor()) { return true; }
+                    if (local.y >= pool.WaterLevel() + water.SurfaceHeight(local.x, local.z)) { return true; }
+                    const float speed = glm::length(glm::vec3(fluid->Velocities()[i]));
+                    const glm::ivec2 cell = water.CellAt(local.x, local.z);
+                    water.Grid().AddHeight(cell.x, cell.y, -column * pool.waveStrength * (1.0f + 0.3f * speed));
+                    return false;
+                });
+            }
+        }
+    }
+
+    void Scene::RebuildTerrainBody(entt::entity entity){
+        if (!m_PhysicsWorld || !m_Registry.all_of<TerrainComponent, TransformComponent>(entity)) { return; }
+        auto& terrain = m_Registry.get<TerrainComponent>(entity);
+        if (terrain.runtimeBodyID != PhysicsWorld::InvalidBody){
+            m_PhysicsWorld->RemoveBody(terrain.runtimeBodyID);
+            m_BodyToEntity.erase(terrain.runtimeBodyID);
+            terrain.runtimeBodyID = PhysicsWorld::InvalidBody;
+        }
+        terrain.dirty = true;
+        CreateTerrainBody(entity);
+    }
+
     void Scene::OnRuntimeStart(){
         PhysicsWorld::Settings settings;
         settings.gravity = m_Simulation.gravity;
@@ -419,26 +842,15 @@ namespace Phoenix{
         for (auto entity : bodies) { CreateRuntimeBody(entity); }
 
         // Terrain: static triangle-mesh collider from the heightfield.
-        auto terrainView = m_Registry.view<TerrainComponent, TransformComponent>();
-        for (auto entity : terrainView){
-            auto& terrain = terrainView.get<TerrainComponent>(entity);
-            if (!terrain.generateCollider) { continue; }
-            if (terrain.dirty || !terrain.mesh){
-                terrain.mesh = BuildTerrainMesh(terrain);
-                terrain.dirty = false;
-            }
-            auto& transform = terrainView.get<TransformComponent>(entity);
-            PhysicsWorld::ShapeDesc d;
-            d.type = PhysicsWorld::ShapeDesc::Type::TriangleMesh;
-            d.points.reserve(terrain.mesh->GetPositions().size());
-            for (const auto& p : terrain.mesh->GetPositions()) { d.points.push_back(p * transform.Scale); }
-            d.indices = terrain.mesh->GetIndices();
-            PhysicsWorld::BodyProps props;
-            props.friction = 0.8f;
-            terrain.runtimeBodyID = m_PhysicsWorld->CreateBody({ d }, transform.Translation, transform.Rotation,
-                PhysicsWorld::BodyType::Static, props);
-            if (terrain.runtimeBodyID != PhysicsWorld::InvalidBody) { m_BodyToEntity[terrain.runtimeBodyID] = entity; }
-        }
+        std::vector<entt::entity> terrains;
+        for (auto entity : m_Registry.view<TerrainComponent, TransformComponent>()) { terrains.push_back(entity); }
+        for (auto entity : terrains) { CreateTerrainBody(entity); }
+
+        // Pools: a static compound of floor and walls; the water starts at rest.
+        std::vector<entt::entity> pools;
+        for (auto entity : m_Registry.view<PoolComponent, TransformComponent>()) { pools.push_back(entity); }
+        for (auto entity : pools) { CreatePoolBody(entity); }
+        ResetFluids();
 
         // Characters: kinematic capsules driven by input, not by the solver.
         auto characterView = m_Registry.view<CharacterControllerComponent, TransformComponent>();
@@ -706,6 +1118,8 @@ namespace Phoenix{
             m_Registry.get<RigidBodyComponent>(entity).runtimeBodyID = PhysicsWorld::InvalidBody;
         for (auto entity : m_Registry.view<TerrainComponent>())
             m_Registry.get<TerrainComponent>(entity).runtimeBodyID = PhysicsWorld::InvalidBody;
+        for (auto entity : m_Registry.view<PoolComponent>())
+            m_Registry.get<PoolComponent>(entity).runtimeBodyID = PhysicsWorld::InvalidBody;
         for (auto entity : m_Registry.view<RigidBodyComponent>())
             m_Registry.get<RigidBodyComponent>(entity).synced = false;
         for (auto entity : m_Registry.view<JointComponent>())
@@ -982,6 +1396,14 @@ namespace Phoenix{
             float waves = std::max(water->amplitude * 2.0f, 0.05f);
             include({ -half, -waves, -half }, { half, waves, half });
         }
+        if (auto* pool = registry.try_get<PoolComponent>(entity)){
+            glm::vec2 half = pool->size * 0.5f + pool->coping;
+            include({ -half.x, -pool->depth, -half.y }, { half.x, 0.0f, half.y });
+        }
+        if (auto* fluid = registry.try_get<FluidComponent>(entity)){
+            glm::vec3 half = glm::max(fluid->blockSize * 0.5f, glm::vec3(fluid->nozzleRadius, 0.05f, fluid->nozzleRadius));
+            include(-half, half);
+        }
 
         if (lo.x > hi.x) { return false; }
         // Pad flat shapes (planes, flat terrain) so the slab test stays robust.
@@ -1195,6 +1617,8 @@ namespace Phoenix{
                 m_PhysicsWorld->MoveKinematic(rb.runtimeBodyID, transform.Translation, transform.Rotation, h * (steps - step));
             }
             ApplyWaterCoupling(h);
+            UpdatePools(h);
+            UpdateFluids(h);
             UpdateCharactersPreStep(h);
             ApplyForceFields();
 
@@ -1541,6 +1965,47 @@ namespace Phoenix{
                              emissivePrimitives.get<TransformComponent>(entity).Translation);
         }
 
+        // Pools: resources, edit-mode waves (play mode steps them with physics), and the
+        // render inputs every pass below shares.
+        struct PoolDraw{
+            PoolComponent* pool;
+            const TransformComponent* transform;
+            Renderer::PoolParams params;
+        };
+        std::vector<PoolDraw> poolDraws;
+        {
+            auto pools = m_Registry.view<PoolComponent, TransformComponent>();
+            for (auto entity : pools){
+                auto& pool = pools.get<PoolComponent>(entity);
+                const auto& transform = pools.get<TransformComponent>(entity);
+                EnsurePoolResources(pool);
+                if (!IsRunning()) { pool.water->Step(std::min((float)ts, 0.1f), pool.waveSpeed, pool.waveDamping); }
+                pool.water->Upload();
+
+                Renderer::PoolParams p;
+                p.model = PoolModel(transform);
+                p.size = pool.size;
+                p.depth = pool.depth;
+                p.waterLevel = pool.WaterLevel();
+                const int gw = pool.water->Grid().GetWidth(), gh = pool.water->Grid().GetHeight();
+                p.spacing = { pool.size.x / (gw - 1), pool.size.y / (gh - 1) };
+                p.tileColor = pool.tileColor;
+                p.groutColor = pool.groutColor;
+                p.tileSize = pool.tileSize;
+                p.waterColor = pool.waterColor;
+                p.clarity = pool.clarity;
+                p.causticStrength = pool.causticStrength;
+                p.lightDir = lightDir;
+                p.sunColor = numDirLights > 0 ? dirLightComp[0].diffuse : glm::vec3(0.0f);
+                p.ambient = m_AmbientColor;
+                p.heightTexture = pool.water->GetHeightTexture();
+                p.causticsTexture = pool.water->GetCausticsTexture();
+                p.causticsFramebuffer = pool.water->GetCausticsFramebuffer();
+                p.causticsSize = pool.water->GetCausticsSize();
+                poolDraws.push_back({ &pool, &transform, p });
+            }
+        }
+
         // Shadow passes: render scene depth from each shadow-casting light into its tile
         // of the shadow atlases (directional: one tile; point: six cube-face tiles), all
         // before the main lighting pass.
@@ -1624,6 +2089,13 @@ namespace Phoenix{
                                   subMesh->GetDiffuseMap(), subMesh->GetAlphaCutoff());
                 }
 
+                for (const auto& draw : poolDraws){
+                    glm::vec2 half = draw.pool->size * 0.5f + draw.pool->coping;
+                    glm::vec3 lo, hi;
+                    addBounds(draw.params.model, { -half.x, -draw.pool->depth, -half.y }, { half.x, 0.0f, half.y }, lo, hi);
+                    addCaster(draw.pool->shellMesh->GetVertexArray(), draw.params.model, nullptr, lo, hi);
+                }
+
                 auto terrains = m_Registry.view<TerrainComponent, TransformComponent>();
                 for (auto entity : terrains){
                     auto& terrain = terrains.get<TerrainComponent>(entity);
@@ -1694,6 +2166,10 @@ namespace Phoenix{
             }
         }
 
+        // Caustics under each pool's surface, before anything samples them.
+        for (const auto& draw : poolDraws)
+            Renderer::RenderPoolCaustics(draw.pool->surfaceMesh->GetVertexArray(), draw.params);
+
         {
             PHX_PROFILE("Scene Components");
             // The sun disc sits where the first directional light shines from.
@@ -1754,7 +2230,65 @@ namespace Phoenix{
                 Renderer::Submit(mesh->GetVertexArray(), primitive.material, transform.GetTransform());
             }
             Renderer::SetWireframe(false);
+
+            for (const auto& draw : poolDraws)
+                Renderer::SubmitPoolShell(draw.pool->shellMesh->GetVertexArray(), draw.params);
             Renderer::EndScene();
+        }
+
+        // Pool water: it refracts the opaque scene, so copy that first. With the camera
+        // in a pool's water, haze the whole view before drawing the surfaces.
+        if (!poolDraws.empty()){
+            Renderer::CaptureScene();
+            const PoolDraw* underwater = nullptr;
+            for (const auto& draw : poolDraws){
+                glm::vec3 local = WorldToPool(*draw.transform, cameraPos);
+                const glm::vec2 half = draw.pool->size * 0.5f;
+                if (std::abs(local.x) < half.x && std::abs(local.z) < half.y && local.y > draw.pool->Floor()
+                    && local.y < draw.pool->WaterLevel() + draw.pool->water->SurfaceHeight(local.x, local.z)){
+                    underwater = &draw;
+                }
+            }
+            if (underwater){
+                Renderer::DrawPoolUnderwater(underwater->params, underwater->transform->Translation.y + underwater->pool->WaterLevel());
+            }
+            for (const auto& draw : poolDraws)
+                Renderer::SubmitPoolWater(draw.pool->surfaceMesh->GetVertexArray(), draw.params, &draw == underwater);
+        }
+
+        // Particle liquids and pool spray, over everything opaque and the pools (they
+        // refract a fresh copy of it). In edit mode a fluid shows its starting block.
+        // Particles are drawn at 1.5x their radius so neighbours overlap into one surface.
+        {
+            struct FluidDraw{ const ParticleFluid* fluid; Renderer::FluidParams params; };
+            std::vector<FluidDraw> fluidDraws;
+            Renderer::FluidParams base;
+            base.lightDir = lightDir;
+            base.sunColor = numDirLights > 0 ? dirLightComp[0].diffuse : glm::vec3(0.0f);
+            base.ambient = m_AmbientColor;
+            for (auto entity : m_Registry.view<FluidComponent, TransformComponent>()){
+                auto& f = m_Registry.get<FluidComponent>(entity);
+                if (!IsRunning()) { RefillFluid(f, m_Registry.get<TransformComponent>(entity)); }
+                if (!f.fluid || f.fluid->Count() == 0) { continue; }
+                Renderer::FluidParams p = base;
+                p.radius = f.fluid->ParticleRadius() * 1.5f;
+                p.color = f.color;
+                p.clarity = f.clarity;
+                fluidDraws.push_back({ f.fluid.get(), p });
+            }
+            for (auto entity : m_Registry.view<PoolComponent>()){
+                auto& pool = m_Registry.get<PoolComponent>(entity);
+                if (!pool.sprayFluid || pool.sprayFluid->Count() == 0) { continue; }
+                Renderer::FluidParams p = base;
+                p.radius = pool.sprayFluid->ParticleRadius() * 1.5f;
+                p.color = glm::vec3(0.85f, 0.95f, 1.0f);
+                p.clarity = 1.0f;
+                fluidDraws.push_back({ pool.sprayFluid.get(), p });
+            }
+            if (!fluidDraws.empty()){
+                Renderer::CaptureScene();
+                for (const auto& draw : fluidDraws) { Renderer::RenderFluid(draw.fluid->Positions(), draw.params); }
+            }
         }
 
         // Transparent water surfaces (drawn after the opaque scene). The ripple sim
@@ -1947,6 +2481,14 @@ namespace Phoenix{
 
     template<>
 	void Scene::OnComponentAdded<WaterComponent>(Entity entity, WaterComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<PoolComponent>(Entity entity, PoolComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<FluidComponent>(Entity entity, FluidComponent& component){
 	}
 
     template<>

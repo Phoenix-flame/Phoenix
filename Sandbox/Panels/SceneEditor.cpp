@@ -5,6 +5,7 @@
 #include <Phoenix/imGui/ImGuiLayer.h>
 #include <Phoenix/Physics/Physics.h>
 #include <glm/gtc/type_ptr.hpp>
+#include <random>
 #include "EditorUI.h"
 #include "AIPrefabs.h"
 #include <Phoenix/AI/Environment.h>
@@ -95,6 +96,14 @@ namespace Phoenix{
         if (ImGui::MenuItem("Water")){
             m_SelectedEntity = m_ActiveScene->CreateEntity("Water");
             m_SelectedEntity.AddComponent<WaterComponent>();
+        }
+        if (ImGui::MenuItem("Pool")){
+            m_SelectedEntity = m_ActiveScene->CreateEntity("Pool");
+            m_SelectedEntity.AddComponent<PoolComponent>();
+        }
+        if (ImGui::MenuItem("Particle Fluid")){
+            m_SelectedEntity = m_ActiveScene->CreateEntity("Fluid");
+            m_SelectedEntity.AddComponent<FluidComponent>();
         }
     }
 
@@ -384,7 +393,7 @@ namespace Phoenix{
             dl->AddTriangleFilled(ImVec2(c.x - r, c.y + r * 0.7f), ImVec2(c.x - r * 0.15f, c.y - r * 0.8f), ImVec2(c.x + r * 0.7f, c.y + r * 0.7f), col);
             dl->AddTriangleFilled(ImVec2(c.x, c.y + r * 0.7f), ImVec2(c.x + r * 0.55f, c.y - r * 0.2f), ImVec2(c.x + r * 1.1f, c.y + r * 0.7f), col);
         }
-        else if (entity.HasComponent<WaterComponent>()){
+        else if (entity.HasComponent<WaterComponent>() || entity.HasComponent<PoolComponent>() || entity.HasComponent<FluidComponent>()){
             ImU32 col = IM_COL32(90, 200, 230, 255);
             for (int row = 0; row < 2; row++){
                 float y = c.y - r * 0.3f + row * r * 0.75f;
@@ -1465,6 +1474,115 @@ namespace Phoenix{
 				std::fill(component.heights.begin(), component.heights.end(), 0.0f);
 				component.dirty = true;
 			}
+			if (ImGui::TreeNode("Generate from Noise")){
+				TerrainNoise& noise = component.noise;
+				int seed = (int)noise.seed;
+				if (ImGui::InputInt("Seed", &seed)) { noise.seed = (uint32_t)seed; }
+				ImGui::DragFloat("Frequency", &noise.frequency, 0.001f, 0.001f, 2.0f, "%.3f");
+				if (ImGui::IsItemHovered()) ImGui::SetTooltip("Features per world unit: lower = broader hills.");
+				ImGui::SliderInt("Octaves", &noise.octaves, 1, 10);
+				ImGui::DragFloat("Height", &noise.height, 0.05f, 0.0f, 200.0f, "%.2f");
+				ImGui::SliderFloat("Persistence", &noise.persistence, 0.0f, 1.0f, "%.2f");
+				if (ImGui::IsItemHovered()) ImGui::SetTooltip("How much each finer octave keeps: higher = rougher.");
+				ImGui::DragFloat("Lacunarity", &noise.lacunarity, 0.01f, 1.0f, 4.0f, "%.2f");
+				ImGui::SliderFloat("Ridged", &noise.ridged, 0.0f, 1.0f, "%.2f");
+				if (ImGui::IsItemHovered()) ImGui::SetTooltip("0 = rolling hills, 1 = sharp ridges and valleys.");
+				bool generate = ImGui::Button("Generate");
+				ImGui::SameLine();
+				if (ImGui::Button("New Seed")){
+					noise.seed = std::random_device{}();
+					generate = true;
+				}
+				if (generate){
+					TerrainGenerator::Generate(component.resolution, component.size, noise, component.heights);
+					component.dirty = true;
+				}
+				ImGui::Checkbox("New Terrain Every Episode", &component.randomizeEachEpisode);
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("Domain randomization: each RL episode regenerates the heights with a\n"
+					                  "fresh seed (from Settings > Simulation > Random Seed). Agents keep their\n"
+					                  "edit-time poses, so keep spawn areas clear of tall terrain.");
+				ImGui::TreePop();
+			}
+		});
+
+		DrawComponent<PoolComponent>("Pool", entity, [](PoolComponent& component){
+			// Shape changes rebuild the basin (and, on the next Play, its collider).
+			bool shape = false;
+			shape |= ImGui::DragFloat2("Size", glm::value_ptr(component.size), 0.05f, 0.5f, 100.0f, "%.2f m");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Inner width (X) and length (Z). The entity's origin is the centre of the rim.");
+			shape |= ImGui::DragFloat("Depth", &component.depth, 0.02f, 0.2f, 20.0f, "%.2f m");
+			shape |= ImGui::DragFloat("Freeboard", &component.freeboard, 0.01f, 0.0f, 2.0f, "%.2f m");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Rim down to the still water surface.");
+			shape |= ImGui::DragFloat("Coping", &component.coping, 0.01f, 0.05f, 2.0f, "%.2f m");
+			if (shape) { component.dirty = true; }
+
+			ImGui::Separator();
+			ImGui::TextDisabled("Waves");
+			ImGui::DragFloat("Cell Size", &component.cellSize, 0.002f, 0.01f, 0.5f, "%.3f m");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Simulation resolution: smaller = finer ripples, more work\n"
+			                                              "(large grids can run on the GPU: Settings > OpenCL > Water Ripples).");
+			ImGui::DragFloat("Wave Speed", &component.waveSpeed, 0.02f, 0.05f, 10.0f, "%.2f m/s");
+			ImGui::DragFloat("Damping", &component.waveDamping, 0.01f, 0.0f, 10.0f, "%.2f /s");
+			ImGui::SliderFloat("Wave Strength", &component.waveStrength, 0.0f, 1.0f, "%.2f");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Share of the water a body pushes aside that becomes waves.");
+			ImGui::Checkbox("Bodies Make Waves", &component.interactive);
+
+			ImGui::Separator();
+			ImGui::TextDisabled("Look");
+			ImGui::ColorEdit3("Tiles", glm::value_ptr(component.tileColor));
+			ImGui::ColorEdit3("Grout", glm::value_ptr(component.groutColor));
+			ImGui::DragFloat("Tile Size", &component.tileSize, 0.005f, 0.02f, 2.0f, "%.3f m");
+			ImGui::ColorEdit3("Water Colour", glm::value_ptr(component.waterColor));
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Light the water scatters back: the colour of a deep or murky view.");
+			ImGui::DragFloat("Clarity", &component.clarity, 0.1f, 0.5f, 200.0f, "%.1f m");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("How far one sees under water (a clean pool: 20-30 m).");
+			ImGui::SliderFloat("Caustics", &component.causticStrength, 0.0f, 2.0f, "%.2f");
+
+			ImGui::Separator();
+			ImGui::TextDisabled("Physics (while playing)");
+			ImGui::SliderFloat("Water Density", &component.buoyancy, 0.0f, 3.0f);
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("In units of 1000 kg/m3 (1 = real water). 0 disables buoyancy.");
+			ImGui::SliderFloat("Linear Drag", &component.linearDrag, 0.0f, 3.0f);
+			ImGui::SliderFloat("Angular Drag", &component.angularDrag, 0.0f, 3.0f);
+			ImGui::Checkbox("Basin Collider", &component.generateCollider);
+			ImGui::Checkbox("Spray", &component.spray);
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Bodies hitting the water fast throw up droplets (particle fluid).");
+			if (component.spray) { ImGui::SliderFloat("Spray Amount", &component.sprayAmount, 0.0f, 3.0f, "%.2f"); }
+		});
+
+		DrawComponent<FluidComponent>("Particle Fluid", entity, [](FluidComponent& component){
+			ImGui::Checkbox("Starting Block", &component.fillBlock);
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Liquid filling an axis-aligned box at the entity when Play starts (and every RL episode).");
+			if (component.fillBlock) { ImGui::DragFloat3("Block Size", glm::value_ptr(component.blockSize), 0.02f, 0.0f, 50.0f, "%.2f m"); }
+			ImGui::Checkbox("Pour", &component.pour);
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("A stream from the entity along its local -Y (rotate the entity to aim it).");
+			if (component.pour){
+				ImGui::DragFloat("Pour Speed", &component.pourSpeed, 0.05f, 0.1f, 30.0f, "%.2f m/s");
+				ImGui::DragFloat("Nozzle Radius", &component.nozzleRadius, 0.005f, 0.0f, 2.0f, "%.3f m");
+			}
+			ImGui::Separator();
+			ImGui::TextDisabled("Simulation");
+			ImGui::DragFloat("Particle Size", &component.spacing, 0.002f, 0.01f, 0.5f, "%.3f m");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Spacing at rest. Halving it means 8x the particles for the same volume.");
+			ImGui::DragInt("Max Particles", &component.maxParticles, 100.0f, 100, 200000);
+			if (component.fluid){
+				ImGui::SameLine();
+				ImGui::TextDisabled("%d live", component.fluid->Count());
+			}
+			ImGui::SliderInt("Iterations", &component.iterations, 1, 10);
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Density solver passes per step: more = less compressible, slower.");
+			ImGui::SliderFloat("Viscosity", &component.viscosity, 0.0f, 0.3f, "%.3f");
+			ImGui::SliderFloat("Surface Tension", &component.surfaceTension, 0.0f, 5.0f, "%.2f");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Holds streams, sheets and drops together.");
+			ImGui::SliderFloat("Anti-Clumping", &component.cohesion, 0.0f, 0.5f, "%.3f");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Keeps particles from bunching up (PBF's artificial pressure).");
+			ImGui::SliderFloat("Wall Friction", &component.friction, 0.0f, 1.0f, "%.2f");
+			ImGui::DragFloat("Lifetime", &component.lifetime, 0.1f, 0.0f, 600.0f, component.lifetime > 0.0f ? "%.1f s" : "forever");
+			ImGui::Separator();
+			ImGui::TextDisabled("Look");
+			ImGui::ColorEdit3("Colour", glm::value_ptr(component.color));
+			ImGui::DragFloat("Clarity", &component.clarity, 0.05f, 0.05f, 100.0f, "%.2f m");
 		});
 
 		DrawComponent<WaterComponent>("Water", entity, [](WaterComponent& component){
@@ -1479,6 +1597,19 @@ namespace Phoenix{
 			ImGui::Separator();
 			ImGui::Checkbox("Interactive Ripples", &component.interactiveRipples);
 			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Simulated splash/wake ripples from physics bodies.");
+			if (component.interactiveRipples){
+				const int sizes[] = { 64, 128, 256, 512, 1024 };
+				const char* labels[] = { "64 x 64", "128 x 128", "256 x 256", "512 x 512", "1024 x 1024" };
+				int current = 1;
+				for (int i = 0; i < 5; i++) { if (sizes[i] == component.rippleResolution) { current = i; } }
+				if (ImGui::Combo("Ripple Resolution", &current, labels, 5)){
+					component.rippleResolution = sizes[current];
+					component.ripples.reset(); // rebuilt at the new size next frame
+				}
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("Cells per side of the ripple simulation: finer wakes cost more.\n"
+					                  "512 and up can run on the GPU (Settings > OpenCL > Water Ripples).");
+			}
 			ImGui::Separator();
 			ImGui::TextDisabled("Physics coupling (while playing):");
 			ImGui::SliderFloat("Water Density", &component.buoyancy, 0.0f, 3.0f);

@@ -278,6 +278,50 @@ namespace Phoenix{
 		static void SubmitWater(const Ref<VertexArray>& vertexArray, const glm::mat4& transform,
 			const WaterParams& params);
 
+		// Pools (PoolComponent): the basin, its caustics, the water surface and the
+		// underwater view. Order per frame: RenderPoolCaustics before the scene pass,
+		// SubmitPoolShell in it, then after EndScene: CaptureScene once, DrawPoolUnderwater
+		// if the camera is in a pool's water, and SubmitPoolWater for every pool.
+		struct PoolParams{
+			glm::mat4 model = glm::mat4(1.0f);   // rim centre and yaw
+			glm::vec2 size = glm::vec2(8.0f, 5.0f);
+			float depth = 2.0f;
+			float waterLevel = -0.2f;            // still surface, local y
+			glm::vec2 spacing = glm::vec2(0.05f); // between simulation vertices (x, z)
+			glm::vec3 tileColor = glm::vec3(0.86f, 0.93f, 0.97f);
+			glm::vec3 groutColor = glm::vec3(0.55f, 0.66f, 0.72f);
+			float tileSize = 0.25f;
+			glm::vec3 waterColor = glm::vec3(0.12f, 0.55f, 0.68f);
+			float clarity = 25.0f;               // metres one can see under water
+			float causticStrength = 0.8f;
+			glm::vec3 lightDir = glm::vec3(0.0f, -1.0f, 0.0f); // direction sunlight travels (world)
+			glm::vec3 sunColor = glm::vec3(1.0f);
+			glm::vec3 ambient = glm::vec3(0.2f);
+			uint32_t heightTexture = 0;          // R32F surface offsets (PoolWater)
+			uint32_t causticsTexture = 0, causticsFramebuffer = 0;
+			glm::ivec2 causticsSize = glm::ivec2(512);
+		};
+		static void RenderPoolCaustics(const Ref<VertexArray>& surface, const PoolParams& params);
+		static void SubmitPoolShell(const Ref<VertexArray>& shell, const PoolParams& params);
+		// Copies the colour and depth rendered so far into textures the water reads.
+		static void CaptureScene();
+		// Underwater haze over the whole view; surfaceY is the still level in world space.
+		static void DrawPoolUnderwater(const PoolParams& params, float surfaceY);
+		static void SubmitPoolWater(const Ref<VertexArray>& surface, const PoolParams& params, bool cameraUnderwater);
+
+		// Particle liquids (FluidComponent, pool spray) drawn as one smooth surface each
+		// (screen-space fluid rendering). Call after CaptureScene: the liquid refracts that
+		// copy and is hidden behind its depth.
+		struct FluidParams{
+			float radius = 0.025f;                              // particle radius
+			glm::vec3 color = glm::vec3(0.55f, 0.82f, 0.95f);   // tint of thick liquid
+			float clarity = 2.0f;                               // metres before most light is absorbed
+			glm::vec3 lightDir = glm::vec3(0.0f, -1.0f, 0.0f);
+			glm::vec3 sunColor = glm::vec3(1.0f);
+			glm::vec3 ambient = glm::vec3(0.2f);
+		};
+		static void RenderFluid(const std::vector<glm::vec4>& positions, const FluidParams& params);
+
 		// Linear lighting (opt-in; off keeps the original look). When on, colour textures
 		// are sampled through their sRGB views, colours picked in the editor (materials,
 		// lights, ambient, water, gizmos) are converted from sRGB to linear before shading,
@@ -301,6 +345,29 @@ namespace Phoenix{
         static Scope<RenderDirLightGizmo> s_DirLightGizmo;
         static Ref<Shader> s_OutlineShader;
         static Ref<Shader> s_WaterShader;
+        static Ref<Shader> s_PoolShellShader, s_PoolWaterShader, s_PoolCausticsShader, s_PoolUnderwaterShader;
+
+        // Copy of the scene's colour and depth (CaptureScene), formats matching the target.
+        struct SceneCopy{
+            uint32_t fbo = 0, color = 0, depth = 0, emptyVAO = 0;
+            int width = 0, height = 0;
+            int colorFormat = 0;
+        };
+        static SceneCopy s_SceneCopy;
+
+        // Screen-space fluid targets (the scene copy's size) and the particle buffer.
+        static Ref<Shader> s_FluidParticleShader, s_FluidSmoothShader, s_FluidCompositeShader;
+        struct FluidTargets{
+            uint32_t depthFBO = 0, depthTex = 0, depthBuffer = 0;      // pass 1: sphere depth
+            uint32_t blurFBO = 0, blurTex = 0;                          // pass 3 ping-pong
+            uint32_t thickFBO = 0, thickTex = 0;                        // pass 2
+            uint32_t vao = 0, vbo = 0;
+            size_t capacity = 0;
+            int width = 0, height = 0;
+        };
+        static FluidTargets s_FluidTargets;
+        // Binds the sun's shadow (directional light 0) for a shader that declares it.
+        static void BindSunShadow(const Ref<Shader>& shader);
 
         // Shadow maps are packed into two depth-texture ATLASES (directional: one tile
         // per light; point: six face tiles per light). The fragment shader picks a tile by

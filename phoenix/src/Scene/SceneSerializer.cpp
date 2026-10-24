@@ -509,6 +509,16 @@ namespace Phoenix{
             out << YAML::Key << "Resolution" << YAML::Value << t.resolution;
             out << YAML::Key << "Size" << YAML::Value << t.size;
             out << YAML::Key << "GenerateCollider" << YAML::Value << t.generateCollider;
+            out << YAML::Key << "Noise" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "Seed" << YAML::Value << t.noise.seed;
+            out << YAML::Key << "Frequency" << YAML::Value << t.noise.frequency;
+            out << YAML::Key << "Octaves" << YAML::Value << t.noise.octaves;
+            out << YAML::Key << "Height" << YAML::Value << t.noise.height;
+            out << YAML::Key << "Persistence" << YAML::Value << t.noise.persistence;
+            out << YAML::Key << "Lacunarity" << YAML::Value << t.noise.lacunarity;
+            out << YAML::Key << "Ridged" << YAML::Value << t.noise.ridged;
+            out << YAML::EndMap;
+            out << YAML::Key << "RandomizeEachEpisode" << YAML::Value << t.randomizeEachEpisode;
             SerializeMaterial(out, t.material);
             out << YAML::Key << "Heights" << YAML::Value << YAML::Flow << YAML::BeginSeq;
             for (float h : t.heights) { out << h; }
@@ -533,6 +543,54 @@ namespace Phoenix{
             out << YAML::Key << "Buoyancy" << YAML::Value << w.buoyancy;
             out << YAML::Key << "LinearDrag" << YAML::Value << w.linearDrag;
             out << YAML::Key << "AngularDrag" << YAML::Value << w.angularDrag;
+            out << YAML::EndMap;
+        }
+
+        if (entity.HasComponent<PoolComponent>()){
+            auto& p = entity.GetComponent<PoolComponent>();
+            out << YAML::Key << "PoolComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "Size" << YAML::Value << YAML::Flow << YAML::BeginSeq << p.size.x << p.size.y << YAML::EndSeq;
+            out << YAML::Key << "Depth" << YAML::Value << p.depth;
+            out << YAML::Key << "Freeboard" << YAML::Value << p.freeboard;
+            out << YAML::Key << "Coping" << YAML::Value << p.coping;
+            out << YAML::Key << "CellSize" << YAML::Value << p.cellSize;
+            out << YAML::Key << "WaveSpeed" << YAML::Value << p.waveSpeed;
+            out << YAML::Key << "WaveDamping" << YAML::Value << p.waveDamping;
+            out << YAML::Key << "WaveStrength" << YAML::Value << p.waveStrength;
+            out << YAML::Key << "Interactive" << YAML::Value << p.interactive;
+            out << YAML::Key << "TileColor" << YAML::Value << p.tileColor;
+            out << YAML::Key << "GroutColor" << YAML::Value << p.groutColor;
+            out << YAML::Key << "TileSize" << YAML::Value << p.tileSize;
+            out << YAML::Key << "WaterColor" << YAML::Value << p.waterColor;
+            out << YAML::Key << "Clarity" << YAML::Value << p.clarity;
+            out << YAML::Key << "CausticStrength" << YAML::Value << p.causticStrength;
+            out << YAML::Key << "Buoyancy" << YAML::Value << p.buoyancy;
+            out << YAML::Key << "LinearDrag" << YAML::Value << p.linearDrag;
+            out << YAML::Key << "AngularDrag" << YAML::Value << p.angularDrag;
+            out << YAML::Key << "GenerateCollider" << YAML::Value << p.generateCollider;
+            out << YAML::Key << "Spray" << YAML::Value << p.spray;
+            out << YAML::Key << "SprayAmount" << YAML::Value << p.sprayAmount;
+            out << YAML::EndMap;
+        }
+
+        if (entity.HasComponent<FluidComponent>()){
+            auto& f = entity.GetComponent<FluidComponent>();
+            out << YAML::Key << "FluidComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "FillBlock" << YAML::Value << f.fillBlock;
+            out << YAML::Key << "BlockSize" << YAML::Value << f.blockSize;
+            out << YAML::Key << "Pour" << YAML::Value << f.pour;
+            out << YAML::Key << "PourSpeed" << YAML::Value << f.pourSpeed;
+            out << YAML::Key << "NozzleRadius" << YAML::Value << f.nozzleRadius;
+            out << YAML::Key << "Spacing" << YAML::Value << f.spacing;
+            out << YAML::Key << "MaxParticles" << YAML::Value << f.maxParticles;
+            out << YAML::Key << "Iterations" << YAML::Value << f.iterations;
+            out << YAML::Key << "Viscosity" << YAML::Value << f.viscosity;
+            out << YAML::Key << "Cohesion" << YAML::Value << f.cohesion;
+            out << YAML::Key << "Friction" << YAML::Value << f.friction;
+            out << YAML::Key << "SurfaceTension" << YAML::Value << f.surfaceTension;
+            out << YAML::Key << "Lifetime" << YAML::Value << f.lifetime;
+            out << YAML::Key << "Color" << YAML::Value << f.color;
+            out << YAML::Key << "Clarity" << YAML::Value << f.clarity;
             out << YAML::EndMap;
         }
 
@@ -984,6 +1042,17 @@ namespace Phoenix{
             t.resolution = n["Resolution"].as<int>(def.resolution);
             t.size = n["Size"].as<float>(def.size);
             t.generateCollider = n["GenerateCollider"].as<bool>(def.generateCollider);
+            t.noise = def.noise;
+            if (const YAML::Node noise = n["Noise"]){   // absent in older scene files
+                t.noise.seed = noise["Seed"].as<uint32_t>(def.noise.seed);
+                t.noise.frequency = noise["Frequency"].as<float>(def.noise.frequency);
+                t.noise.octaves = noise["Octaves"].as<int>(def.noise.octaves);
+                t.noise.height = noise["Height"].as<float>(def.noise.height);
+                t.noise.persistence = noise["Persistence"].as<float>(def.noise.persistence);
+                t.noise.lacunarity = noise["Lacunarity"].as<float>(def.noise.lacunarity);
+                t.noise.ridged = noise["Ridged"].as<float>(def.noise.ridged);
+            }
+            t.randomizeEachEpisode = n["RandomizeEachEpisode"].as<bool>(def.randomizeEachEpisode);
             t.material = ReadMaterial(n["Material"]);
             t.heights.clear();
             for (auto h : n["Heights"]) { t.heights.push_back(h.as<float>()); }
@@ -1013,6 +1082,59 @@ namespace Phoenix{
             w.mesh = nullptr;
         }
         else if (entity.HasComponent<WaterComponent>()) entity.RemoveComponent<WaterComponent>();
+
+        if (auto n = node["PoolComponent"]){
+            auto& p = entity.HasComponent<PoolComponent>() ? entity.GetComponent<PoolComponent>() : entity.AddComponent<PoolComponent>();
+            const PoolComponent def{}; // fallbacks for keys missing from the file
+            const YAML::Node size = n["Size"];
+            p.size = (size && size.IsSequence() && size.size() == 2)
+                ? glm::vec2(size[0].as<float>(def.size.x), size[1].as<float>(def.size.y)) : def.size;
+            p.depth = n["Depth"].as<float>(def.depth);
+            p.freeboard = n["Freeboard"].as<float>(def.freeboard);
+            p.coping = n["Coping"].as<float>(def.coping);
+            p.cellSize = n["CellSize"].as<float>(def.cellSize);
+            p.waveSpeed = n["WaveSpeed"].as<float>(def.waveSpeed);
+            p.waveDamping = n["WaveDamping"].as<float>(def.waveDamping);
+            p.waveStrength = n["WaveStrength"].as<float>(def.waveStrength);
+            p.interactive = n["Interactive"].as<bool>(def.interactive);
+            p.tileColor = ReadVec3(n["TileColor"], def.tileColor);
+            p.groutColor = ReadVec3(n["GroutColor"], def.groutColor);
+            p.tileSize = n["TileSize"].as<float>(def.tileSize);
+            p.waterColor = ReadVec3(n["WaterColor"], def.waterColor);
+            p.clarity = n["Clarity"].as<float>(def.clarity);
+            p.causticStrength = n["CausticStrength"].as<float>(def.causticStrength);
+            p.buoyancy = n["Buoyancy"].as<float>(def.buoyancy);
+            p.linearDrag = n["LinearDrag"].as<float>(def.linearDrag);
+            p.angularDrag = n["AngularDrag"].as<float>(def.angularDrag);
+            p.generateCollider = n["GenerateCollider"].as<bool>(def.generateCollider);
+            p.spray = n["Spray"].as<bool>(def.spray);
+            p.sprayAmount = n["SprayAmount"].as<float>(def.sprayAmount);
+            p.water = nullptr;
+            p.dirty = true;
+        }
+        else if (entity.HasComponent<PoolComponent>()) entity.RemoveComponent<PoolComponent>();
+
+        if (auto n = node["FluidComponent"]){
+            auto& f = entity.HasComponent<FluidComponent>() ? entity.GetComponent<FluidComponent>() : entity.AddComponent<FluidComponent>();
+            const FluidComponent def{}; // fallbacks for keys missing from the file
+            f.fillBlock = n["FillBlock"].as<bool>(def.fillBlock);
+            f.blockSize = ReadVec3(n["BlockSize"], def.blockSize);
+            f.pour = n["Pour"].as<bool>(def.pour);
+            f.pourSpeed = n["PourSpeed"].as<float>(def.pourSpeed);
+            f.nozzleRadius = n["NozzleRadius"].as<float>(def.nozzleRadius);
+            f.spacing = n["Spacing"].as<float>(def.spacing);
+            f.maxParticles = n["MaxParticles"].as<int>(def.maxParticles);
+            f.iterations = n["Iterations"].as<int>(def.iterations);
+            f.viscosity = n["Viscosity"].as<float>(def.viscosity);
+            f.cohesion = n["Cohesion"].as<float>(def.cohesion);
+            f.friction = n["Friction"].as<float>(def.friction);
+            f.surfaceTension = n["SurfaceTension"].as<float>(def.surfaceTension);
+            f.lifetime = n["Lifetime"].as<float>(def.lifetime);
+            f.color = ReadVec3(n["Color"], def.color);
+            f.clarity = n["Clarity"].as<float>(def.clarity);
+            f.fluid = nullptr;
+        }
+        else if (entity.HasComponent<FluidComponent>()) entity.RemoveComponent<FluidComponent>();
 
         if (auto n = node["AnimationComponent"]){
             auto& a = entity.HasComponent<AnimationComponent>() ? entity.GetComponent<AnimationComponent>() : entity.AddComponent<AnimationComponent>();

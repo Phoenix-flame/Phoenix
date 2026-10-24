@@ -91,6 +91,8 @@ private:
     void BuildShowcaseScene();
     // Populate m_Scene with the terrain-lake + water showcase.
     void BuildWaterShowcase();
+    void BuildPoolShowcase();
+    void BuildFluidShowcase();
     // Populate m_Scene with the skeletal-animation (walking robot) showcase.
     void BuildRobotShowcase();
     // Populate m_Scene with the multi-light shadow showcase (3 coloured suns).
@@ -202,7 +204,8 @@ private:
     int m_BridgeFailedPort = 0; // don't retry a port that failed to bind every frame
     float m_TimeScale = 1.0f;
     bool m_MaxSpeed = false;
-    bool m_GpuRaySensors = false;   // Ray Sensor zone tests on OpenCL
+    bool m_GpuRaySensors = false;   // batched Ray Sensors (OpenCL when available)
+    bool m_ComputeStatusQueried = false;
     bool m_RenderAtMaxSpeed = true;
     bool m_Paused = false;
     bool m_OpenGuide = false;
