@@ -141,6 +141,10 @@ uniform float u_Reflectivity;
 uniform sampler2D u_DiffuseMap;
 uniform bool u_HasDiffuseMap;
 
+// Cut-out materials (foliage, chains): fragments whose diffuse alpha is below this are
+// discarded. 0 = opaque.
+uniform float u_AlphaCutoff;
+
 // Optional tangent-space normal map ("depth"/surface detail). The tangent frame is
 // derived from screen-space derivatives, so no per-vertex tangents are needed.
 uniform sampler2D u_NormalMap;
@@ -379,7 +383,8 @@ void main()
     vec3 norm = normalize(Normal);
     if (u_HasNormalMap) { norm = PerturbNormal(norm, TexCoords); }
     vec3 viewDir = normalize(cameraPos - FragPos);
-    vec3 diffuseColor = u_HasDiffuseMap ? texture(u_DiffuseMap, TexCoords).rgb : material.diffuse;
+    vec4 diffuseSample = u_HasDiffuseMap ? texture(u_DiffuseMap, TexCoords) : vec4(material.diffuse, 1.0);
+    vec3 diffuseColor = diffuseSample.rgb;
 
     // global ambient
     vec3 result = u_Ambient * diffuseColor;
@@ -419,6 +424,10 @@ void main()
 
     // emissive / glow
     result += u_Emissive;
+
+    // Alpha test last: discarding earlier would leave QuadAverage's derivatives
+    // undefined for the rest of the pixel quad.
+    if (diffuseSample.a < u_AlphaCutoff) { discard; }
 
     FragColor = vec4(result, 1.0);
 }

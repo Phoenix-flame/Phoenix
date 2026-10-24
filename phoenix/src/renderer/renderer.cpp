@@ -219,17 +219,31 @@ namespace Phoenix{
         s_PointShadowInfo[lightIndex] = glm::vec4(POINT_NEAR, range, 1.0f / (float)tile, POINT_TAN_HALF_FOV);
     }
 
-    void Renderer::SubmitShadow(const Ref<VertexArray>& vertexArray, const glm::mat4& transform){
+    static void BindShadowAlpha(const Ref<Shader>& shader, const Ref<Texture2D>& alphaMap, float alphaCutoff){
+        if (alphaMap && alphaCutoff > 0.0f){
+            alphaMap->Bind(0);
+            shader->SetInt("u_AlphaMap", 0);
+            shader->SetFloat("u_AlphaCutoff", alphaCutoff);
+        }
+        else{
+            shader->SetFloat("u_AlphaCutoff", 0.0f);
+        }
+    }
+
+    void Renderer::SubmitShadow(const Ref<VertexArray>& vertexArray, const glm::mat4& transform,
+            const Ref<Texture2D>& alphaMap, float alphaCutoff){
         s_ShadowShader->SetMat4("model", transform);
         s_ShadowShader->SetInt("u_Animated", 0);
+        BindShadowAlpha(s_ShadowShader, alphaMap, alphaCutoff);
         vertexArray->Bind();
         RenderCommand::DrawIndexed(vertexArray);
     }
 
     void Renderer::SubmitShadowAnimated(const Ref<VertexArray>& vertexArray, const glm::mat4& transform,
-            const std::vector<glm::mat4>& boneMatrices){
+            const std::vector<glm::mat4>& boneMatrices, const Ref<Texture2D>& alphaMap, float alphaCutoff){
         s_ShadowShader->SetMat4("model", transform);
         s_ShadowShader->SetInt("u_Animated", 1);
+        BindShadowAlpha(s_ShadowShader, alphaMap, alphaCutoff);
         if (!boneMatrices.empty())
             s_ShadowShader->SetMat4Array("u_BoneMatrices", boneMatrices.data(), (uint32_t)boneMatrices.size());
         vertexArray->Bind();
@@ -382,10 +396,11 @@ namespace Phoenix{
 
     static const uint32_t NORMAL_MAP_UNIT = 2;
 
-    // Upload material params + bind its textures. The material's own diffuse path (set via
-    // the Textures panel) overrides the mesh-embedded `diffuseMap`; the normal path adds
-    // tangent-space detail. Both are resolved from path through Texture2D's path cache.
-    static void BindMaterial(const Ref<Shader>& shader, const Material& material, const Ref<Texture2D>& diffuseMap){
+    // Upload material params + bind its textures. The material's own diffuse / normal paths
+    // (set via the Textures panel) override the mesh-embedded `diffuseMap` / `normalMap`;
+    // paths are resolved through Texture2D's path cache.
+    static void BindMaterial(const Ref<Shader>& shader, const Material& material, const Ref<Texture2D>& diffuseMap,
+            const Ref<Texture2D>& normalMap, float alphaCutoff){
         shader->SetFloat3("material.ambient", Renderer::ToLinear(material.ambient));
         shader->SetFloat3("material.diffuse", Renderer::ToLinear(material.diffuse));
         shader->SetFloat3("material.specular", Renderer::ToLinear(material.specular));
@@ -403,26 +418,24 @@ namespace Phoenix{
         else{
             shader->SetInt("u_HasDiffuseMap", 0);
         }
+        // The cutoff tests the diffuse map's alpha, so it needs one.
+        shader->SetFloat("u_AlphaCutoff", diffuse ? alphaCutoff : 0.0f);
 
-        if (!material.normalPath.empty()){
-            Ref<Texture2D> normal = Texture2D::Create(material.normalPath);
-            if (normal){
-                normal->Bind(NORMAL_MAP_UNIT);
-                shader->SetInt("u_NormalMap", (int)NORMAL_MAP_UNIT);
-                shader->SetInt("u_HasNormalMap", 1);
-            }
-            else{
-                shader->SetInt("u_HasNormalMap", 0);
-            }
+        Ref<Texture2D> normal = !material.normalPath.empty() ? Texture2D::Create(material.normalPath) : normalMap;
+        if (normal){
+            normal->Bind(NORMAL_MAP_UNIT);
+            shader->SetInt("u_NormalMap", (int)NORMAL_MAP_UNIT);
+            shader->SetInt("u_HasNormalMap", 1);
         }
         else{
             shader->SetInt("u_HasNormalMap", 0);
         }
     }
 
-    void Renderer::Submit(const Ref<VertexArray>& vertexArray, const Material& material, const glm::mat4& transform, const Ref<Texture2D>& diffuseMap){
+    void Renderer::Submit(const Ref<VertexArray>& vertexArray, const Material& material, const glm::mat4& transform,
+            const Ref<Texture2D>& diffuseMap, const Ref<Texture2D>& normalMap, float alphaCutoff){
         auto& shader = s_RenderLightCube->m_Shader;
-        BindMaterial(shader, material, diffuseMap);
+        BindMaterial(shader, material, diffuseMap, normalMap, alphaCutoff);
         shader->SetMat4("model", transform);
         shader->UploadUniformMat3("u_NormalMatrix", glm::transpose(glm::inverse(glm::mat3(transform))));
         shader->SetInt("u_Animated", 0);
@@ -432,9 +445,10 @@ namespace Phoenix{
     }
 
     void Renderer::SubmitAnimated(const Ref<VertexArray>& vertexArray, const Material& material, const glm::mat4& transform,
-            const std::vector<glm::mat4>& boneMatrices, const Ref<Texture2D>& diffuseMap){
+            const std::vector<glm::mat4>& boneMatrices, const Ref<Texture2D>& diffuseMap,
+            const Ref<Texture2D>& normalMap, float alphaCutoff){
         auto& shader = s_RenderLightCube->m_Shader;
-        BindMaterial(shader, material, diffuseMap);
+        BindMaterial(shader, material, diffuseMap, normalMap, alphaCutoff);
         shader->SetMat4("model", transform);
         shader->UploadUniformMat3("u_NormalMatrix", glm::transpose(glm::inverse(glm::mat3(transform))));
         shader->SetInt("u_Animated", 1);

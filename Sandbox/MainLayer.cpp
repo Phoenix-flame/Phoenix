@@ -2479,6 +2479,45 @@ void MainLayer::BuildShadowShowcase() {
     }
 }
 
+void MainLayer::BuildSponzaShowcase() {
+    // Crytek Sponza (Frank Meinl / Crytek, via the Khronos glTF sample models): a large
+    // textured interior with normal-mapped stone, cloth banners and alpha-tested foliage
+    // and chains. Sunlight falls through the open roof and casts shadows across the
+    // atrium floor. Load time is a few seconds (262k triangles, 69 textures).
+    m_Scene->AmbientColor() = glm::vec3(0.16f, 0.16f, 0.18f);
+
+    {
+        auto sponza = m_Scene->CreateEntity("Sponza");
+        auto& mesh = sponza.AddComponent<MeshComponent>();
+        mesh.model = CreateRef<Model>("assets/models/sponza/Sponza.gltf");
+        mesh.material.ambient = glm::vec3(1.0f);
+        mesh.material.diffuse = glm::vec3(1.0f);
+        mesh.material.specular = glm::vec3(0.12f);
+        mesh.material.shininess = 16.0f;
+        // The glTF scales its root node by 0.008 (the loader ignores node transforms),
+        // giving an atrium about 30 x 12 x 18 m.
+        sponza.GetComponent<TransformComponent>().Scale = glm::vec3(0.008f);
+    }
+
+    {
+        auto sun = m_Scene->CreateDirLightEntity("Sun");
+        auto& t = sun.GetComponent<TransformComponent>();
+        t.Translation = { 0.0f, 16.0f, 0.0f };
+        t.Rotation = AimLight(SunDirection(80.0f, 165.0f));
+        auto& dl = sun.GetComponent<DirLightComponent>();
+        dl.ambient  = glm::vec3(0.04f);
+        dl.diffuse  = glm::vec3(1.0f, 0.93f, 0.8f);
+        dl.specular = glm::vec3(0.6f);
+        dl.shadow.softness = 0.6f;
+    }
+
+    // Eye level at the east end, looking down the atrium toward the lion relief, as in the
+    // classic screenshots; orbiting swings around the middle of the atrium. Press Play to
+    // fly through it (free flight).
+    m_MainCamera.Focus({ -1.0f, 2.6f, -0.3f }, 8.5f, -90.0f, 5.0f);
+    m_FreeFlight = true;
+}
+
 void MainLayer::SculptTerrain(TerrainComponent& terrain, const glm::vec3& terrainPos,
                               const glm::vec3& terrainScale, const glm::vec3& rayOrigin,
                               const glm::vec3& rayDir, float dt) {
@@ -2763,6 +2802,7 @@ void MainLayer::SetActiveScene(const Ref<Scene>& scene) {
 void MainLayer::LoadShowcase(void (MainLayer::*build)(), const char* name) {
     SetActiveScene(CreateRef<Scene>());
     m_SceneName = name;
+    m_FreeFlight = false; // builders that are made for flying turn it on
     (this->*build)(); // builders populate m_Scene
     m_LastSnapshot = SceneSerializer(m_Scene).SerializeToString();
 }
@@ -2874,6 +2914,7 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
     }
 
     // Update
+    m_MainCamera.SetFlyMode(IsFlying());
     if (m_ViewportHovered){
         PHX_PROFILE("MainCamera Update");
         m_MainCamera.OnUpdate(ts);
@@ -3417,6 +3458,7 @@ void MainLayer::DrawMenus(){
             if (ImGui::MenuItem("Robot"))            { LoadShowcase(&MainLayer::BuildRobotShowcase, "Robot Showcase"); }
             if (ImGui::MenuItem("Multi-Shadow"))     { LoadShowcase(&MainLayer::BuildMultiShadowShowcase, "Multi-Shadow Showcase"); }
             if (ImGui::MenuItem("Soft Shadows"))     { LoadShowcase(&MainLayer::BuildShadowShowcase, "Shadow Showcase"); }
+            if (ImGui::MenuItem("Sponza"))           { LoadShowcase(&MainLayer::BuildSponzaShowcase, "Sponza Showcase"); }
             if (ImGui::MenuItem("Physics"))          { LoadShowcase(&MainLayer::BuildPhysicsShowcase, "Physics Showcase"); }
             if (ImGui::MenuItem("Vehicles"))         { LoadShowcase(&MainLayer::BuildVehicleShowcase, "Vehicle Showcase"); }
             if (ImGui::MenuItem("Maze A*"))          { LoadShowcase(&MainLayer::BuildMazeShowcase, "Maze A* Showcase"); }
@@ -3473,6 +3515,7 @@ void MainLayer::DrawMenus(){
         ImGui::MenuItem("Training", nullptr, &m_AIPanels.showTraining);
         ImGui::MenuItem("Agent Monitor", nullptr, &m_AIPanels.showAgentMonitor);
         ImGui::MenuItem("AI Overlays", nullptr, &m_AIPanels.showOverlays);
+        ImGui::MenuItem("Free Flight (Play)", nullptr, &m_FreeFlight);
         ImGui::Separator();
         ImGui::MenuItem("Settings", nullptr, &m_ShowSettings);
         ImGui::MenuItem("Profiler", nullptr, &m_ShowProfiler);
@@ -3606,7 +3649,7 @@ void MainLayer::DrawViewportOverlay(const ImVec2& imageMin, const ImVec2& imageS
     const int toolCount = IM_ARRAYSIZE(tools);
     const float dividerW = 9.0f;
     ImVec2 stripMin(imageMin.x + margin, imageMin.y + margin);
-    ImVec2 stripSize(inner * 2.0f + (toolCount + 3) * button + (toolCount + 2) * gap + dividerW, button + inner * 2.0f);
+    ImVec2 stripSize(inner * 2.0f + (toolCount + 4) * button + (toolCount + 3) * gap + dividerW, button + inner * 2.0f);
     dl->AddRectFilled(stripMin, ImVec2(stripMin.x + stripSize.x, stripMin.y + stripSize.y), IM_COL32(18, 19, 22, 215), 7.0f);
     dl->AddRect(stripMin, ImVec2(stripMin.x + stripSize.x, stripMin.y + stripSize.y), IM_COL32(255, 255, 255, 18), 7.0f);
 
@@ -3635,6 +3678,11 @@ void MainLayer::DrawViewportOverlay(const ImVec2& imageMin, const ImVec2& imageS
     if (EditorUI::IconButton("##ToolAIOverlay", EditorUI::Icon::Eye, ImVec2(button, button), m_AIPanels.showOverlays,
             "AI overlays: ray sensors, reward zones, spawn ranges"))
         m_AIPanels.showOverlays = !m_AIPanels.showOverlays;
+    x += button + gap;
+    ImGui::SetCursorScreenPos(ImVec2(x, y));
+    if (EditorUI::IconButton("##ToolFly", EditorUI::Icon::Fly, ImVec2(button, button), m_FreeFlight,
+            "Free flight in Play: WASD fly, hold right mouse to look (scenes without a primary camera)"))
+        m_FreeFlight = !m_FreeFlight;
 
     // Play state: accent frame + badge (top-right).
     if (running){
@@ -3645,6 +3693,16 @@ void MainLayer::DrawViewportOverlay(const ImVec2& imageMin, const ImVec2& imageS
         ImVec2 size = EditorUI::PillSize(text, 5.0f);
         EditorUI::DrawPill(dl, ImVec2(imageMin.x + imageSize.x - size.x - margin, imageMin.y + margin + inner),
             text, EditorUI::Danger(), IM_COL32(18, 19, 22, 215), 5.0f);
+    }
+
+    // Free flight controls (bottom-centre).
+    if (IsFlying()){
+        char text[160];
+        std::snprintf(text, sizeof(text), "Free flight  -  hold right mouse to look   WASD fly   E / Space up   Q down   "
+            "Shift fast   wheel speed (%.1f m/s)", m_MainCamera.GetFlySpeed());
+        ImVec2 size = EditorUI::PillSize(text, 5.0f);
+        EditorUI::DrawPill(dl, ImVec2(imageMin.x + (imageSize.x - size.x) * 0.5f, imageMin.y + imageSize.y - size.y - margin),
+            text, EditorUI::Accent(), IM_COL32(18, 19, 22, 215), 5.0f);
     }
 
     // Sculpt tool hint (bottom-centre).
@@ -3875,6 +3933,8 @@ void MainLayer::DrawHelpPopups(){
             { "Play / Stop",                    "F5" },
             { "Pause / Step one decision",      "F6 / F7" },
             { "Frame selection",                "F" },
+            { "Free flight (Play, fly tool on)", "WASD, E / Q, hold RMB to look" },
+            { "Free flight speed",              "Shift (4x) / Wheel" },
             { "Drive a Keyboard-policy agent",  "WASD / arrows" },
             { "This window",                    "F1" },
         };
@@ -3983,8 +4043,10 @@ void MainLayer::HandleShortcuts(){
         m_Environment->paused = true;
         m_Environment->StepDecision();
     }
-    // Frame the selection (keeps the current viewing angle).
-    if (!control && pressed(ImGuiKey_F)){
+    // Frame the selection (keeps the current viewing angle). While flying, letter keys
+    // steer the camera instead.
+    const bool flying = IsFlying();
+    if (!control && !flying && pressed(ImGuiKey_F)){
         Entity selected = m_SceneEditor->GetSelectedEntity();
         if (selected && selected.HasComponent<TransformComponent>()){
             const auto& t = selected.GetComponent<TransformComponent>();
@@ -3999,7 +4061,7 @@ void MainLayer::HandleShortcuts(){
         m_SceneEditor->SetSelectedEntity({});
 
     // Gizmo operation shortcuts (only when not mid-manipulation).
-    if (!control && !ImGuizmo::IsUsing()){
+    if (!control && !flying && !ImGuizmo::IsUsing()){
         if (pressed(ImGuiKey_Q)) { m_GizmoType = -1; } // none
         if (pressed(ImGuiKey_W)) { m_GizmoType = 0; }  // translate
         if (pressed(ImGuiKey_E)) { m_GizmoType = 1; }  // rotate

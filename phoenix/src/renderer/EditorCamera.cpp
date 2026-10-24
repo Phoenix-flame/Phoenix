@@ -6,6 +6,7 @@
 #include <Phoenix/core/Input.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
+#include <cmath>
 
 namespace Phoenix{
     void EditorCamera::OnUpdate(Timestep ts){
@@ -16,6 +17,12 @@ namespace Phoenix{
             
             xoffset *= 0.2f;
             yoffset *= 0.2f;
+
+            if (m_FlyMode){
+                if (Input::IsMouseButtonPressed(Mouse::Button1)) { LookAround(xoffset, yoffset); }
+                Fly(ts);
+                return;
+            }
 
             // Right mouse: orbit. Middle mouse: pan. (Left mouse is reserved for
             // selection / the transform gizmo.)
@@ -70,6 +77,36 @@ namespace Phoenix{
         RecalculateViewMatrix();
     }
     
+    // Turn the view about the eye: same angles as Rotate, but the target moves instead of
+    // the camera.
+    void EditorCamera::LookAround(float xoffset, float yoffset){
+        glm::vec3 eye = m_Position;
+        m_Yaw   -= xoffset;
+        m_Pitch = std::clamp(m_Pitch + yoffset, -89.0f, 89.0f);
+        float yaw = glm::radians(m_Yaw), pitch = glm::radians(m_Pitch);
+        glm::vec3 forward(sinf(yaw) * cosf(pitch), sinf(pitch), cosf(yaw) * cosf(pitch));
+        m_Target = eye + forward * m_Radius;
+        RecalculateViewMatrix();
+    }
+
+    void EditorCamera::Fly(Timestep ts){
+        glm::vec3 forward = glm::normalize(m_Target - m_Position);
+        glm::vec3 right = glm::normalize(glm::cross(forward, m_WorldUp));
+        glm::vec3 move(0.0f);
+        if (Input::IsKeyPressed(Key::W)) { move += forward; }
+        if (Input::IsKeyPressed(Key::S)) { move -= forward; }
+        if (Input::IsKeyPressed(Key::D)) { move += right; }
+        if (Input::IsKeyPressed(Key::A)) { move -= right; }
+        if (Input::IsKeyPressed(Key::E) || Input::IsKeyPressed(Key::Space))       { move += m_WorldUp; }
+        if (Input::IsKeyPressed(Key::Q))                                          { move -= m_WorldUp; }
+        if (glm::dot(move, move) < 1e-6f) { return; }
+        float speed = m_FlySpeed * (Input::IsKeyPressed(Key::LeftShift) ? 4.0f : 1.0f);
+        // Cap the step so a long frame (a scene load, a hitch) can't throw the camera far.
+        float dt = std::min((float)ts, 0.1f);
+        m_Target += glm::normalize(move) * speed * dt;
+        RecalculateViewMatrix();
+    }
+
     void EditorCamera::Pan(float xoffset, float yoffset){
         float x = std::min(m_ViewportWidth / 1000.0f, 2.4f); // max = 2.4f
 		float xFactor = 0.0366f * (x * x) - 0.1778f * x + 0.3021f;
@@ -116,6 +153,10 @@ namespace Phoenix{
 
 
     bool EditorCamera::OnMouseScrolled(MouseScrolledEvent& e){
+        if (m_FlyMode){
+            m_FlySpeed = std::clamp(m_FlySpeed * std::pow(1.2f, e.GetYOffset()), 0.25f, 200.0f);
+            return false;
+        }
         SetRadius(e.GetYOffset() * 0.1);
         return false;
     }

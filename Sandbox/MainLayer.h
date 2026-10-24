@@ -117,6 +117,10 @@ private:
     // shadows falling on other objects, and two orbiting point lights with cube shadows.
     void BuildShadowShowcase();
 
+    // Populate m_Scene with the Crytek Sponza atrium (textured glTF, normal maps,
+    // alpha-tested foliage) lit by a shadow-casting sun.
+    void BuildSponzaShowcase();
+
     // Populate m_Scene with the vehicle test track (car, ramp, cones, crates, ragdoll dummies).
     void BuildVehicleShowcase();
 
@@ -149,6 +153,11 @@ private:
     int m_GizmoType = 0;
     bool m_GizmoWorld = false; // world- instead of local-space handles
     bool m_GizmoSnap = false;  // snap to increments (Ctrl inverts while dragging)
+
+    // Free flight: while playing (without a primary scene camera) the viewport camera flies
+    // with WASD + right-mouse look instead of orbiting. Toolbar / View menu toggle.
+    bool m_FreeFlight = false;
+    bool IsFlying() const { return m_FreeFlight && m_Scene->IsRunning(); }
 
     // Shown in the title bar: the loaded showcase / file name.
     std::string m_SceneName = "Untitled";

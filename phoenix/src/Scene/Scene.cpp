@@ -1555,12 +1555,15 @@ namespace Phoenix{
                 const std::vector<glm::mat4>* bones; // skinned when non-null
                 glm::vec3 center;
                 float radius;
+                Ref<Texture2D> alphaMap; // cut-out casters: only opaque texels cast
+                float alphaCutoff;
             };
             std::vector<ShadowCaster> casters;
             glm::vec3 sceneLo(std::numeric_limits<float>::max()), sceneHi(-std::numeric_limits<float>::max());
             auto addCaster = [&](const Ref<VertexArray>& va, const glm::mat4& transform, const std::vector<glm::mat4>* bones,
-                                 const glm::vec3& lo, const glm::vec3& hi){
-                casters.push_back({ va, transform, bones, (lo + hi) * 0.5f, glm::length(hi - lo) * 0.5f });
+                                 const glm::vec3& lo, const glm::vec3& hi,
+                                 const Ref<Texture2D>& alphaMap = nullptr, float alphaCutoff = 0.0f){
+                casters.push_back({ va, transform, bones, (lo + hi) * 0.5f, glm::length(hi - lo) * 0.5f, alphaMap, alphaCutoff });
             };
             auto addBounds = [&](const glm::mat4& transform, const glm::vec3& localLo, const glm::vec3& localHi,
                                  glm::vec3& lo, glm::vec3& hi){
@@ -1617,7 +1620,8 @@ namespace Phoenix{
                     addBounds(transform, localLo, localHi, lo, hi);
                     if (!mesh.material.castShadows || isLight(entity)) { continue; }
                     for (const auto& subMesh : mesh.model->GetMeshes())
-                        addCaster(subMesh->GetVertexArray(), transform, animated ? &anim->animator->GetFinalBoneMatrices() : nullptr, lo, hi);
+                        addCaster(subMesh->GetVertexArray(), transform, animated ? &anim->animator->GetFinalBoneMatrices() : nullptr, lo, hi,
+                                  subMesh->GetDiffuseMap(), subMesh->GetAlphaCutoff());
                 }
 
                 auto terrains = m_Registry.view<TerrainComponent, TransformComponent>();
@@ -1644,8 +1648,8 @@ namespace Phoenix{
             auto submitCasters = [&](const glm::mat4& lightSpace){
                 for (const auto& caster : casters){
                     if (!SphereInFrustum(lightSpace, caster.center, caster.radius)) { continue; }
-                    if (caster.bones) { Renderer::SubmitShadowAnimated(caster.vertexArray, caster.transform, *caster.bones); }
-                    else              { Renderer::SubmitShadow(caster.vertexArray, caster.transform); }
+                    if (caster.bones) { Renderer::SubmitShadowAnimated(caster.vertexArray, caster.transform, *caster.bones, caster.alphaMap, caster.alphaCutoff); }
+                    else              { Renderer::SubmitShadow(caster.vertexArray, caster.transform, caster.alphaMap, caster.alphaCutoff); }
                 }
             };
 
@@ -1715,9 +1719,11 @@ namespace Phoenix{
                 for (const auto& subMesh : mesh.model->GetMeshes()) {
                     if (animated)
                         Renderer::SubmitAnimated(subMesh->GetVertexArray(), mesh.material, transform.GetTransform(),
-                            anim->animator->GetFinalBoneMatrices(), subMesh->GetDiffuseMap());
+                            anim->animator->GetFinalBoneMatrices(), subMesh->GetDiffuseMap(),
+                            subMesh->GetNormalMap(), subMesh->GetAlphaCutoff());
                     else
-                        Renderer::Submit(subMesh->GetVertexArray(), mesh.material, transform.GetTransform(), subMesh->GetDiffuseMap());
+                        Renderer::Submit(subMesh->GetVertexArray(), mesh.material, transform.GetTransform(), subMesh->GetDiffuseMap(),
+                            subMesh->GetNormalMap(), subMesh->GetAlphaCutoff());
                 }
             }
             Renderer::SetWireframe(false);
