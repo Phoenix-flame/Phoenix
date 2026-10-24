@@ -3682,18 +3682,21 @@ void MainLayer::DrawSettingsPanel(){
             ImGui::SetTooltip("Seeds episode randomization (spawn randomizers, random policies). 0 = different every run.");
         ImGui::EndDisabled();
 
-        ImGui::BeginDisabled(!Phoenix::RayZoneCaster::OpenCLCompiled());
+        ImGui::BeginDisabled(!Phoenix::RayBatchCaster::OpenCLCompiled());
         ImGui::Checkbox("GPU Ray Sensors", &m_GpuRaySensors);
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip(Phoenix::RayZoneCaster::OpenCLCompiled()
-                ? "Test Ray Sensors against Reward Zones on an OpenCL device, batched over all agents.\n"
-                  "Pays off with many agents, rays and zones; small batches stay on the CPU."
+            ImGui::SetTooltip(Phoenix::RayBatchCaster::OpenCLCompiled()
+                ? "Cast Ray Sensors on an OpenCL device, batched over all agents: Reward Zones, and\n"
+                  "physics bodies with box/sphere/capsule/cylinder shapes (mirrored from Jolt, which\n"
+                  "keeps meshes and hulls). Pays off with many agents, rays and shapes; small batches,\n"
+                  "or machines without a device, run the same casts on the CPU with the same results.\n"
+                  "Distances to bodies can differ from Jolt's in the last float bits."
                 : "Needs an engine built with -DPHOENIX_OPENCL=ON.");
         if (m_GpuRaySensors && m_Environment){
             const auto& caster = m_Environment->RayCaster();
-            ImGui::TextDisabled("%s; last batch: %zu rays on the %s", caster.Status().c_str(),
-                m_Environment->LastRayBatch(), caster.LastCastOnDevice() ? "device" : "CPU");
+            ImGui::TextDisabled("%s; last batch: %zu rays, %zu mirrored shapes, on the %s", caster.Status().c_str(),
+                m_Environment->LastRayBatch(), m_Environment->LastMirroredShapes(), caster.LastCastOnDevice() ? "device" : "CPU");
         }
         ImGui::Spacing();
     }

@@ -91,20 +91,26 @@ target_link_libraries(${APP_TARGET} fmt::fmt spdlog::spdlog)
 target_link_libraries(${APP_TARGET} glfw OpenGL::GL ${GLEW_LIBRARIES})
 target_link_libraries(${APP_TARGET} Threads::Threads ${CMAKE_DL_LIBS})
 
-# OpenCL (optional): Ray Sensor vs Reward Zone tests on a GPU, toggled in the editor
-# (Settings > Simulation). Without it the same tests run on the CPU.
+# The ray batch caster's CPU path must round exactly like its OpenCL kernel (in every
+# build, so observations don't depend on the build options). Jolt exports -mfma, and GCC
+# fuses a * b + c into FMAs by default in C++, so turn contraction off for that file.
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set_source_files_properties(src/AI/RayBatchCaster.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
+endif()
+
+# OpenCL (optional): Ray Sensor casts (Reward Zones and mirrored physics bodies) on a
+# GPU, toggled in the editor (Settings > Simulation). Without it zones are tested on the
+# CPU and bodies by Jolt.
 option(PHOENIX_OPENCL "Build the OpenCL backend for batched ray sensor tests" OFF)
 if(PHOENIX_OPENCL)
     find_package(OpenCL REQUIRED)
     target_compile_definitions(${APP_TARGET} PRIVATE PHOENIX_OPENCL)
     target_link_libraries(${APP_TARGET} OpenCL::OpenCL)
 
-    # CPU vs OpenCL check and timing for the caster alone: `make ray_zone_bench`.
-    add_executable(ray_zone_bench EXCLUDE_FROM_ALL tools/ray_zone_bench.cpp src/AI/RayZoneCaster.cpp)
-    target_include_directories(ray_zone_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${GLM_INCLUDE_DIRS})
-    target_compile_definitions(ray_zone_bench PRIVATE PHOENIX_OPENCL)
-    target_compile_features(ray_zone_bench PRIVATE cxx_std_17)
-    target_link_libraries(ray_zone_bench OpenCL::OpenCL)
+    # Checks the batch caster's backends against each other and against Jolt, and
+    # times them: `cmake --build build --target ray_batch_bench`.
+    add_executable(ray_batch_bench EXCLUDE_FROM_ALL tools/ray_batch_bench.cpp)
+    target_link_libraries(ray_batch_bench ${APP_TARGET})
 endif()
 
 # Runtime assets the engine itself loads by relative path (its shaders and the ImGui

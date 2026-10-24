@@ -14,6 +14,7 @@ namespace Phoenix{
         uint32_t ignoreBody = 0xffffffff; // PhysicsWorld::InvalidBody
         uint16_t layerMask = 0xffff;      // PhysicsWorld::AllLayers
         bool includeSensors = false;
+        const std::vector<uint32_t>* onlyBodies = nullptr; // when set, only these bodies (sorted ids)
     };
 
     // Thin wrapper around a Jolt PhysicsSystem. All Jolt types are hidden behind a
@@ -100,6 +101,26 @@ namespace Phoenix{
         };
 
         using QueryFilter = PhysicsQueryFilter;
+
+        // One leaf collision shape in world space, for casting rays outside Jolt (in
+        // batches, or on a GPU). Shapes are centred on `position`; capsules and
+        // cylinders run along their local Y axis.
+        struct RayPrimitive{
+            enum class Type { Box = 0, Sphere, Capsule, Cylinder };
+            Type type = Type::Box;
+            uint32_t body = InvalidBody;
+            glm::vec3 position = { 0.0f, 0.0f, 0.0f };
+            glm::quat rotation = { 1.0f, 0.0f, 0.0f, 0.0f };
+            glm::vec3 halfExtents = { 0.5f, 0.5f, 0.5f };   // box
+            float radius = 0.5f;                            // sphere / capsule / cylinder
+            float halfHeight = 0.5f;                        // capsule (cylinder part) / cylinder
+        };
+        // World bounds of a body's leaves that RayPrimitive can't describe.
+        struct RayBounds{
+            uint32_t body = InvalidBody;
+            glm::vec3 boundsMin = { 0.0f, 0.0f, 0.0f };
+            glm::vec3 boundsMax = { 0.0f, 0.0f, 0.0f };
+        };
 
         enum class JointType { Fixed = 0, Point = 1, Distance = 2, Hinge = 3, Slider = 4, Cone = 5, SwingTwist = 6 };
         enum class MotorMode { Off = 0, Velocity = 1, Position = 2 };
@@ -287,6 +308,14 @@ namespace Phoenix{
         std::vector<uint32_t> OverlapBox(const glm::vec3& center, const glm::vec3& halfExtents,
                                          const glm::vec3& rotationEuler,
                                          const QueryFilter& filter = QueryFilter()) const;
+
+        // Leaf shapes of the bodies overlapping [boundsMin, boundsMax] that pass the
+        // filter (its ignoreBody aside), flattened from compounds and offsets. Boxes,
+        // spheres, capsules and cylinders go to outPrimitives; any other leaf (hulls,
+        // meshes, scaled shapes) adds its world bounds to its body's entry in outOthers
+        // (sorted by body), to be cast with RayCast and QueryFilter::onlyBodies.
+        void CollectRayPrimitives(const glm::vec3& boundsMin, const glm::vec3& boundsMax, const QueryFilter& filter,
+                                  std::vector<RayPrimitive>& outPrimitives, std::vector<RayBounds>& outOthers) const;
 
         // Teleport a body to a pose and stop it (episode resets).
         void ResetBody(uint32_t bodyID, const glm::vec3& position, const glm::vec3& rotationEuler);
