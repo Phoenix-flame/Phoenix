@@ -332,6 +332,88 @@ void MainLayer::BuildWaterShowcase() {
     }
 }
 
+// A swimming pool in a stone deck: floats, a wooden crate and a heavy ball dropped in
+// on Play (waves, caustics, refraction; the camera can dive under the surface).
+void MainLayer::BuildPoolShowcase() {
+    m_Scene->AmbientColor() = glm::vec3(0.16f, 0.18f, 0.22f);
+    {
+        auto sun = m_Scene->CreateDirLightEntity("Sun");
+        auto& t = sun.GetComponent<TransformComponent>();
+        t.Translation = { 6.0f, 12.0f, 8.0f };
+        t.Rotation = { glm::radians(-58.0f), glm::radians(35.0f), 0.0f };
+        auto& dl = sun.GetComponent<DirLightComponent>();
+        dl.ambient = glm::vec3(0.05f);
+        dl.diffuse = glm::vec3(1.0f, 0.96f, 0.88f);
+        dl.specular = glm::vec3(1.0f);
+    }
+
+    const glm::vec2 size = { 8.0f, 5.0f };
+    {
+        auto e = m_Scene->CreateEntity("Pool");
+        auto& pool = e.AddComponent<PoolComponent>();
+        pool.size = size;
+        pool.depth = 1.8f;
+    }
+
+    // Deck around the coping: four static slabs, top flush with the rim.
+    const float coping = PoolComponent().coping, deck = 4.0f;
+    const glm::vec2 hole = size * 0.5f + coping;
+    struct Slab { glm::vec3 center; glm::vec3 scale; };
+    const Slab slabs[] = {
+        { { 0.0f, -0.25f, -hole.y - deck * 0.5f }, { hole.x * 2.0f + deck * 2.0f, 0.5f, deck } },
+        { { 0.0f, -0.25f,  hole.y + deck * 0.5f }, { hole.x * 2.0f + deck * 2.0f, 0.5f, deck } },
+        { { -hole.x - deck * 0.5f, -0.25f, 0.0f }, { deck, 0.5f, hole.y * 2.0f } },
+        { {  hole.x + deck * 0.5f, -0.25f, 0.0f }, { deck, 0.5f, hole.y * 2.0f } },
+    };
+    for (int i = 0; i < 4; i++){
+        auto e = m_Scene->CreateEntity("Deck " + std::to_string(i + 1));
+        auto& c = e.AddComponent<CubeComponent>();
+        c.material.ambient = glm::vec3(0.45f, 0.42f, 0.38f);
+        c.material.diffuse = glm::vec3(0.78f, 0.74f, 0.68f);
+        c.material.specular = glm::vec3(0.05f);
+        auto& t = e.GetComponent<TransformComponent>();
+        t.Translation = slabs[i].center;
+        t.Scale = slabs[i].scale;
+        e.AddComponent<RigidBodyComponent>().type = RigidBodyComponent::Type::Static;
+        e.AddComponent<BoxColliderComponent>();
+    }
+
+    auto ball = [&](const char* name, glm::vec3 position, float scale, glm::vec3 color, float density){
+        auto e = m_Scene->CreateEntity(name);
+        auto& p = e.AddComponent<PrimitiveComponent>(PrimitiveComponent::Type::Sphere);
+        p.material.ambient = color * 0.5f;
+        p.material.diffuse = color;
+        p.material.specular = glm::vec3(0.5f);
+        p.material.shininess = 64.0f;
+        auto& t = e.GetComponent<TransformComponent>();
+        t.Translation = position;
+        t.Scale = glm::vec3(scale);
+        auto& rb = e.AddComponent<RigidBodyComponent>();
+        rb.density = density;
+        rb.restitution = 0.2f;
+        e.AddComponent<SphereColliderComponent>();
+    };
+    ball("Beach Ball", { -2.2f, 2.5f, -0.8f }, 0.7f, { 1.0f, 0.35f, 0.25f }, 90.0f);
+    ball("Float", { 1.2f, 3.5f, 1.1f }, 0.5f, { 1.0f, 0.85f, 0.2f }, 250.0f);
+    ball("Bowling Ball", { 2.6f, 4.5f, -1.0f }, 0.35f, { 0.15f, 0.2f, 0.45f }, 1800.0f);
+    {
+        auto e = m_Scene->CreateEntity("Crate");
+        auto& c = e.AddComponent<CubeComponent>();
+        c.material.ambient = glm::vec3(0.4f, 0.3f, 0.18f);
+        c.material.diffuse = glm::vec3(0.72f, 0.54f, 0.32f);
+        c.material.specular = glm::vec3(0.1f);
+        auto& t = e.GetComponent<TransformComponent>();
+        t.Translation = { -0.3f, 5.5f, 0.6f };
+        t.Rotation = { 0.4f, 0.6f, 0.2f };
+        t.Scale = glm::vec3(0.6f);
+        auto& rb = e.AddComponent<RigidBodyComponent>();
+        rb.density = 550.0f; // wood: floats half under
+        e.AddComponent<BoxColliderComponent>();
+    }
+
+    m_MainCamera.Focus({ 0.0f, -0.6f, 0.0f }, 11.0f, 205.0f, -32.0f);
+}
+
 void MainLayer::BuildRobotShowcase() {
     // Showcase for skeletal animation: a rigged character walking on a lit floor.
     m_Scene->AmbientColor() = glm::vec3(0.06f);
@@ -3417,6 +3499,7 @@ void MainLayer::DrawMenus(){
             ImGui::TextDisabled("Engine");
             if (ImGui::MenuItem("Bloom & Shadows"))  { LoadShowcase(&MainLayer::BuildShowcaseScene, "Showcase"); }
             if (ImGui::MenuItem("Water"))            { LoadShowcase(&MainLayer::BuildWaterShowcase, "Water Showcase"); }
+            if (ImGui::MenuItem("Pool"))             { LoadShowcase(&MainLayer::BuildPoolShowcase, "Pool Showcase"); }
             if (ImGui::MenuItem("Robot"))            { LoadShowcase(&MainLayer::BuildRobotShowcase, "Robot Showcase"); }
             if (ImGui::MenuItem("Multi-Shadow"))     { LoadShowcase(&MainLayer::BuildMultiShadowShowcase, "Multi-Shadow Showcase"); }
             if (ImGui::MenuItem("Soft Shadows"))     { LoadShowcase(&MainLayer::BuildShadowShowcase, "Shadow Showcase"); }

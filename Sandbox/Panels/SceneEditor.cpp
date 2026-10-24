@@ -97,6 +97,10 @@ namespace Phoenix{
             m_SelectedEntity = m_ActiveScene->CreateEntity("Water");
             m_SelectedEntity.AddComponent<WaterComponent>();
         }
+        if (ImGui::MenuItem("Pool")){
+            m_SelectedEntity = m_ActiveScene->CreateEntity("Pool");
+            m_SelectedEntity.AddComponent<PoolComponent>();
+        }
     }
 
     void SceneEditor::ScenePanel(){
@@ -385,7 +389,7 @@ namespace Phoenix{
             dl->AddTriangleFilled(ImVec2(c.x - r, c.y + r * 0.7f), ImVec2(c.x - r * 0.15f, c.y - r * 0.8f), ImVec2(c.x + r * 0.7f, c.y + r * 0.7f), col);
             dl->AddTriangleFilled(ImVec2(c.x, c.y + r * 0.7f), ImVec2(c.x + r * 0.55f, c.y - r * 0.2f), ImVec2(c.x + r * 1.1f, c.y + r * 0.7f), col);
         }
-        else if (entity.HasComponent<WaterComponent>()){
+        else if (entity.HasComponent<WaterComponent>() || entity.HasComponent<PoolComponent>()){
             ImU32 col = IM_COL32(90, 200, 230, 255);
             for (int row = 0; row < 2; row++){
                 float y = c.y - r * 0.3f + row * r * 0.75f;
@@ -1496,6 +1500,48 @@ namespace Phoenix{
 					                  "edit-time poses, so keep spawn areas clear of tall terrain.");
 				ImGui::TreePop();
 			}
+		});
+
+		DrawComponent<PoolComponent>("Pool", entity, [](PoolComponent& component){
+			// Shape changes rebuild the basin (and, on the next Play, its collider).
+			bool shape = false;
+			shape |= ImGui::DragFloat2("Size", glm::value_ptr(component.size), 0.05f, 0.5f, 100.0f, "%.2f m");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Inner width (X) and length (Z). The entity's origin is the centre of the rim.");
+			shape |= ImGui::DragFloat("Depth", &component.depth, 0.02f, 0.2f, 20.0f, "%.2f m");
+			shape |= ImGui::DragFloat("Freeboard", &component.freeboard, 0.01f, 0.0f, 2.0f, "%.2f m");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Rim down to the still water surface.");
+			shape |= ImGui::DragFloat("Coping", &component.coping, 0.01f, 0.05f, 2.0f, "%.2f m");
+			if (shape) { component.dirty = true; }
+
+			ImGui::Separator();
+			ImGui::TextDisabled("Waves");
+			ImGui::DragFloat("Cell Size", &component.cellSize, 0.002f, 0.01f, 0.5f, "%.3f m");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Simulation resolution: smaller = finer ripples, more work\n"
+			                                              "(large grids can run on the GPU: Settings > OpenCL > Water Ripples).");
+			ImGui::DragFloat("Wave Speed", &component.waveSpeed, 0.02f, 0.05f, 10.0f, "%.2f m/s");
+			ImGui::DragFloat("Damping", &component.waveDamping, 0.01f, 0.0f, 10.0f, "%.2f /s");
+			ImGui::SliderFloat("Wave Strength", &component.waveStrength, 0.0f, 1.0f, "%.2f");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Share of the water a body pushes aside that becomes waves.");
+			ImGui::Checkbox("Bodies Make Waves", &component.interactive);
+
+			ImGui::Separator();
+			ImGui::TextDisabled("Look");
+			ImGui::ColorEdit3("Tiles", glm::value_ptr(component.tileColor));
+			ImGui::ColorEdit3("Grout", glm::value_ptr(component.groutColor));
+			ImGui::DragFloat("Tile Size", &component.tileSize, 0.005f, 0.02f, 2.0f, "%.3f m");
+			ImGui::ColorEdit3("Water Colour", glm::value_ptr(component.waterColor));
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Light the water scatters back: the colour of a deep or murky view.");
+			ImGui::DragFloat("Clarity", &component.clarity, 0.1f, 0.5f, 200.0f, "%.1f m");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("How far one sees under water (a clean pool: 20-30 m).");
+			ImGui::SliderFloat("Caustics", &component.causticStrength, 0.0f, 2.0f, "%.2f");
+
+			ImGui::Separator();
+			ImGui::TextDisabled("Physics (while playing)");
+			ImGui::SliderFloat("Water Density", &component.buoyancy, 0.0f, 3.0f);
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("In units of 1000 kg/m3 (1 = real water). 0 disables buoyancy.");
+			ImGui::SliderFloat("Linear Drag", &component.linearDrag, 0.0f, 3.0f);
+			ImGui::SliderFloat("Angular Drag", &component.angularDrag, 0.0f, 3.0f);
+			ImGui::Checkbox("Basin Collider", &component.generateCollider);
 		});
 
 		DrawComponent<WaterComponent>("Water", entity, [](WaterComponent& component){

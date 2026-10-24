@@ -28,6 +28,7 @@ Gymnasium-compatible API. Phoenix provides the environment; the learning algorit
   - [Physics](#physics)
   - [Terrain](#terrain)
   - [Water](#water)
+  - [Pools](#pools)
   - [Lua Scripting](#lua-scripting)
   - [Scene Serialization](#scene-serialization)
   - [The Editor](#the-editor)
@@ -496,6 +497,28 @@ colour/alpha/amplitude/wave-scale/speed. Place one over a sculpted terrain basin
 lake. Interactive ripples (a damped wave equation on a grid of **Ripple Resolution** cells per
 side) react to bodies splashing in and moving through the water.
 
+### Pools
+
+`PoolComponent` (**Create > Pool**) is a rectangular swimming pool: a tiled basin with a stone
+coping, its own static collider while playing, and simulated water.
+
+- **Waves**: a damped wave equation on a grid spanning the pool (cell size, wave speed and
+  damping are settings), with reflecting walls. While playing it advances inside the fixed
+  physics step, so it is deterministic and in step with the bodies. Bodies push water aside:
+  each step, vertical ray casts measure how much of every water column a body occupies, and
+  a share of the change (**Wave Strength**) raises or lowers the surface, which spreads as
+  splash rings and wakes. Bodies float or sink by density against the simulated surface,
+  with drag. Every RL episode starts with still water.
+- **Rendering**: the floor and walls are lit by sunlight refracted through the moving
+  surface, so they show **caustics** (the surface grid is rasterised where its refracted
+  light lands, brightened where it converges), and the light dims with depth. The surface
+  **refracts** what lies below (traced in screen space from a copy of the scene, with a
+  depth check), absorbs and tints it per channel over the path through the water (red goes
+  first), and mixes in the reflected sky and sun glints by **Fresnel**. With the camera
+  **under water** the view is hazed by distance and the surface shows **Snell's window**:
+  the world above inside it, the pool mirrored outside it (total internal reflection).
+- The **Pool** showcase drops a beach ball, a float, a wooden crate and a bowling ball in.
+
 ### Lua Scripting
 
 `LuaScriptComponent` holds a Lua source string that runs while the scene is **playing**
@@ -610,6 +633,9 @@ Open via **File → Showcases**:
   shadows, a textured backpack dropping with a convex collider, and a Lua-scripted cube.
 - **Water** — a sculpted terrain lake basin filled with animated water and
   glowing buoys.
+- **Pool** — a swimming pool in a stone deck; press **Play** and a beach ball, a float, a
+  wooden crate and a bowling ball drop in (splashes, wakes, caustics). Orbit the camera
+  below the surface for the underwater view.
 - **Robot** — skeletal animation: a rigged character on a shadow-receiving
   floor with a follow camera. Press **Play**, click the viewport, then drive it with the
   arrow keys (Shift runs, Space jumps); a Lua state machine crossfades idle / walk / run /
@@ -738,8 +764,8 @@ by default:
   terrain). Each agent's rays only test the shapes near them (a grid over their bounding
   spheres). Mirrored casts follow Jolt's own ray tests: they hit the same bodies, at
   distances that can differ from Jolt's in the last float bits.
-- **Water Ripples**: ripple grids of 512 × 512 or more step on the device; smaller ones are
-  faster on the CPU.
+- **Water Ripples**: ripple grids (water surfaces and pools) of 512 × 512 cells or more step
+  on the device; smaller ones are faster on the CPU.
 - **Terrain Generation**: noise terrain (Generate, and per-episode randomization) is computed
   on the device.
 

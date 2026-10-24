@@ -514,6 +514,31 @@ namespace Phoenix{
             out << YAML::EndMap;
         }
 
+        if (entity.HasComponent<PoolComponent>()){
+            auto& p = entity.GetComponent<PoolComponent>();
+            out << YAML::Key << "PoolComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "Size" << YAML::Value << YAML::Flow << YAML::BeginSeq << p.size.x << p.size.y << YAML::EndSeq;
+            out << YAML::Key << "Depth" << YAML::Value << p.depth;
+            out << YAML::Key << "Freeboard" << YAML::Value << p.freeboard;
+            out << YAML::Key << "Coping" << YAML::Value << p.coping;
+            out << YAML::Key << "CellSize" << YAML::Value << p.cellSize;
+            out << YAML::Key << "WaveSpeed" << YAML::Value << p.waveSpeed;
+            out << YAML::Key << "WaveDamping" << YAML::Value << p.waveDamping;
+            out << YAML::Key << "WaveStrength" << YAML::Value << p.waveStrength;
+            out << YAML::Key << "Interactive" << YAML::Value << p.interactive;
+            out << YAML::Key << "TileColor" << YAML::Value << p.tileColor;
+            out << YAML::Key << "GroutColor" << YAML::Value << p.groutColor;
+            out << YAML::Key << "TileSize" << YAML::Value << p.tileSize;
+            out << YAML::Key << "WaterColor" << YAML::Value << p.waterColor;
+            out << YAML::Key << "Clarity" << YAML::Value << p.clarity;
+            out << YAML::Key << "CausticStrength" << YAML::Value << p.causticStrength;
+            out << YAML::Key << "Buoyancy" << YAML::Value << p.buoyancy;
+            out << YAML::Key << "LinearDrag" << YAML::Value << p.linearDrag;
+            out << YAML::Key << "AngularDrag" << YAML::Value << p.angularDrag;
+            out << YAML::Key << "GenerateCollider" << YAML::Value << p.generateCollider;
+            out << YAML::EndMap;
+        }
+
         if (entity.HasComponent<AnimationComponent>()){
             auto& a = entity.GetComponent<AnimationComponent>();
             out << YAML::Key << "AnimationComponent" << YAML::Value << YAML::BeginMap;
@@ -1001,6 +1026,35 @@ namespace Phoenix{
             w.mesh = nullptr;
         }
         else if (entity.HasComponent<WaterComponent>()) entity.RemoveComponent<WaterComponent>();
+
+        if (auto n = node["PoolComponent"]){
+            auto& p = entity.HasComponent<PoolComponent>() ? entity.GetComponent<PoolComponent>() : entity.AddComponent<PoolComponent>();
+            const PoolComponent def{}; // fallbacks for keys missing from the file
+            const YAML::Node size = n["Size"];
+            p.size = (size && size.IsSequence() && size.size() == 2)
+                ? glm::vec2(size[0].as<float>(def.size.x), size[1].as<float>(def.size.y)) : def.size;
+            p.depth = n["Depth"].as<float>(def.depth);
+            p.freeboard = n["Freeboard"].as<float>(def.freeboard);
+            p.coping = n["Coping"].as<float>(def.coping);
+            p.cellSize = n["CellSize"].as<float>(def.cellSize);
+            p.waveSpeed = n["WaveSpeed"].as<float>(def.waveSpeed);
+            p.waveDamping = n["WaveDamping"].as<float>(def.waveDamping);
+            p.waveStrength = n["WaveStrength"].as<float>(def.waveStrength);
+            p.interactive = n["Interactive"].as<bool>(def.interactive);
+            p.tileColor = ReadVec3(n["TileColor"], def.tileColor);
+            p.groutColor = ReadVec3(n["GroutColor"], def.groutColor);
+            p.tileSize = n["TileSize"].as<float>(def.tileSize);
+            p.waterColor = ReadVec3(n["WaterColor"], def.waterColor);
+            p.clarity = n["Clarity"].as<float>(def.clarity);
+            p.causticStrength = n["CausticStrength"].as<float>(def.causticStrength);
+            p.buoyancy = n["Buoyancy"].as<float>(def.buoyancy);
+            p.linearDrag = n["LinearDrag"].as<float>(def.linearDrag);
+            p.angularDrag = n["AngularDrag"].as<float>(def.angularDrag);
+            p.generateCollider = n["GenerateCollider"].as<bool>(def.generateCollider);
+            p.water = nullptr;
+            p.dirty = true;
+        }
+        else if (entity.HasComponent<PoolComponent>()) entity.RemoveComponent<PoolComponent>();
 
         if (auto n = node["AnimationComponent"]){
             auto& a = entity.HasComponent<AnimationComponent>() ? entity.GetComponent<AnimationComponent>() : entity.AddComponent<AnimationComponent>();

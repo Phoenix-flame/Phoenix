@@ -1318,6 +1318,16 @@ namespace Phoenix{
         outOthers.resize(kept);
     }
 
+    bool PhysicsWorld::GetBodyBounds(uint32_t bodyID, glm::vec3& outMin, glm::vec3& outMax) const{
+        if (bodyID == InvalidBody) { return false; }
+        JPH::BodyLockRead lock(m_Impl->physicsSystem.GetBodyLockInterface(), JPH::BodyID(bodyID));
+        if (!lock.Succeeded()) { return false; }
+        const JPH::AABox& box = lock.GetBody().GetWorldSpaceBounds();
+        outMin = ToGlm(box.mMin);
+        outMax = ToGlm(box.mMax);
+        return true;
+    }
+
     void PhysicsWorld::ResetBody(uint32_t bodyID, const glm::vec3& position, const glm::vec3& rotationEuler){
         using namespace JPH;
         if (bodyID == InvalidBody) { return; }

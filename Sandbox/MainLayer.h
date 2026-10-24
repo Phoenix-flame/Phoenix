@@ -91,6 +91,7 @@ private:
     void BuildShowcaseScene();
     // Populate m_Scene with the terrain-lake + water showcase.
     void BuildWaterShowcase();
+    void BuildPoolShowcase();
     // Populate m_Scene with the skeletal-animation (walking robot) showcase.
     void BuildRobotShowcase();
     // Populate m_Scene with the multi-light shadow showcase (3 coloured suns).

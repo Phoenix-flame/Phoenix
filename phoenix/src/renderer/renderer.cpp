@@ -1,5 +1,6 @@
 #include <Phoenix/renderer/renderer.h>
 #include <Phoenix/renderer/renderer_command.h>
+#include "RenderUnits.h"
 #include <Phoenix/core/base.h>
 #include <algorithm>
 #include <array>
@@ -56,9 +57,6 @@ namespace Phoenix{
     // maximum filter radius (MAX_PENUMBRA in lighting.glsl).
     static const float POINT_TAN_HALF_FOV = 1.1f;
     static const float POINT_NEAR = 0.05f;
-    // Texture units: 0 diffuse, 1 directional atlas, 2 normal map, 3 water ripples,
-    // 4 directional atlas (raw depth), 5 point atlas, 6 point atlas (raw depth).
-    static const uint32_t DIR_SHADOW_UNIT = 1, DIR_DEPTH_UNIT = 4, POINT_SHADOW_UNIT = 5, POINT_DEPTH_UNIT = 6;
 
     void Renderer::ShadowAtlas::Init(uint32_t w, uint32_t h){
         width = w; height = h;
@@ -88,6 +86,10 @@ namespace Phoenix{
         s_DirLightGizmo->Init();
         s_OutlineShader = Shader::Create("assets/shaders/outline.glsl");
         s_WaterShader = Shader::Create("assets/shaders/water.glsl");
+        s_PoolShellShader = Shader::Create("assets/shaders/pool_shell.glsl");
+        s_PoolWaterShader = Shader::Create("assets/shaders/pool_water.glsl");
+        s_PoolCausticsShader = Shader::Create("assets/shaders/pool_caustics.glsl");
+        s_PoolUnderwaterShader = Shader::Create("assets/shaders/pool_underwater.glsl");
         s_ShadowShader = Shader::Create("assets/shaders/shadow_depth.glsl");
 
         s_DirAtlas.Init(DIR_ATLAS_W, DIR_ATLAS_H);

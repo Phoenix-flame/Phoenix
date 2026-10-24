@@ -56,6 +56,25 @@ int main(int argc, char** argv){
             cpuUs / gpuUs, same ? "identical" : "MISMATCH");
     }
 
+    // Pools use rectangular grids with their own wave constants.
+    {
+        RippleGrid cpu(301, 171), gpu(301, 171);
+        cpu.SetWaveParameters(0.21f, 0.993f);
+        gpu.SetWaveParameters(0.21f, 0.993f);
+        if (!gpu.UseOpenCL(true)) { std::printf("device grid failed\n"); return 1; }
+        for (int f = 0; f < frames; f++){
+            if (f % 5 == 0){
+                cpu.AddHeight(37 + f % 200, 11 + f % 150, 0.02f);
+                gpu.AddHeight(37 + f % 200, 11 + f % 150, 0.02f);
+            }
+            cpu.Step(3);
+            gpu.Step(3);
+        }
+        bool same = gpu.OnDevice() && std::memcmp(cpu.Heights().data(), gpu.Heights().data(), cpu.Heights().size() * sizeof(float)) == 0;
+        ok &= same;
+        std::printf("  301 x 171 pool grid, 3 substeps/frame: %s\n", same ? "identical" : "MISMATCH");
+    }
+
     // Terrain: one landscape per size on each backend.
     std::printf("\nterrain generation (5 octaves, ridged 0.5)\n");
     TerrainNoise noise;

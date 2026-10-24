@@ -97,7 +97,7 @@ target_link_libraries(${APP_TARGET} Threads::Threads ${CMAKE_DL_LIBS})
 # the build options. Jolt exports -mfma, and GCC fuses a * b + c into FMAs by default in
 # C++, so turn contraction off for those files.
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    set_source_files_properties(src/AI/RayBatchCaster.cpp src/renderer/WaterRipples.cpp src/Scene/TerrainGenerator.cpp
+    set_source_files_properties(src/AI/RayBatchCaster.cpp src/renderer/RippleGrid.cpp src/Scene/TerrainGenerator.cpp
         PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
 endif()
 

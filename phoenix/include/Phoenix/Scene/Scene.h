@@ -244,6 +244,10 @@ namespace Phoenix{
         void CreateRuntimeBody(entt::entity entity);
         // Builds the static triangle-mesh collider of one terrain (play mode).
         void CreateTerrainBody(entt::entity entity);
+        // Builds a pool's basin collider and resets its water (play mode).
+        void CreatePoolBody(entt::entity entity);
+        // One physics step of every pool: body displacement, waves, buoyancy.
+        void UpdatePools(float dt);
         // Starts the entity's enabled scripts; `args` becomes their SPAWN table.
         void StartScripts(Entity entity, const ScriptArgs* args);
         // Destroys everything QueueDestroy collected.

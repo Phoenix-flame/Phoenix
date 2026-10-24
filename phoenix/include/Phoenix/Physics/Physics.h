@@ -278,6 +278,8 @@ namespace Phoenix{
         void WakeUp(uint32_t bodyID);
         bool IsAwake(uint32_t bodyID) const;
         bool IsSensor(uint32_t bodyID) const;
+        // World-space bounding box of a body's shape; false if the body doesn't exist.
+        bool GetBodyBounds(uint32_t bodyID, glm::vec3& outMin, glm::vec3& outMax) const;
         bool IsDynamic(uint32_t bodyID) const;
 
         glm::vec3 GetGravity() const;

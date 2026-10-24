@@ -10,6 +10,7 @@
 #include <Phoenix/renderer/VertexArray.h>
 #include <Phoenix/renderer/Mesh.h>
 #include <Phoenix/Scene/TerrainGenerator.h>
+#include <Phoenix/renderer/PoolWater.h>
 #include <Phoenix/renderer/WaterRipples.h>
 #include <Phoenix/Scene/ScriptableEntity.h>
 #include <string>
@@ -500,6 +501,64 @@ namespace Phoenix{
               choppiness(o.choppiness), foam(o.foam),
               interactiveRipples(o.interactiveRipples), rippleResolution(o.rippleResolution),
               buoyancy(o.buoyancy), linearDrag(o.linearDrag), angularDrag(o.angularDrag) {}
+    };
+
+    // A rectangular swimming pool: a tiled basin (with its own static collider while
+    // playing) holding simulated water. The entity's origin is the centre of the rim;
+    // the pool turns with the entity's yaw (rotation about X/Z and scale are ignored).
+    // While playing, bodies in it push the water aside and make waves, float or sink by
+    // density, and are slowed by drag. Drawn with refraction, caustics, depth-dependent
+    // colour, reflections and an underwater view. The water mesh, simulation and
+    // collider are transient (not serialized / reset on copy).
+    struct PoolComponent{
+        glm::vec2 size = { 8.0f, 5.0f };    // inner width (x) and length (z), metres
+        float depth = 2.0f;                 // rim down to the floor
+        float freeboard = 0.2f;             // rim down to the still water surface
+        float coping = 0.35f;               // tiled border around the rim (also the wall thickness)
+
+        // Waves.
+        float cellSize = 0.05f;             // simulation cell: smaller = finer waves, costlier
+        float waveSpeed = 1.2f;             // m/s (pool ripples of a few dm travel ~0.5-1.5 m/s)
+        float waveDamping = 0.6f;           // wave height lost per second (fraction)
+        // Share of the water a body pushes aside that shows up as waves. The surface model
+        // can't form a crater and crown, so the full volume would make metre-high swells;
+        // ~0.1 gives splashes and wakes of realistic height.
+        float waveStrength = 0.08f;
+        bool interactive = true;            // bodies make waves
+
+        // Look.
+        glm::vec3 tileColor = glm::vec3(0.86f, 0.93f, 0.97f);
+        glm::vec3 groutColor = glm::vec3(0.55f, 0.66f, 0.72f);
+        float tileSize = 0.25f;
+        glm::vec3 waterColor = glm::vec3(0.12f, 0.55f, 0.68f);  // light scattered back by deep water
+        float clarity = 25.0f;              // metres one can see under water (clean pool: 20-30)
+        float causticStrength = 0.8f;
+
+        // Physics coupling while playing (as WaterComponent's).
+        float buoyancy = 1.0f;
+        float linearDrag = 0.8f;
+        float angularDrag = 0.4f;
+        bool generateCollider = true;
+
+        Ref<PoolWater> water;               // simulation + textures; not serialized
+        Ref<Mesh> shellMesh, surfaceMesh;   // generated; not serialized
+        bool dirty = true;                  // meshes need rebuilding
+        uint32_t runtimeBodyID = 0xffffffff;
+        std::vector<float> columns;         // scratch: body displacement per grid vertex
+
+        PoolComponent() = default;
+        PoolComponent(const PoolComponent& o)
+            : size(o.size), depth(o.depth), freeboard(o.freeboard), coping(o.coping),
+              cellSize(o.cellSize), waveSpeed(o.waveSpeed), waveDamping(o.waveDamping), waveStrength(o.waveStrength),
+              interactive(o.interactive),
+              tileColor(o.tileColor), groutColor(o.groutColor), tileSize(o.tileSize),
+              waterColor(o.waterColor), clarity(o.clarity), causticStrength(o.causticStrength),
+              buoyancy(o.buoyancy), linearDrag(o.linearDrag), angularDrag(o.angularDrag),
+              generateCollider(o.generateCollider) {}
+
+        // Still water surface and floor heights in the pool's local frame.
+        float WaterLevel() const { return -freeboard; }
+        float Floor() const { return -depth; }
     };
 
     // An animation event: fire OnAnimationEvent(name) in the entity's Lua script when the

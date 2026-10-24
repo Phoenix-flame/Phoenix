@@ -347,6 +347,10 @@ namespace Phoenix{
             m_Scene->RebuildTerrainBody(entity);
         }
 
+        // Pools start every episode with still water.
+        for (auto entity : registry.view<PoolComponent>())
+            if (auto& water = registry.get<PoolComponent>(entity).water) { water->Reset(); }
+
         // Teleport the physics bodies to match and stop them.
         if (physics){
             auto bodies = registry.view<RigidBodyComponent, TransformComponent>();

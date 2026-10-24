@@ -25,6 +25,7 @@ namespace Phoenix{
 		virtual void SetInt(const std::string& name, int value);
 		virtual void SetIntArray(const std::string& name, int* values, uint32_t count);
 		virtual void SetFloat(const std::string& name, float value);
+		virtual void SetFloat2(const std::string& name, const glm::vec2& value);
 		virtual void SetFloat3(const std::string& name, const glm::vec3& value);
 		virtual void SetFloat4(const std::string& name, const glm::vec4& value);
 		virtual void SetFloat4Array(const std::string& name, const glm::vec4* values, uint32_t count);
