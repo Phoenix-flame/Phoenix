@@ -11,6 +11,7 @@ file(GLOB core_src CONFIGURE_DEPENDS
     "src/renderer/*.cpp"
     "src/Scene/*.cpp"
     "src/Physics/*.cpp"
+    "src/AI/*.cpp"
     "src/Math/*.cpp"
     "src/vendor/ImGuizmo/*.cpp"
     "src/vendor/ImFileDialog/*.cpp"

@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <unordered_set>
+#include <vector>
 
 struct lua_State;
 struct lua_Debug;
@@ -48,6 +49,18 @@ namespace Phoenix{
         // (another script used Send(id, name, ...)).
         void OnMessage(const std::string& name, const std::vector<ScriptValue>& args, Entity sender);
 
+        // ---- RL hooks (called by the Environment) ----
+        // OnEpisodeBegin() when an episode starts (after the reset/randomization).
+        void OnEpisodeBegin();
+        // OnAction(actions) for Custom-control agents: a 1-based table of numbers
+        // (discrete: { index }; continuous: values in [-1, 1]).
+        void OnAction(const std::vector<float>& action);
+        // CollectObservations(), in which the script calls AddObservation(...).
+        void CollectObservations();
+        // Heuristic() for Custom agents under the Heuristic policy; returns false when
+        // the script defines none. Its return values become the action.
+        bool Heuristic(std::vector<float>& outAction);
+
         Entity GetEntity() const { return m_Entity; }
         int GetIndex() const { return m_Index; }
         const std::string& GetName() const { return m_Name; }
@@ -77,7 +90,7 @@ namespace Phoenix{
         // Pops the function + nargs arguments already pushed and calls it under the
         // instruction budget. On error logs it (prefixed with `what`) and disables the
         // script. Returns false on error.
-        bool ProtectedCall(int nargs, const char* what);
+        bool ProtectedCall(int nargs, const char* what, int nresults = 0);
         // Records the error, logs it to the scene's script console and stops the script.
         void Fail(const char* what, const std::string& error);
         // Count hook: aborts a call that runs past the instruction budget, so an

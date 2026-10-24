@@ -24,6 +24,7 @@ namespace Phoenix{
             float gravityFactor = 1.0f;      // 0 floats, 1 normal, >1 sinks fast
             bool  continuousCollision = false; // for fast movers (bullets) so they don't tunnel
             bool  isSensor = false;          // detects contacts but has no collision response
+            bool  lockTilt = false;          // dynamic body may only rotate about Y (stays upright)
             glm::vec3 initialVelocity = { 0.0f, 0.0f, 0.0f };
         };
 
@@ -90,6 +91,25 @@ namespace Phoenix{
         void SetLinearVelocity(uint32_t bodyID, const glm::vec3& velocity);
         glm::vec3 GetLinearVelocity(uint32_t bodyID) const;
         void SetAngularVelocity(uint32_t bodyID, const glm::vec3& velocity);
+        glm::vec3 GetAngularVelocity(uint32_t bodyID) const;
+
+        // Force / impulse at a world-space point (adds torque), and pure rotation.
+        void ApplyForceAtPoint(uint32_t bodyID, const glm::vec3& force, const glm::vec3& worldPoint);
+        void ApplyImpulseAtPoint(uint32_t bodyID, const glm::vec3& impulse, const glm::vec3& worldPoint);
+        void ApplyTorque(uint32_t bodyID, const glm::vec3& torque);                 // N m, for the next step
+        void ApplyAngularImpulse(uint32_t bodyID, const glm::vec3& angularImpulse);
+
+        // Mass in kg (0 for static / kinematic bodies).
+        float GetMass(uint32_t bodyID) const;
+        bool IsDynamic(uint32_t bodyID) const;
+
+        // Move a body without changing its velocity (wakes it up).
+        void SetBodyTransform(uint32_t bodyID, const glm::vec3& position, const glm::vec3& rotationEuler);
+        void SetFriction(uint32_t bodyID, float friction);
+        void SetRestitution(uint32_t bodyID, float restitution);
+
+        glm::vec3 GetGravity() const;
+        void SetGravity(const glm::vec3& gravity);
 
         // Move a kinematic body to the target pose over dt, computing the velocities
         // needed so it properly pushes dynamic bodies out of the way.
@@ -103,8 +123,21 @@ namespace Phoenix{
                            float buoyancy, float linearDrag, float angularDrag, float dt);
 
         // First body hit along origin + direction * [0, maxDistance], or false.
+        // ignoreBody (e.g. the caster's own body) is skipped.
         bool RayCast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
-                     uint32_t& outBody, glm::vec3& outPoint) const;
+                     uint32_t& outBody, glm::vec3& outPoint, uint32_t ignoreBody = InvalidBody) const;
+
+        // Like RayCast, but also reports the surface normal and hit distance.
+        struct RayHit{
+            uint32_t body = InvalidBody;
+            glm::vec3 point{ 0.0f }, normal{ 0.0f, 1.0f, 0.0f };
+            float distance = 0.0f;
+        };
+        bool RayCast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance,
+                     RayHit& outHit, uint32_t ignoreBody = InvalidBody) const;
+
+        // Teleport a body to a pose and stop it (episode resets).
+        void ResetBody(uint32_t bodyID, const glm::vec3& position, const glm::vec3& rotationEuler);
 
         // Drain the contact begin/end events recorded since the last call (Jolt fires
         // them from worker threads during Step; read this only between steps).

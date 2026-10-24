@@ -138,6 +138,7 @@ namespace Phoenix{
         props.gravityFactor = rb.gravityFactor;
         props.continuousCollision = rb.continuousCollision;
         props.isSensor = rb.isSensor;
+        props.lockTilt = rb.lockTilt;
         props.initialVelocity = rb.initialVelocity;
         return props;
     }
@@ -209,6 +210,9 @@ namespace Phoenix{
 
     void Scene::OnRuntimeStart(){
         m_PhysicsWorld = CreateScope<PhysicsWorld>();
+        m_PhysicsWorld->SetGravity(m_Simulation.gravity);
+        m_SimTime = 0.0f;
+        m_ContactLog.clear();
         m_BodyToEntity.clear();
 
         // One body per rigid-body entity.
@@ -644,8 +648,21 @@ namespace Phoenix{
     }
 
     void Scene::OnUpdate(EditorCamera& editorCamera, Timestep ts, Entity selectedEntity){
+        if (IsRunning())
+            StepSimulation((float)ts);
+        OnRender(editorCamera, ts, selectedEntity);
+    }
 
-        m_Time += (float)ts; // drives water animation (advances in edit + play)
+    std::vector<LuaScript*> Scene::FindScripts(entt::entity entity){
+        std::vector<LuaScript*> scripts;
+        for (auto& script : m_Scripts)
+            if ((entt::entity)script->GetEntity() == entity) { scripts.push_back(script.get()); }
+        return scripts;
+    }
+
+    void Scene::StepSimulation(float dt){
+        Timestep ts = dt;
+        m_SimTime += dt;
 
         // Lua scripts run while playing (they may move/recolour their entities).
         if (!m_Scripts.empty()){
@@ -746,9 +763,10 @@ namespace Phoenix{
                 m_PhysicsWorld->GetBodyTransform(rb.runtimeBodyID, transform.Translation, transform.Rotation);
             }
 
-            // Contact events -> Lua OnCollisionEnter/Exit(otherTag) on both entities'
-            // scripts. Deduped per frame (Jolt can report one pair per sub-shape).
-            if (!m_Scripts.empty()){
+            // Contact events -> the contact log (Python physics API) and Lua
+            // OnCollisionEnter/Exit(otherTag) on both entities' scripts. Deduped per step
+            // (Jolt can report one pair per sub-shape).
+            {
                 auto events = m_PhysicsWorld->ConsumeContactEvents();
                 std::set<std::tuple<uint32_t, uint32_t, bool>> seen;
                 for (const auto& ev : events){
@@ -758,6 +776,11 @@ namespace Phoenix{
                     Entity entityA = FindEntityByBodyID(ev.bodyA);
                     Entity entityB = FindEntityByBodyID(ev.bodyB);
                     if (!entityA || !entityB) { continue; }
+
+                    // Bounded: a client that never drains the log only keeps the latest events.
+                    if (m_ContactLog.size() >= 4096) { m_ContactLog.erase(m_ContactLog.begin(), m_ContactLog.begin() + 2048); }
+                    m_ContactLog.push_back({ (entt::entity)entityA, (entt::entity)entityB, ev.entered, m_SimTime });
+
                     auto tagOf = [](Entity e){
                         return e.HasComponent<TagComponent>() ? e.GetComponent<TagComponent>().Tag : std::string();
                     };
@@ -770,10 +793,12 @@ namespace Phoenix{
                     }
                 }
             }
-            else{
-                m_PhysicsWorld->ConsumeContactEvents(); // keep the queue drained
-            }
         }
+
+    }
+
+    void Scene::OnRender(EditorCamera& editorCamera, Timestep ts, Entity selectedEntity){
+        m_Time += (float)ts; // drives water animation (advances in edit + play)
 
         {
 			m_Registry.view<NativeScriptComponent>().each([=](auto entity, auto& nsc)
@@ -1225,6 +1250,22 @@ namespace Phoenix{
 
     template<>
 	void Scene::OnComponentAdded<TransformComponent>(Entity entity, TransformComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<AgentComponent>(Entity entity, AgentComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<RaySensorComponent>(Entity entity, RaySensorComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<RewardZoneComponent>(Entity entity, RewardZoneComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<RandomizerComponent>(Entity entity, RandomizerComponent& component){
 	}
 
     template<>

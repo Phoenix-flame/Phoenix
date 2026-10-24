@@ -21,6 +21,9 @@ namespace Phoenix{
 		
 		void SetDarkThemeColors();
 
+		// Fonts loaded in OnAttach, in atlas order (Bold stays index 0 for existing users).
+		enum class FontType { Bold = 0, Regular = 1, Heading = 2, Small = 3 };
+		static ImFont* GetFont(FontType type);
 		// Monospace font for code (a system mono font when one is found, else
 		// ImGui's built-in ProggyClean). Valid after OnAttach.
 		static ImFont* GetMonospaceFont() { return s_MonospaceFont; }

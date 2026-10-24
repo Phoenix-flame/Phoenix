@@ -34,6 +34,10 @@ namespace Phoenix{
         void TimelinePanel();
         void TexturePanel();
         void EntityNode(Entity entity);
+        // Entity-creation items shared by the "+" button and the right-click menu.
+        void CreateEntityMenu();
+        // Valid entities in the scene (counted by the Hierarchy each frame).
+        int GetEntityCount() const { return m_EntityCount; }
         Entity& GetSelectedEntity() { return m_SelectedEntity; }
         void SetSelectedEntity(Entity entity) { m_SelectedEntity = entity; }
         bool& ShowTimeline() { return m_ShowTimeline; }
@@ -53,6 +57,9 @@ namespace Phoenix{
         // Texture palette: paths loaded via the Textures panel, assignable to materials.
         std::vector<std::string> m_LoadedTextures;
         char m_TextureLoadBuf[256] = "assets/";
+
+        char m_SearchBuf[128] = "";
+        int m_EntityCount = 0;
     };
 }
 

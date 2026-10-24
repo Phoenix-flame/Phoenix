@@ -5,6 +5,8 @@ add_executable(Sandbox
     Panels/SceneEditor.cpp
     Panels/ScriptEditorPanel.cpp
     Panels/CodeEditor.cpp
+    Panels/AIPanels.cpp
+    AIPrefabs.cpp
 )
 target_include_directories(Sandbox PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}

@@ -2,6 +2,7 @@
 #include <Phoenix/Scene/Component.h>
 #include <Phoenix/Scene/Scene.h>
 #include <Phoenix/Physics/Physics.h>
+#include <Phoenix/AI/Environment.h>
 #include <Phoenix/core/log.h>
 #include <Phoenix/core/Input.h>
 #include <Phoenix/core/keyCodes.h>
@@ -241,6 +242,46 @@ namespace Phoenix{
         lua_pushnumber(L, hitPoint.x); lua_pushnumber(L, hitPoint.y); lua_pushnumber(L, hitPoint.z);
         if (hit) { lua_pushinteger(L, (lua_Integer)(uint32_t)hit); } else { lua_pushnil(L); }
         return 5;
+    }
+
+    // ---- Reinforcement learning ----
+    // These act on the script's own entity when it is an Agent (no-ops otherwise).
+
+    static Environment* ScriptEnvironment(lua_State* L){
+        Scene* scene = ScriptEntity(L).GetScene();
+        return scene ? scene->GetEnvironment() : nullptr;
+    }
+    static int l_AddReward(lua_State* L){
+        if (Environment* env = ScriptEnvironment(L)) { env->AddReward((entt::entity)ScriptEntity(L), (float)luaL_checknumber(L, 1)); }
+        return 0;
+    }
+    static int l_EndEpisode(lua_State* L){
+        if (Environment* env = ScriptEnvironment(L)) { env->EndEpisode((entt::entity)ScriptEntity(L)); }
+        return 0;
+    }
+    // AddObservation(v1, v2, ...) inside CollectObservations().
+    static int l_AddObservation(lua_State* L){
+        Environment* env = ScriptEnvironment(L);
+        int n = lua_gettop(L);
+        for (int i = 1; i <= n && env; i++) { env->AddObservation((entt::entity)ScriptEntity(L), (float)luaL_checknumber(L, i)); }
+        return 0;
+    }
+    static int l_GetEpisodeStep(lua_State* L){
+        Environment* env = ScriptEnvironment(L);
+        AgentState* agent = env ? env->FindAgent((entt::entity)ScriptEntity(L)) : nullptr;
+        lua_pushinteger(L, agent ? agent->episodeStep : 0);
+        return 1;
+    }
+    static int l_GetCumulativeReward(lua_State* L){
+        Environment* env = ScriptEnvironment(L);
+        AgentState* agent = env ? env->FindAgent((entt::entity)ScriptEntity(L)) : nullptr;
+        lua_pushnumber(L, agent ? agent->episodeReturn : 0.0);
+        return 1;
+    }
+    static int l_GetEpisode(lua_State* L){
+        Environment* env = ScriptEnvironment(L);
+        lua_pushinteger(L, env ? env->Episode() : 0);
+        return 1;
     }
 
     // ---- Keyboard input ----
@@ -505,6 +546,18 @@ namespace Phoenix{
         { "SetAngularVelocity", l_SetAngularVelocity, "Physics", "SetAngularVelocity(x, y, z)", "Sets the spin (radians/second)." },
         { "RayCast",            l_RayCast,            "Physics", "RayCast(ox, oy, oz, dx, dy, dz, maxDist) -> tag, hx, hy, hz, id", "Casts a ray; returns the hit entity's tag, point and id, or nil." },
 
+        { "OnEpisodeBegin",      nullptr, "Callbacks", "function OnEpisodeBegin()", "RL agents: called when an episode starts; reset the agent and its goal here." },
+        { "CollectObservations", nullptr, "Callbacks", "function CollectObservations()", "RL agents: called each decision step; report the state with AddObservation." },
+        { "OnAction",            nullptr, "Callbacks", "function OnAction(action)", "RL agents: called with the action chosen by the policy (a table of numbers)." },
+        { "Heuristic",           nullptr, "Callbacks", "function Heuristic() -> a1, a2, ...", "RL agents: returns an action when no policy is connected (manual control)." },
+
+        { "AddReward",           l_AddReward,           "Reinforcement learning", "AddReward(value)", "Adds to this agent's reward for the current step." },
+        { "EndEpisode",          l_EndEpisode,          "Reinforcement learning", "EndEpisode()", "Ends this agent's episode (it resets and OnEpisodeBegin runs)." },
+        { "AddObservation",      l_AddObservation,      "Reinforcement learning", "AddObservation(v1, v2, ...)", "Appends numbers to the observation, inside CollectObservations()." },
+        { "GetEpisodeStep",      l_GetEpisodeStep,      "Reinforcement learning", "GetEpisodeStep() -> n", "Steps taken in this agent's current episode." },
+        { "GetCumulativeReward", l_GetCumulativeReward, "Reinforcement learning", "GetCumulativeReward() -> value", "Total reward this agent has earned in the current episode." },
+        { "GetEpisode",          l_GetEpisode,          "Reinforcement learning", "GetEpisode() -> n", "Index of the environment's current episode." },
+
         { "IsKeyDown",    l_IsKeyDown,    "Input", "IsKeyDown(key) -> bool", "True while the key is held, e.g. IsKeyDown(Key.W)." },
         { "IsKeyPressed", l_IsKeyPressed, "Input", "IsKeyPressed(key) -> bool", "True only on the frame the key goes down." },
 
@@ -597,9 +650,9 @@ namespace Phoenix{
             luaL_error(L, "script exceeded its instruction budget (infinite loop?)");
     }
 
-    bool LuaScript::ProtectedCall(int nargs, const char* what){
+    bool LuaScript::ProtectedCall(int nargs, const char* what, int nresults){
         m_HookTicks = 0;
-        if (lua_pcall(m_L, nargs, 0, 0) != LUA_OK){
+        if (lua_pcall(m_L, nargs, nresults, 0) != LUA_OK){
             const char* msg = lua_tostring(m_L, -1);
             std::string error = msg ? msg : "unknown error";
             lua_pop(m_L, 1);
@@ -746,5 +799,44 @@ namespace Phoenix{
         else{
             lua_pop(m_L, 1);
         }
+    }
+
+    void LuaScript::OnEpisodeBegin(){
+        if (!m_Valid) { return; }
+        lua_getglobal(m_L, "OnEpisodeBegin");
+        if (lua_isfunction(m_L, -1)) { ProtectedCall(0, "OnEpisodeBegin"); }
+        else                         { lua_pop(m_L, 1); }
+    }
+
+    void LuaScript::OnAction(const std::vector<float>& action){
+        if (!m_Valid) { return; }
+        lua_getglobal(m_L, "OnAction");
+        if (!lua_isfunction(m_L, -1)) { lua_pop(m_L, 1); return; }
+        lua_createtable(m_L, (int)action.size(), 0);
+        for (size_t i = 0; i < action.size(); i++){
+            lua_pushnumber(m_L, action[i]);
+            lua_rawseti(m_L, -2, (lua_Integer)i + 1);
+        }
+        ProtectedCall(1, "OnAction");
+    }
+
+    void LuaScript::CollectObservations(){
+        if (!m_Valid) { return; }
+        lua_getglobal(m_L, "CollectObservations");
+        if (lua_isfunction(m_L, -1)) { ProtectedCall(0, "CollectObservations"); }
+        else                         { lua_pop(m_L, 1); }
+    }
+
+    bool LuaScript::Heuristic(std::vector<float>& outAction){
+        if (!m_Valid) { return false; }
+        lua_getglobal(m_L, "Heuristic");
+        if (!lua_isfunction(m_L, -1)) { lua_pop(m_L, 1); return false; }
+        int base = lua_gettop(m_L) - 1;
+        if (!ProtectedCall(0, "Heuristic", LUA_MULTRET)) { return false; }
+        int results = lua_gettop(m_L) - base;
+        outAction.clear();
+        for (int i = 1; i <= results; i++) { outAction.push_back((float)lua_tonumber(m_L, base + i)); }
+        lua_settop(m_L, base);
+        return true;
     }
 }

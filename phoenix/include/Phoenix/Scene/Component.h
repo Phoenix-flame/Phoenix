@@ -112,6 +112,7 @@ namespace Phoenix{
         float gravityFactor = 1.0f;    // 0 = floats, 1 = normal gravity
         bool  continuousCollision = false; // for fast movers (bullets) so they don't tunnel
         bool  isSensor = false;        // trigger volume: detects contacts, no response
+        bool  lockTilt = false;        // only rotate about Y (agents and characters stay upright)
         glm::vec3 initialVelocity = { 0.0f, 0.0f, 0.0f };
 
         uint32_t runtimeBodyID = 0xffffffff;
@@ -302,7 +303,7 @@ namespace Phoenix{
     struct LuaScriptEntry{
         std::string name = "Script";
         std::string source =
-            "-- runs while playing (press Run)\n"
+            "-- runs while playing (press Play)\n"
             "local t = 0.0\n"
             "function OnUpdate(dt)\n"
             "    t = t + dt\n"
@@ -325,6 +326,101 @@ namespace Phoenix{
         }
     };
 
+
+    // ---- AI / reinforcement learning ----
+
+    // A learning agent. While playing, the Environment asks its policy for an action
+    // every `decisionPeriod` physics steps, applies it through the chosen control
+    // scheme, and scores the result. Observations are assembled from the toggles
+    // below, any Ray Sensor on the same entity, and the script's CollectObservations().
+    // Runtime state (rewards, episode counters) lives in the Environment, not here.
+    struct AgentComponent{
+        // How actions move the agent.
+        //  Move:   walk forward/back + turn (velocity control; upright rigid body or transform)
+        //  Force:  push in world X/Z with a force (rolling balls, sliding pucks)
+        //  Custom: actions are handed to the Lua script's OnAction(actions)
+        enum class Control { Move = 0, Force = 1, Custom = 2 };
+        enum class ActionType { Discrete = 0, Continuous = 1 };
+        // Who chooses actions. Learning happens outside the engine: the editor only
+        // exposes the environment API (see Environment / Bridge).
+        //  Heuristic: keyboard (WASD / arrows, or the script's Heuristic())
+        //  Random:    uniform random actions (baseline / smoke test)
+        //  External:  a client connected over the bridge (Python Gymnasium API)
+        enum class Policy { Heuristic = 0, Random = 1, External = 2 };
+
+        std::string behavior = "Agent"; // name reported to clients for this agent
+        Policy policy = Policy::External;
+        Control control = Control::Move;
+        ActionType actionType = ActionType::Discrete;
+        int customActionSize = 2;      // Custom control: choices (discrete) or dimensions
+        float moveSpeed = 4.0f;        // m/s (Move; Force without a body)
+        float turnSpeed = 3.0f;        // rad/s (Move)
+        float force = 25.0f;           // N (Force)
+
+        int decisionPeriod = 5;        // physics steps an action is held for
+        int maxSteps = 400;            // decisions per episode (0 = no limit)
+
+        // Observations (all scaled to roughly [-1, 1]).
+        bool observePosition = false;  // own position / observationScale
+        bool observeVelocity = true;   // own velocity / moveSpeed
+        bool observeHeading = true;    // sin/cos of yaw
+        bool observeTarget = true;     // target offset in the agent's frame + distance
+        std::string targetTag = "Goal";
+        float observationScale = 10.0f; // metres that map to 1.0
+        int customObservationSize = 0; // values the script adds in CollectObservations()
+
+        // Rewards and termination.
+        float stepReward = -0.002f;    // every decision (negative = hurry up)
+        float approachReward = 0.1f;   // per metre moved toward the target (shaping)
+        float fallHeight = -3.0f;      // below this the episode ends...
+        float fallReward = -1.0f;      // ...with this reward
+
+        int ActionSize() const{
+            if (control == Control::Custom) { return customActionSize < 1 ? 1 : customActionSize; }
+            return actionType == ActionType::Discrete ? 5 : 2;
+        }
+        AgentComponent() = default;
+        AgentComponent(const AgentComponent&) = default;
+    };
+
+    // Fan of rays in the agent's horizontal plane, centred on its facing (-Z). Each
+    // ray contributes [hit distance / length (1 = nothing), one-hot of the hit tag].
+    // Rays hit physics bodies (except the agent's own) and Reward Zones.
+    struct RaySensorComponent{
+        int rays = 7;
+        float fov = 140.0f;          // degrees, total spread
+        float length = 12.0f;
+        float heightOffset = 0.0f;   // ray origin above the entity origin
+        std::vector<std::string> detectableTags = { "Goal", "Wall", "Hazard" };
+        int ValuesPerRay() const { return 1 + (int)detectableTags.size(); }
+        RaySensorComponent() = default;
+        RaySensorComponent(const RaySensorComponent&) = default;
+    };
+
+    // A box volume (halfExtents in local space, scaled by the transform) that rewards
+    // or penalises agents entering / staying inside it, optionally ending the episode.
+    // Purely logical: it needs no collider and is drawn as an overlay in the editor.
+    struct RewardZoneComponent{
+        enum class Trigger { OnEnter = 0, WhileInside = 1 };
+        glm::vec3 halfExtents = { 1.0f, 1.0f, 1.0f };
+        float reward = 1.0f;         // per entry, or per second while inside
+        Trigger trigger = Trigger::OnEnter;
+        bool endEpisode = true;
+        std::string agentTag;        // only this agent (empty = any agent)
+        bool visibleToRays = true;   // Ray Sensors can see it
+        RewardZoneComponent() = default;
+        RewardZoneComponent(const RewardZoneComponent&) = default;
+    };
+
+    // Domain randomization: on every episode reset the entity is moved to its
+    // edit-time pose plus a random offset in [-positionRange, positionRange] and,
+    // optionally, a random heading.
+    struct RandomizerComponent{
+        glm::vec3 positionRange = { 3.0f, 0.0f, 3.0f };
+        bool randomYaw = true;
+        RandomizerComponent() = default;
+        RandomizerComponent(const RandomizerComponent&) = default;
+    };
 
     struct DirLightComponent{
         // diffuse is the dominant term so the light is actually directional; its own

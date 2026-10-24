@@ -1,6 +1,7 @@
 #include <GL/glew.h>
 #include "Phoenix/core/window.h"
 #include <Phoenix/core/assert.h>
+#include <algorithm>
 
 static void GLFWErrorCallback(int error, const char* description){
    std::cerr << "[" << error << "]: " << description << std::endl; 
@@ -19,13 +20,32 @@ namespace Phoenix{
         _data.Title = props.title;
         _data.Width = props.width;
         _data.Height = props.height;
+        _data.CustomTitleBar = props.customTitleBar;
 
 
         int success = glfwInit();
         PHX_CORE_ASSERT(success, "Could not initialize GLFW!");
         glfwSetErrorCallback(GLFWErrorCallback);
 
-        _window = glfwCreateWindow((int)props.width, (int)props.height, props.title.c_str(), nullptr, nullptr);
+        if (props.customTitleBar)
+            glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
+
+        // Don't open larger than the desktop (minus a margin), e.g. on a small laptop screen.
+        int width = props.width, height = props.height;
+        if (GLFWmonitor* monitor = glfwGetPrimaryMonitor()){
+            int wx, wy, ww, wh;
+            glfwGetMonitorWorkarea(monitor, &wx, &wy, &ww, &wh);
+            if (ww > 0 && wh > 0){
+                width = std::min(width, ww - 40);
+                height = std::min(height, wh - 40);
+            }
+        }
+        _data.Width = width;
+        _data.Height = height;
+
+        _window = glfwCreateWindow(width, height, props.title.c_str(), nullptr, nullptr);
+        if (props.customTitleBar)
+            glfwSetWindowSizeLimits(_window, 640, 360, GLFW_DONT_CARE, GLFW_DONT_CARE);
 
         glfwMakeContextCurrent(_window);
 
@@ -128,6 +148,43 @@ namespace Phoenix{
 
     bool Window::IsVSync() const{
         return _data.VSync;
+    }
+
+    void Window::Minimize(){
+        glfwIconifyWindow(_window);
+    }
+
+    void Window::Maximize(){
+        glfwMaximizeWindow(_window);
+    }
+
+    void Window::Restore(){
+        glfwRestoreWindow(_window);
+    }
+
+    bool Window::IsMaximized() const{
+        return glfwGetWindowAttrib(_window, GLFW_MAXIMIZED) == GLFW_TRUE;
+    }
+
+    glm::ivec2 Window::GetPosition() const{
+        int x = 0, y = 0;
+        glfwGetWindowPos(_window, &x, &y);
+        return { x, y };
+    }
+
+    void Window::SetPosition(int x, int y){
+        glfwSetWindowPos(_window, x, y);
+    }
+
+    void Window::SetSize(int width, int height){
+        glfwSetWindowSize(_window, width, height);
+    }
+
+    glm::vec2 Window::GetCursorScreenPosition() const{
+        double cx = 0.0, cy = 0.0;
+        glfwGetCursorPos(_window, &cx, &cy);
+        glm::ivec2 pos = GetPosition();
+        return { (float)pos.x + (float)cx, (float)pos.y + (float)cy };
     }
 }
 

@@ -23,7 +23,8 @@ static void SetWorkingDirToExecutable(){
 int main(int argc, char** argv){
     SetWorkingDirToExecutable();
     Log::Init();
-    Application app;
+    // Undecorated window: the editor draws its own title bar (see MainLayer::DrawTitleBar).
+    Application app(WindowProperties("Phoenix Editor", 1600, 900, true));
     PHX_INFO("Hello, World!");
     app.PushLayer(new MainLayer("Main Layer"));
     app.Run();
