@@ -187,6 +187,11 @@ namespace Phoenix{
 		UploadUniformMat4(name, value);
 	}
 
+	void Shader::SetFloat4Array(const std::string& name, const glm::vec4* values, uint32_t count){
+		GLint location = GetUniformLocation(name);
+		glUniform4fv(location, (GLsizei)count, glm::value_ptr(values[0]));
+	}
+
 	void Shader::SetMat4Array(const std::string& name, const glm::mat4* values, uint32_t count){
 		GLint location = GetUniformLocation(name);
 		glUniformMatrix4fv(location, (GLsizei)count, GL_FALSE, glm::value_ptr(values[0]));

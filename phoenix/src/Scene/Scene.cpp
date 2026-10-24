@@ -109,6 +109,101 @@ namespace Phoenix{
     Scene::Scene() = default;
     Scene::~Scene() = default;
 
+    // ---- Shadow helpers ------------------------------------------------------------
+
+    // World AABB of the local box lo..hi under transform m.
+    static void TransformBounds(const glm::mat4& m, const glm::vec3& lo, const glm::vec3& hi,
+                                glm::vec3& outLo, glm::vec3& outHi){
+        glm::vec3 center = glm::vec3(m * glm::vec4((lo + hi) * 0.5f, 1.0f));
+        glm::vec3 half = (hi - lo) * 0.5f;
+        glm::vec3 extent = glm::abs(glm::vec3(m[0])) * half.x + glm::abs(glm::vec3(m[1])) * half.y
+                         + glm::abs(glm::vec3(m[2])) * half.z;
+        outLo = center - extent;
+        outHi = center + extent;
+    }
+
+    // Is the sphere at least partly inside the frustum of view-projection m?
+    // (Planes extracted from the matrix rows, Gribb/Hartmann.)
+    static bool SphereInFrustum(const glm::mat4& m, const glm::vec3& center, float radius){
+        glm::vec4 rows[4];
+        for (int i = 0; i < 4; i++) { rows[i] = glm::vec4(m[0][i], m[1][i], m[2][i], m[3][i]); }
+        for (int i = 0; i < 3; i++){
+            for (float sign : { 1.0f, -1.0f }){
+                glm::vec4 plane = rows[3] + sign * rows[i];
+                if (glm::dot(glm::vec3(plane), center) + plane.w < -radius * glm::length(glm::vec3(plane))) { return false; }
+            }
+        }
+        return true;
+    }
+
+    // Bounding sphere of the part of the view frustum within maxDistance of the camera.
+    // Its radius only depends on the projection, so it doesn't change as the camera moves
+    // or turns (a stable size keeps directional shadows from shimmering).
+    static void ViewSliceSphere(const glm::mat4& projection, const glm::mat4& view, float maxDistance,
+                                glm::vec3& outCenter, float& outRadius){
+        glm::mat4 invViewProj = glm::inverse(projection * view);
+        glm::mat4 camera = glm::inverse(view);
+        glm::vec3 camPos = glm::vec3(camera[3]);
+        glm::vec3 forward = -glm::normalize(glm::vec3(camera[2]));
+        glm::vec3 corners[8];
+        int n = 0;
+        for (float x : { -1.0f, 1.0f }){
+            for (float y : { -1.0f, 1.0f }){
+                glm::vec4 a = invViewProj * glm::vec4(x, y, -1.0f, 1.0f);
+                glm::vec4 b = invViewProj * glm::vec4(x, y, 1.0f, 1.0f);
+                glm::vec3 nearP = glm::vec3(a) / a.w, farP = glm::vec3(b) / b.w;
+                float dn = glm::dot(nearP - camPos, forward), df = glm::dot(farP - camPos, forward);
+                if (df > maxDistance && df > dn)
+                    farP = nearP + (farP - nearP) * ((maxDistance - dn) / (df - dn));
+                corners[n++] = nearP;
+                corners[n++] = farP;
+            }
+        }
+        glm::vec3 center(0.0f);
+        for (const auto& c : corners) { center += c / 8.0f; }
+        float radius = 0.0f;
+        for (const auto& c : corners) { radius = std::max(radius, glm::length(c - center)); }
+        outCenter = center;
+        outRadius = std::ceil(radius * 16.0f) / 16.0f; // absorb float noise
+    }
+
+    // Orthographic light-space matrix for a directional light covering the sphere
+    // (center, radius), deep enough to include every caster in sceneLo..sceneHi. The box
+    // moves in whole shadow-map texels so shadow edges don't crawl as it follows the
+    // camera.
+    static glm::mat4 DirLightMatrix(const glm::vec3& dir, const glm::vec3& center, float radius,
+                                    const glm::vec3& sceneLo, const glm::vec3& sceneHi, uint32_t resolution){
+        glm::vec3 up = (std::abs(dir.y) > 0.99f) ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+        glm::mat4 lightView = glm::lookAt(glm::vec3(0.0f), dir, up); // rotation only
+
+        glm::vec3 c = glm::vec3(lightView * glm::vec4(center, 1.0f));
+        float texel = 2.0f * radius / (float)resolution;
+        c.x = std::floor(c.x / texel) * texel;
+        c.y = std::floor(c.y / texel) * texel;
+
+        // Depth range (view looks down -Z): the sphere plus all casters, with some slack.
+        float zNear = -c.z - radius, zFar = -c.z + radius;
+        for (int i = 0; i < 8; i++){
+            glm::vec3 corner((i & 1) ? sceneHi.x : sceneLo.x, (i & 2) ? sceneHi.y : sceneLo.y, (i & 4) ? sceneHi.z : sceneLo.z);
+            float depth = -(lightView * glm::vec4(corner, 1.0f)).z;
+            zNear = std::min(zNear, depth);
+            zFar = std::max(zFar, depth);
+        }
+        glm::mat4 projection = glm::ortho(c.x - radius, c.x + radius, c.y - radius, c.y + radius, zNear - 1.0f, zFar + 1.0f);
+        return projection * lightView;
+    }
+
+    // Distance at which a point light's contribution fades below ~1/64 of its peak;
+    // its shadow map doesn't need to reach further.
+    static float PointLightRange(const PointLightComponent& light){
+        float intensity = std::max({ light.diffuse.r, light.diffuse.g, light.diffuse.b, light.specular.r, light.specular.g, light.specular.b });
+        float c = light.constant - 64.0f * intensity, b = light.linear, a = light.quadratic;
+        float range = 50.0f;
+        if (a > 1e-5f)       { range = (-b + std::sqrt(std::max(b * b - 4.0f * a * c, 0.0f))) / (2.0f * a); }
+        else if (b > 1e-5f)  { range = -c / b; }
+        return glm::clamp(range, 1.0f, 50.0f);
+    }
+
     // Vertical height of the procedural Gerstner wave set at world position p —
     // the CPU mirror used for buoyancy and splash detection. The wave constants
     // MUST match the ones in water.glsl.
@@ -978,6 +1073,7 @@ namespace Phoenix{
         glm::vec3 pointLightPos[4] = {glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(0.0f)};
         PointLightComponent pLightComponent[4];
         int numPointLight = 0;
+        int numRealPointLights = 0; // the entity point lights come first; emissive ones after
         auto pLightsView = m_Registry.view<TransformComponent,PointLightComponent>();
         for(auto entity:pLightsView){
             if (numPointLight >= MAX_NUM_POINT_LIGHTS) { break; } // shader supports up to 4
@@ -988,6 +1084,7 @@ namespace Phoenix{
             pointLightPos[numPointLight] = transform.Translation;
             numPointLight ++;
         }
+        numRealPointLights = numPointLight;
 
         // Emissive (glowing) objects also cast light on their surroundings: add each
         // as a point light coloured by its emissive, until the 4-light cap is reached.
@@ -995,6 +1092,11 @@ namespace Phoenix{
             if (numPointLight >= MAX_NUM_POINT_LIGHTS) { return; }
             if (material.emissiveStrength <= 0.0f) { return; }
             if (material.emissive.r <= 0.0f && material.emissive.g <= 0.0f && material.emissive.b <= 0.0f) { return; }
+            // A glowing object right at a point light is that light's bulb: the light
+            // already lights the scene (and casts the shadows), so don't add a second,
+            // unshadowed one that would wash its shadows out.
+            for (int i = 0; i < numRealPointLights; i++)
+                if (glm::length(pointLightPos[i] - position) < 0.75f) { return; }
             // The emitted light is GENTLE and decoupled from the (often large) glow
             // strength, and falls off quickly, so several emissive objects don't blow
             // the scene out to white. The strength still drives the bloom in the shader.
@@ -1006,6 +1108,7 @@ namespace Phoenix{
             light.constant  = 1.0f;
             light.linear    = 0.22f;
             light.quadratic = 0.20f;
+            light.castsShadow = false; // it sits inside its own object
             pLightComponent[numPointLight] = light;
             pointLightPos[numPointLight] = position;
             numPointLight ++;
@@ -1026,61 +1129,152 @@ namespace Phoenix{
                              emissivePrimitives.get<TransformComponent>(entity).Translation);
         }
 
-        // Directional shadow pass: render scene depth from each shadow-casting light into
-        // its own shadow map (all before the main lighting pass). One map per light.
-        if (numDirLights > 0){
+        // Shadow passes: render scene depth from each shadow-casting light into its tile
+        // of the shadow atlases (directional: one tile; point: six cube-face tiles), all
+        // before the main lighting pass.
+        {
             PHX_PROFILE("Shadow Pass");
 
-            // Submit every shadow caster once (shared by all lights this frame).
-            auto submitCasters = [&](){
-                auto cubeCasters = m_Registry.view<CubeComponent, TransformComponent>();
-                for (auto entity : cubeCasters)
-                    Renderer::SubmitShadowCube(cubeCasters.get<TransformComponent>(entity).GetTransform());
+            // Gather every caster once with a world bounding sphere (for per-pass culling),
+            // and the bounds of everything drawn (to size the directional shadow boxes).
+            struct ShadowCaster{
+                Ref<VertexArray> vertexArray;
+                glm::mat4 transform;
+                const std::vector<glm::mat4>* bones; // skinned when non-null
+                glm::vec3 center;
+                float radius;
+            };
+            std::vector<ShadowCaster> casters;
+            glm::vec3 sceneLo(std::numeric_limits<float>::max()), sceneHi(-std::numeric_limits<float>::max());
+            auto addCaster = [&](const Ref<VertexArray>& va, const glm::mat4& transform, const std::vector<glm::mat4>* bones,
+                                 const glm::vec3& lo, const glm::vec3& hi){
+                casters.push_back({ va, transform, bones, (lo + hi) * 0.5f, glm::length(hi - lo) * 0.5f });
+            };
+            auto addBounds = [&](const glm::mat4& transform, const glm::vec3& localLo, const glm::vec3& localHi,
+                                 glm::vec3& lo, glm::vec3& hi){
+                TransformBounds(transform, localLo, localHi, lo, hi);
+                sceneLo = glm::min(sceneLo, lo);
+                sceneHi = glm::max(sceneHi, hi);
+            };
+            const glm::vec3 unitLo(-0.5f), unitHi(0.5f);
+            // Geometry on a light entity is its marker / bulb: it sits at (or around) the
+            // light and would block it, so it never casts.
+            auto isLight = [&](entt::entity entity){
+                return m_Registry.any_of<DirLightComponent, PointLightComponent>(entity);
+            };
 
-                auto meshCasters = m_Registry.view<MeshComponent, TransformComponent>();
-                for (auto entity : meshCasters){
-                    auto& mesh = meshCasters.get<MeshComponent>(entity);
+            if (Renderer::AreShadowsEnabled()){
+                auto cubes = m_Registry.view<CubeComponent, TransformComponent>();
+                Ref<Mesh> cubeMesh = GetPrimitiveMesh(PrimitiveComponent::Type::Cube);
+                for (auto entity : cubes){
+                    glm::mat4 transform = cubes.get<TransformComponent>(entity).GetTransform();
+                    glm::vec3 lo, hi;
+                    addBounds(transform, unitLo, unitHi, lo, hi);
+                    if (cubes.get<CubeComponent>(entity).material.castShadows && !isLight(entity))
+                        addCaster(cubeMesh->GetVertexArray(), transform, nullptr, lo, hi);
+                }
+
+                auto primitives = m_Registry.view<PrimitiveComponent, TransformComponent>();
+                for (auto entity : primitives){
+                    auto& primitive = primitives.get<PrimitiveComponent>(entity);
+                    Ref<Mesh> mesh = GetPrimitiveMesh(primitive.type);
+                    if (!mesh) { continue; }
+                    glm::mat4 transform = primitives.get<TransformComponent>(entity).GetTransform();
+                    glm::vec3 lo, hi;
+                    addBounds(transform, unitLo, unitHi, lo, hi);
+                    if (primitive.material.castShadows && !isLight(entity))
+                        addCaster(mesh->GetVertexArray(), transform, nullptr, lo, hi);
+                }
+
+                auto meshes = m_Registry.view<MeshComponent, TransformComponent>();
+                for (auto entity : meshes){
+                    auto& mesh = meshes.get<MeshComponent>(entity);
                     if (!mesh.model) { continue; }
-                    glm::mat4 transform = meshCasters.get<TransformComponent>(entity).GetTransform();
+                    mesh.model->Update(); // completes async GPU upload once parsing finishes
+                    glm::vec3 localLo, localHi;
+                    if (!mesh.model->GetLocalBounds(localLo, localHi)) { continue; }
                     auto* anim = m_Registry.try_get<AnimationComponent>(entity);
                     bool animated = anim && anim->animator && mesh.model->HasAnimations();
-                    for (const auto& subMesh : mesh.model->GetMeshes()){
-                        if (animated)
-                            Renderer::SubmitShadowAnimated(subMesh->GetVertexArray(), transform, anim->animator->GetFinalBoneMatrices());
-                        else
-                            Renderer::SubmitShadow(subMesh->GetVertexArray(), transform);
+                    if (animated){
+                        // Bind-pose bounds; leave room for the animated pose.
+                        glm::vec3 pad = (localHi - localLo) * 0.25f;
+                        localLo -= pad; localHi += pad;
                     }
+                    glm::mat4 transform = meshes.get<TransformComponent>(entity).GetTransform();
+                    glm::vec3 lo, hi;
+                    addBounds(transform, localLo, localHi, lo, hi);
+                    if (!mesh.material.castShadows || isLight(entity)) { continue; }
+                    for (const auto& subMesh : mesh.model->GetMeshes())
+                        addCaster(subMesh->GetVertexArray(), transform, animated ? &anim->animator->GetFinalBoneMatrices() : nullptr, lo, hi);
                 }
-                auto terrainCasters = m_Registry.view<TerrainComponent, TransformComponent>();
-                for (auto entity : terrainCasters){
-                    auto& terrain = terrainCasters.get<TerrainComponent>(entity);
-                    if (!terrain.mesh) { continue; } // built lazily in the main pass
-                    Renderer::SubmitShadow(terrain.mesh->GetVertexArray(),
-                        terrainCasters.get<TransformComponent>(entity).GetTransform());
+
+                auto terrains = m_Registry.view<TerrainComponent, TransformComponent>();
+                for (auto entity : terrains){
+                    auto& terrain = terrains.get<TerrainComponent>(entity);
+                    if (terrain.dirty || !terrain.mesh){
+                        terrain.mesh = BuildTerrainMesh(terrain);
+                        terrain.dirty = false;
+                    }
+                    float minH = 0.0f, maxH = 0.0f;
+                    if (!terrain.heights.empty()){
+                        auto range = std::minmax_element(terrain.heights.begin(), terrain.heights.end());
+                        minH = *range.first; maxH = *range.second;
+                    }
+                    float half = terrain.size * 0.5f;
+                    glm::mat4 transform = terrains.get<TransformComponent>(entity).GetTransform();
+                    glm::vec3 lo, hi;
+                    addBounds(transform, { -half, minH, -half }, { half, maxH, half }, lo, hi);
+                    if (terrain.material.castShadows)
+                        addCaster(terrain.mesh->GetVertexArray(), transform, nullptr, lo, hi);
                 }
-                auto primitiveCasters = m_Registry.view<PrimitiveComponent, TransformComponent>();
-                for (auto entity : primitiveCasters){
-                    Ref<Mesh> mesh = GetPrimitiveMesh(primitiveCasters.get<PrimitiveComponent>(entity).type);
-                    if (!mesh) { continue; }
-                    Renderer::SubmitShadow(mesh->GetVertexArray(),
-                        primitiveCasters.get<TransformComponent>(entity).GetTransform());
+            }
+
+            auto submitCasters = [&](const glm::mat4& lightSpace){
+                for (const auto& caster : casters){
+                    if (!SphereInFrustum(lightSpace, caster.center, caster.radius)) { continue; }
+                    if (caster.bones) { Renderer::SubmitShadowAnimated(caster.vertexArray, caster.transform, *caster.bones); }
+                    else              { Renderer::SubmitShadow(caster.vertexArray, caster.transform); }
                 }
             };
 
-            const float orthoHalf = 15.0f;
-            glm::mat4 lightProj = glm::ortho(-orthoHalf, orthoHalf, -orthoHalf, orthoHalf, 0.1f, 50.0f);
-            for (int i = 0; i < numDirLights; i++){
-                glm::vec3 dir = dirLightDir[i];
-                glm::vec3 up = (std::abs(dir.y) > 0.99f) ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
-                glm::vec3 center(0.0f);
-                glm::mat4 lightView = glm::lookAt(center - dir * 20.0f, center, up);
-                glm::mat4 lightSpace = lightProj * lightView;
+            const bool haveScene = !casters.empty();
+            int numDirShadows = 0, numPointShadows = 0;
+            for (int i = 0; i < numDirLights; i++)
+                if (haveScene && dirLightComp[i].castsShadow) { numDirShadows++; }
+            for (int i = 0; i < numRealPointLights; i++)
+                if (haveScene && pLightComponent[i].castsShadow) { numPointShadows++; }
 
-                // A non-casting light still gets a (cleared = fully lit) map so the 1:1
-                // light->map mapping holds and it contributes no shadow.
-                Renderer::BeginShadowPass(i, lightSpace);
-                if (dirLightComp[i].castsShadow) { submitCasters(); }
-                Renderer::EndShadowPass();
+            Renderer::BeginShadows(numDirShadows, numPointShadows);
+            if (numDirShadows > 0){
+                const uint32_t resolution = Renderer::GetDirShadowResolution(numDirShadows);
+                glm::vec3 sceneCenter = (sceneLo + sceneHi) * 0.5f;
+                float sceneRadius = std::ceil(glm::length(sceneHi - sceneLo) * 0.5f * 2.0f) / 2.0f;
+                for (int i = 0; i < numDirLights; i++){
+                    if (!dirLightComp[i].castsShadow) { continue; }
+                    // Cover the view out to the shadow distance, or the whole scene when
+                    // that's smaller (sharper shadows for compact scenes).
+                    glm::vec3 center = sceneCenter;
+                    float radius = sceneRadius;
+                    glm::vec3 viewCenter;
+                    float viewRadius;
+                    ViewSliceSphere(sceneCameraProjection, sceneCameraView, std::max(dirLightComp[i].shadowDistance, 1.0f), viewCenter, viewRadius);
+                    if (viewRadius < radius) { center = viewCenter; radius = viewRadius; }
+                    radius = std::max(radius, 0.5f);
+
+                    glm::mat4 lightSpace = DirLightMatrix(dirLightDir[i], center, radius, sceneLo, sceneHi, resolution);
+                    Renderer::BeginShadowPass(i, lightSpace, dirLightComp[i].shadow);
+                    submitCasters(lightSpace);
+                    Renderer::EndShadowPass();
+                }
+            }
+            for (int i = 0; i < numRealPointLights && numPointShadows > 0; i++){
+                if (!pLightComponent[i].castsShadow) { continue; }
+                float range = PointLightRange(pLightComponent[i]);
+                for (int face = 0; face < 6; face++){
+                    Renderer::BeginPointShadowPass(i, face, pointLightPos[i], range, pLightComponent[i].shadow);
+                    submitCasters(Renderer::GetPointShadowMatrix(pointLightPos[i], face, range));
+                    Renderer::EndShadowPass();
+                }
             }
         }
 

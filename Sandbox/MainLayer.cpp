@@ -1823,6 +1823,21 @@ void MainLayer::BuildRobotArenaShowcase() {
     }
 }
 
+// Entity rotation (Euler, applied X then Y like TransformComponent) that aims a light's
+// local -Z along dir. A light tilted by pitch then yawed with the same Euler angles would
+// swing back up when yawed past 90 degrees.
+static glm::vec3 AimLight(const glm::vec3& direction){
+    glm::vec3 d = glm::normalize(direction);
+    return { std::atan2(d.y, -d.z), std::asin(glm::clamp(-d.x, -1.0f, 1.0f)), 0.0f };
+}
+
+// Direction sunlight travels for a sun `elevationDeg` above the horizon, turned `yawDeg`
+// about +Y (0 = shining toward -Z).
+static glm::vec3 SunDirection(float elevationDeg, float yawDeg){
+    float e = glm::radians(elevationDeg), y = glm::radians(yawDeg);
+    return { -std::cos(e) * std::sin(y), -std::sin(e), -std::cos(e) * std::cos(y) };
+}
+
 void MainLayer::BuildMultiShadowShowcase() {
     // Three coloured directional lights from different angles, each casting its OWN
     // shadow map -> the central objects cast three shadows fanning out, tinted where the
@@ -1847,11 +1862,11 @@ void MainLayer::BuildMultiShadowShowcase() {
     for (const auto& s : suns){
         auto sun = m_Scene->CreateDirLightEntity(s.name);
         auto& t = sun.GetComponent<TransformComponent>();
-        t.Rotation = { glm::radians(-50.0f), glm::radians(s.yawDeg), 0.0f };
+        t.Rotation = AimLight(SunDirection(50.0f, s.yawDeg));
         auto& dl = sun.GetComponent<DirLightComponent>();
         dl.ambient  = glm::vec3(0.02f);
-        dl.diffuse  = s.color;
-        dl.specular = s.color;
+        dl.diffuse  = s.color * 0.5f; // three suns add up on the floor
+        dl.specular = s.color * 0.5f;
         dl.castsShadow = true;
     }
 
@@ -1883,6 +1898,188 @@ void MainLayer::BuildMultiShadowShowcase() {
     makeShape("Pillar", PrimitiveComponent::Type::Cylinder, { 0.0f, 1.0f, 0.0f }, { 1.2f, 4.0f, 1.2f });
     makeShape("Sphere", PrimitiveComponent::Type::Sphere,   { 3.5f, 0.0f, 1.0f }, glm::vec3(1.5f));
     makeShape("Cone",   PrimitiveComponent::Type::Cone,     { -3.5f, 0.0f, -1.0f }, { 1.6f, 2.6f, 1.6f });
+}
+
+void MainLayer::BuildShadowShowcase() {
+    // Three areas on one floor, left to right:
+    //  - soft sun shadows: penumbrae widen with the distance between caster and receiver
+    //    (a row of spheres at rising heights, a tall obelisk) but stay sharp at contact;
+    //  - shadows on other objects: a table shading what's on and under it, a pillar and a
+    //    spinning fan shading a staircase, the backpack shading its pedestal;
+    //  - a lantern: two coloured point lights inside a ring of columns, each with its own
+    //    omnidirectional (cube-map) shadow, throwing radial shadows onto the floor + wall.
+    // Press Run: the fan spins, a sphere bobs and the lantern lights orbit.
+    m_Scene->AmbientColor() = glm::vec3(0.06f, 0.065f, 0.08f);
+
+    {
+        auto cam = m_Scene->CreateEntity("Camera");
+        cam.AddComponent<CameraComponent>();
+        auto& t = cam.GetComponent<TransformComponent>();
+        t.Translation = { 0.5f, 10.5f, 17.5f };
+        t.Rotation = { glm::radians(-31.0f), 0.0f, 0.0f };
+    }
+
+    {
+        auto sun = m_Scene->CreateDirLightEntity("Sun");
+        auto& t = sun.GetComponent<TransformComponent>();
+        t.Translation = { 6.0f, 9.0f, 6.0f };
+        t.Rotation = AimLight(SunDirection(48.0f, 40.0f));
+        auto& dl = sun.GetComponent<DirLightComponent>();
+        dl.ambient  = glm::vec3(0.03f);
+        dl.diffuse  = glm::vec3(0.75f, 0.72f, 0.66f);
+        dl.specular = glm::vec3(0.5f);
+        dl.shadow.softness = 2.5f; // degrees: a big, soft sun (the real one is ~0.27)
+    }
+
+    auto makeMaterial = [](const glm::vec3& color, float specular = 0.2f, float shininess = 16.0f){
+        Material m;
+        m.ambient = color;
+        m.diffuse = color;
+        m.specular = glm::vec3(specular);
+        m.shininess = shininess;
+        return m;
+    };
+    auto makeBox = [&](const std::string& name, const glm::vec3& pos, const glm::vec3& scale, const Material& material){
+        auto e = m_Scene->CreateEntity(name);
+        e.AddComponent<CubeComponent>().material = material;
+        auto& t = e.GetComponent<TransformComponent>();
+        t.Translation = pos;
+        t.Scale = scale;
+        return e;
+    };
+    auto makeShape = [&](const std::string& name, PrimitiveComponent::Type type, const glm::vec3& pos, const glm::vec3& scale,
+                         const Material& material){
+        auto e = m_Scene->CreateEntity(name);
+        e.AddComponent<PrimitiveComponent>(type).material = material;
+        auto& t = e.GetComponent<TransformComponent>();
+        t.Translation = pos;
+        t.Scale = scale;
+        return e;
+    };
+
+    const Material stone = makeMaterial({ 0.5f, 0.48f, 0.45f }, 0.1f, 8.0f);
+    const Material wood  = makeMaterial({ 0.55f, 0.36f, 0.22f }, 0.2f, 16.0f);
+    const Material white = makeMaterial({ 0.75f, 0.75f, 0.75f }, 0.4f, 32.0f);
+
+    // Floor (top at y = 0) and a long back wall that catches the long shadows.
+    makeBox("Floor", { 0.0f, -0.25f, 0.0f }, { 32.0f, 0.5f, 22.0f }, stone);
+    makeBox("Back Wall", { 0.0f, 2.0f, -7.5f }, { 32.0f, 4.0f, 0.4f }, makeMaterial({ 0.45f, 0.47f, 0.52f }, 0.1f, 8.0f));
+
+    // --- Soft sun shadows ---------------------------------------------------------------
+    // The same sphere at rising heights: its shadow drifts away and gets blurrier.
+    const float heights[] = { 0.4f, 1.3f, 2.4f, 3.6f };
+    const glm::vec3 sphereColors[] = { { 0.9f, 0.3f, 0.25f }, { 0.95f, 0.65f, 0.2f }, { 0.35f, 0.75f, 0.35f }, { 0.3f, 0.5f, 0.95f } };
+    for (int i = 0; i < 4; i++){
+        makeShape("Floating Sphere " + std::to_string(i + 1), PrimitiveComponent::Type::Sphere,
+                  { -12.0f + 2.0f * i, heights[i], 4.5f }, glm::vec3(0.8f), makeMaterial(sphereColors[i], 0.6f, 48.0f));
+    }
+    // A tall obelisk: its long shadow is crisp at the base and soft at the tip.
+    makeBox("Obelisk", { -7.0f, 3.0f, -2.0f }, { 0.45f, 6.0f, 0.45f }, white);
+    // A sphere that bobs up and down while playing (watch its shadow sharpen on contact).
+    {
+        auto e = makeShape("Bouncing Sphere", PrimitiveComponent::Type::Sphere, { -12.5f, 0.6f, -1.0f }, glm::vec3(1.2f),
+                           makeMaterial({ 0.85f, 0.25f, 0.6f }, 0.6f, 64.0f));
+        e.AddComponent<LuaScriptComponent>().scripts[0].source =
+            "local t = 0.0\n"
+            "function OnUpdate(dt)\n"
+            "    t = t + dt\n"
+            "    SetTranslation(-12.5, 0.6 + 2.2 * math.abs(math.sin(t * 1.3)), -1.0)\n"
+            "end\n";
+    }
+
+    // --- Shadows on other objects --------------------------------------------------------
+    // A table: its top shades the cube beneath it and receives the shadows of what's on it.
+    makeBox("Table Top", { -2.0f, 1.2f, 4.0f }, { 3.2f, 0.15f, 1.8f }, wood);
+    for (int i = 0; i < 4; i++){
+        float x = (i & 1) ? 1.4f : -1.4f, z = (i & 2) ? 0.75f : -0.75f;
+        makeBox("Table Leg " + std::to_string(i + 1), { -2.0f + x, 0.6f, 4.0f + z }, { 0.15f, 1.2f, 0.15f }, wood);
+    }
+    makeShape("Vase", PrimitiveComponent::Type::Cylinder, { -2.7f, 1.775f, 4.2f }, { 0.4f, 0.9f, 0.4f }, makeMaterial({ 0.2f, 0.55f, 0.6f }, 0.6f, 64.0f));
+    makeShape("Cone", PrimitiveComponent::Type::Cone, { -1.4f, 1.675f, 3.8f }, { 0.6f, 0.7f, 0.6f }, makeMaterial({ 0.9f, 0.75f, 0.3f }));
+    makeBox("Box Under Table", { -2.0f, 0.3f, 4.0f }, glm::vec3(0.6f), makeMaterial({ 0.8f, 0.3f, 0.3f }));
+
+    // A staircase shaded by a pillar and by a fan spinning in front of the sun. Every
+    // step is a solid block reaching the back, so no crack can open between steps.
+    for (int k = 0; k < 5; k++){
+        float h = 0.35f * (k + 1);
+        float front = 0.95f - 0.7f * k, back = -2.55f;
+        makeBox("Step " + std::to_string(k + 1), { 2.5f, h * 0.5f, (front + back) * 0.5f }, { 3.0f, h, front - back }, stone);
+    }
+    makeShape("Pillar", PrimitiveComponent::Type::Cylinder, { 5.0f, 1.75f, 2.2f }, { 0.6f, 3.5f, 0.6f }, white);
+    makeShape("Fan Mast", PrimitiveComponent::Type::Cylinder, { 4.2f, 2.0f, 3.6f }, { 0.15f, 4.0f, 0.15f }, white);
+    for (int i = 0; i < 2; i++){
+        auto blade = makeBox(i == 0 ? "Fan Blade A" : "Fan Blade B", { 4.2f, 4.0f, 3.75f }, { 2.8f, 0.3f, 0.08f },
+                             makeMaterial({ 0.25f, 0.6f, 0.9f }, 0.5f, 32.0f));
+        float phase = i * 1.5708f;
+        blade.GetComponent<TransformComponent>().Rotation = { 0.0f, 0.0f, phase };
+        blade.AddComponent<LuaScriptComponent>().scripts[0].source =
+            "local t = 0.0\n"
+            "function OnUpdate(dt)\n"
+            "    t = t + dt\n"
+            "    SetRotation(0.0, 0.0, " + std::to_string(phase) + " + t * 1.2)\n"
+            "end\n";
+    }
+
+    // The backpack on a pedestal: a detailed mesh shading itself, its stand and the floor.
+    makeShape("Pedestal", PrimitiveComponent::Type::Cylinder, { -2.5f, 0.5f, -3.5f }, { 1.6f, 1.0f, 1.6f }, white);
+    {
+        auto bp = m_Scene->CreateEntity("Backpack");
+        bp.AddComponent<MeshComponent>().model = CreateRef<Model>("backpack/backpack.obj");
+        auto& t = bp.GetComponent<TransformComponent>();
+        t.Translation = { -2.5f, 1.72f, -3.3f };
+        t.Scale = glm::vec3(0.4f);
+    }
+
+    // --- Lantern: point lights with omnidirectional shadows ------------------------------
+    const glm::vec3 lantern = { 10.5f, 0.0f, -3.0f };
+    for (int i = 0; i < 8; i++){
+        float a = glm::two_pi<float>() * i / 8.0f;
+        makeShape("Column " + std::to_string(i + 1), PrimitiveComponent::Type::Cylinder,
+                  lantern + glm::vec3(2.2f * std::cos(a), 1.4f, 2.2f * std::sin(a)), { 0.3f, 2.8f, 0.3f }, white);
+    }
+    makeShape("Lantern Roof", PrimitiveComponent::Type::Cone, lantern + glm::vec3(0.0f, 3.4f, 0.0f), { 5.4f, 1.2f, 5.4f },
+              makeMaterial({ 0.5f, 0.25f, 0.2f }));
+    // Outside the ring: shapes lit (and shadowed) by both lanterns and the sun.
+    makeShape("Lantern Cube", PrimitiveComponent::Type::Cube, lantern + glm::vec3(-3.6f, 0.4f, 2.4f), glm::vec3(0.8f), white);
+    makeShape("Lantern Sphere", PrimitiveComponent::Type::Sphere, lantern + glm::vec3(3.4f, 0.5f, 2.6f), glm::vec3(1.0f), white);
+
+    // Each light carries a small glowing bulb in place of its marker cube (geometry on a
+    // light entity never casts, so it doesn't block its own light) and orbits the
+    // lantern's centre while playing.
+    struct Bulb { const char* name; glm::vec3 color; float phase; };
+    const Bulb bulbs[] = {
+        { "Lantern Light Warm", { 1.0f, 0.55f, 0.2f }, 0.0f },
+        { "Lantern Light Cyan", { 0.2f, 0.8f, 1.0f }, 3.14159f },
+    };
+    for (const auto& b : bulbs){
+        auto light = m_Scene->CreatePointLightEntity(b.name);
+        glm::vec3 pos = lantern + glm::vec3(0.9f * std::cos(b.phase), 1.6f, 0.9f * std::sin(b.phase));
+        auto& t = light.GetComponent<TransformComponent>();
+        t.Translation = pos;
+        t.Scale = glm::vec3(0.25f);
+        auto& pl = light.GetComponent<PointLightComponent>();
+        pl.ambient = glm::vec3(0.0f);
+        pl.diffuse = b.color * 1.3f;
+        pl.specular = b.color;
+        pl.constant = 1.0f;
+        pl.linear = 0.14f;
+        pl.quadratic = 0.07f;
+        pl.shadow.softness = 0.08f;
+
+        light.RemoveComponent<CubeComponent>();
+        auto& bulb = light.AddComponent<PrimitiveComponent>(PrimitiveComponent::Type::Sphere);
+        bulb.material = makeMaterial(b.color);
+        bulb.material.emissive = b.color;
+        bulb.material.emissiveStrength = 3.0f;
+
+        light.AddComponent<LuaScriptComponent>().scripts[0].source =
+            "local t = " + std::to_string(b.phase) + "\n"
+            "function OnUpdate(dt)\n"
+            "    t = t + dt * 0.6\n"
+            "    SetTranslation(" + std::to_string(lantern.x) + " + 0.9 * math.cos(t), 1.6 + 0.4 * math.sin(t * 2.0), "
+                + std::to_string(lantern.z) + " + 0.9 * math.sin(t))\n"
+            "end\n";
+    }
 }
 
 void MainLayer::SculptTerrain(TerrainComponent& terrain, const glm::vec3& terrainPos,
@@ -2792,6 +2989,7 @@ void MainLayer::DrawMenus(){
             if (ImGui::MenuItem("Water"))            { LoadShowcase(&MainLayer::BuildWaterShowcase, "Water Showcase"); }
             if (ImGui::MenuItem("Robot"))            { LoadShowcase(&MainLayer::BuildRobotShowcase, "Robot Showcase"); }
             if (ImGui::MenuItem("Multi-Shadow"))     { LoadShowcase(&MainLayer::BuildMultiShadowShowcase, "Multi-Shadow Showcase"); }
+            if (ImGui::MenuItem("Soft Shadows"))     { LoadShowcase(&MainLayer::BuildShadowShowcase, "Shadow Showcase"); }
             if (ImGui::MenuItem("Physics"))          { LoadShowcase(&MainLayer::BuildPhysicsShowcase, "Physics Showcase"); }
             if (ImGui::MenuItem("Maze A*"))          { LoadShowcase(&MainLayer::BuildMazeShowcase, "Maze A* Showcase"); }
             if (ImGui::MenuItem("Robot Arena"))      { LoadShowcase(&MainLayer::BuildRobotArenaShowcase, "Robot Arena Showcase"); }
@@ -3092,6 +3290,17 @@ void MainLayer::DrawSettingsPanel(){
         if (m_BloomEnabled){
             ImGui::DragFloat("Bloom Intensity", &m_BloomIntensity, 0.05f, 0.0f, 5.0f);
             ImGui::DragFloat("Bloom Threshold", &m_BloomThreshold, 0.05f, 0.0f, 5.0f);
+        }
+        bool shadows = Phoenix::Renderer::AreShadowsEnabled();
+        if (ImGui::Checkbox("Shadows", &shadows))
+            Phoenix::Renderer::SetShadowsEnabled(shadows);
+        if (shadows){
+            int samples = Phoenix::Renderer::GetShadowSamples();
+            if (ImGui::SliderInt("Shadow Samples", &samples, 4, 64))
+                Phoenix::Renderer::SetShadowSamples(samples);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Taps per shadow lookup: more = smoother soft penumbrae, slower.\n"
+                                  "Per-light softness, strength and bias are on each light.");
         }
         if (ImGui::Checkbox("VSync", &vsync)){
             Application::Get().GetWindow().SetVSync(vsync);

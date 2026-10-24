@@ -14,12 +14,24 @@ namespace Phoenix{
     Ref<Shader> Renderer::s_OutlineShader;
     Ref<Shader> Renderer::s_WaterShader;
 
-    uint32_t Renderer::s_ShadowFBO = 0;
-    uint32_t Renderer::s_ShadowAtlasTex = 0;
+    Renderer::ShadowAtlas Renderer::s_DirAtlas;
+    Renderer::ShadowAtlas Renderer::s_PointAtlas;
+    uint32_t Renderer::s_RawDepthSampler = 0;
     Ref<Shader> Renderer::s_ShadowShader;
     glm::mat4 Renderer::s_LightSpaceMatrix[Renderer::MAX_DIR_LIGHTS] = { glm::mat4(1.0f) };
-    int Renderer::s_NumShadows = 0;
-    bool Renderer::s_ShadowsEnabled = false;
+    glm::vec4 Renderer::s_DirShadowRect[Renderer::MAX_DIR_LIGHTS] = {};
+    glm::vec4 Renderer::s_DirShadowParams[Renderer::MAX_DIR_LIGHTS] = {};
+    glm::vec4 Renderer::s_DirShadowInfo[Renderer::MAX_DIR_LIGHTS] = {};
+    glm::mat4 Renderer::s_PointShadowMatrix[Renderer::MAX_POINT_LIGHTS * 6] = { glm::mat4(1.0f) };
+    glm::vec4 Renderer::s_PointShadowRect[Renderer::MAX_POINT_LIGHTS * 6] = {};
+    glm::vec4 Renderer::s_PointShadowParams[Renderer::MAX_POINT_LIGHTS] = {};
+    glm::vec4 Renderer::s_PointShadowInfo[Renderer::MAX_POINT_LIGHTS] = {};
+    int Renderer::s_DirShadowSlots = 0;
+    int Renderer::s_PointShadowSlots = 0;
+    int Renderer::s_DirSlotOf[Renderer::MAX_DIR_LIGHTS] = {};
+    int Renderer::s_PointSlotOf[Renderer::MAX_POINT_LIGHTS] = {};
+    bool Renderer::s_ShadowsEnabled = true;
+    int Renderer::s_ShadowSamples = 16;
     int Renderer::s_PrevFBO = 0;
     int Renderer::s_PrevViewport[4] = { 0, 0, 0, 0 };
     bool Renderer::s_LinearLighting = false;
@@ -34,14 +46,40 @@ namespace Phoenix{
         return { channel(c.r), channel(c.g), channel(c.b) };
     }
 
-    // Shadow atlas: a SHADOW_COLS x SHADOW_ROWS grid of SHADOW_TILE-sized tiles, one per
-    // directional light. COLS*ROWS must be >= MAX_DIR_LIGHTS and the grid must match the
-    // SHADOW_COLS/SHADOW_ROWS #defines in lighting.glsl.
-    static const uint32_t SHADOW_TILE = 1024;
-    static const int      SHADOW_COLS = 4;
-    static const int      SHADOW_ROWS = 2; // 4x2 = 8 tiles = MAX_DIR_LIGHTS
-    static const uint32_t SHADOW_ATLAS_W = SHADOW_TILE * SHADOW_COLS;
-    static const uint32_t SHADOW_ATLAS_H = SHADOW_TILE * SHADOW_ROWS;
+    // Shadow atlases. Directional: 4096x2048, two 2048 tiles when at most two lights cast
+    // shadows, else eight 1024 tiles. Point: 3072x2048, one light's six faces as a 3x2
+    // block of 1024 tiles, or up to four lights as 3x2 blocks of 512 tiles.
+    static const uint32_t DIR_ATLAS_W = 4096, DIR_ATLAS_H = 2048;
+    static const uint32_t POINT_ATLAS_W = 3072, POINT_ATLAS_H = 2048;
+    // Point faces span a bit more than 90 degrees (tan(half fov) = 1.1) so the soft
+    // filter kernel near a face edge still reads valid depths. Must exceed the shader's
+    // maximum filter radius (MAX_PENUMBRA in lighting.glsl).
+    static const float POINT_TAN_HALF_FOV = 1.1f;
+    static const float POINT_NEAR = 0.05f;
+    // Texture units: 0 diffuse, 1 directional atlas, 2 normal map, 3 water ripples,
+    // 4 directional atlas (raw depth), 5 point atlas, 6 point atlas (raw depth).
+    static const uint32_t DIR_SHADOW_UNIT = 1, DIR_DEPTH_UNIT = 4, POINT_SHADOW_UNIT = 5, POINT_DEPTH_UNIT = 6;
+
+    void Renderer::ShadowAtlas::Init(uint32_t w, uint32_t h){
+        width = w; height = h;
+        // LINEAR + compare mode = hardware PCF (each tap is a bilinear 2x2 comparison).
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, w, h, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        glGenFramebuffers(1, &fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, texture, 0);
+        glDrawBuffer(GL_NONE);
+        glReadBuffer(GL_NONE);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
 
 	void Renderer::Init(){
 		RenderCommand::Init();
@@ -52,51 +90,133 @@ namespace Phoenix{
         s_WaterShader = Shader::Create("assets/shaders/water.glsl");
         s_ShadowShader = Shader::Create("assets/shaders/shadow_depth.glsl");
 
-        // One big depth-texture atlas; each light renders into its own tile (set by the
-        // viewport in BeginShadowPass). LINEAR + compare mode = hardware PCF. Sampled as a
-        // plain sampler2DShadow with per-tile UV math (portable; no array samplers).
-        glGenTextures(1, &s_ShadowAtlasTex);
-        glBindTexture(GL_TEXTURE_2D, s_ShadowAtlasTex);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, SHADOW_ATLAS_W, SHADOW_ATLAS_H, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-        float border[] = { 1.0f, 1.0f, 1.0f, 1.0f }; // outside the map = max depth = lit
-        glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border);
+        s_DirAtlas.Init(DIR_ATLAS_W, DIR_ATLAS_H);
+        s_PointAtlas.Init(POINT_ATLAS_W, POINT_ATLAS_H);
+        s_DirAtlas.tile = GetDirShadowResolution(MAX_DIR_LIGHTS);
+        s_PointAtlas.tile = 512;
 
-        glGenFramebuffers(1, &s_ShadowFBO);
-        glBindFramebuffer(GL_FRAMEBUFFER, s_ShadowFBO);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, s_ShadowAtlasTex, 0);
-        glDrawBuffer(GL_NONE);
-        glReadBuffer(GL_NONE);
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        // Reads the atlases' raw depths (no comparison) for the soft-shadow blocker
+        // search. Bound only to its own units, overriding the textures' compare mode.
+        glGenSamplers(1, &s_RawDepthSampler);
+        glSamplerParameteri(s_RawDepthSampler, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glSamplerParameteri(s_RawDepthSampler, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glSamplerParameteri(s_RawDepthSampler, GL_TEXTURE_COMPARE_MODE, GL_NONE);
+        glSamplerParameteri(s_RawDepthSampler, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glSamplerParameteri(s_RawDepthSampler, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        BeginShadows(0, 0);
 	}
 
-    void Renderer::BeginShadowPass(int index, const glm::mat4& lightSpaceMatrix){
-        if (index < 0 || index >= MAX_DIR_LIGHTS) { return; }
-        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &s_PrevFBO);
-        glGetIntegerv(GL_VIEWPORT, s_PrevViewport);
+    uint32_t Renderer::GetDirShadowResolution(int numDirShadows){
+        return numDirShadows <= 2 ? 2048 : 1024;
+    }
 
-        s_LightSpaceMatrix[index] = lightSpaceMatrix;
-        s_ShadowsEnabled = true;
-        if (index + 1 > s_NumShadows) { s_NumShadows = index + 1; }
+    glm::mat4 Renderer::GetPointShadowMatrix(const glm::vec3& position, int face, float range){
+        static const glm::vec3 dirs[6] = { {1,0,0}, {-1,0,0}, {0,1,0}, {0,-1,0}, {0,0,1}, {0,0,-1} };
+        static const glm::vec3 ups[6]  = { {0,1,0}, {0,1,0}, {0,0,1}, {0,0,-1}, {0,1,0}, {0,1,0} };
+        face = std::max(0, std::min(5, face));
+        glm::mat4 proj = glm::perspective(2.0f * std::atan(POINT_TAN_HALF_FOV), 1.0f, POINT_NEAR, std::max(range, POINT_NEAR * 2.0f));
+        return proj * glm::lookAt(position, position + dirs[face], ups[face]);
+    }
 
-        glBindFramebuffer(GL_FRAMEBUFFER, s_ShadowFBO);
-        // Clear the WHOLE atlas once (on the first light) -> empty tiles read as "lit".
-        if (index == 0){
-            glViewport(0, 0, SHADOW_ATLAS_W, SHADOW_ATLAS_H);
+    void Renderer::SetShadowSamples(int samples){
+        s_ShadowSamples = std::max(4, std::min(64, samples));
+    }
+
+    void Renderer::BeginShadows(int numDirShadows, int numPointShadows){
+        for (int i = 0; i < MAX_DIR_LIGHTS; i++){ s_DirShadowRect[i] = glm::vec4(0.0f); s_DirSlotOf[i] = -1; }
+        for (int i = 0; i < MAX_POINT_LIGHTS * 6; i++){ s_PointShadowRect[i] = glm::vec4(0.0f); }
+        for (int i = 0; i < MAX_POINT_LIGHTS; i++){ s_PointShadowParams[i] = glm::vec4(0.0f); s_PointSlotOf[i] = -1; }
+        s_DirShadowSlots = s_PointShadowSlots = 0;
+        s_DirAtlas.tile = GetDirShadowResolution(numDirShadows);
+        s_PointAtlas.tile = numPointShadows <= 1 ? 1024 : 512;
+
+        // Clear what this frame will use: unrendered texels read as "lit".
+        if (numDirShadows <= 0 && numPointShadows <= 0) { return; }
+        GLint prevFBO, prevViewport[4];
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &prevFBO);
+        glGetIntegerv(GL_VIEWPORT, prevViewport);
+        glDepthMask(GL_TRUE);
+        for (ShadowAtlas* atlas : { &s_DirAtlas, &s_PointAtlas }){
+            if ((atlas == &s_DirAtlas ? numDirShadows : numPointShadows) <= 0) { continue; }
+            glBindFramebuffer(GL_FRAMEBUFFER, atlas->fbo);
+            glViewport(0, 0, atlas->width, atlas->height);
             glClear(GL_DEPTH_BUFFER_BIT);
         }
-        // Restrict rasterization to this light's tile.
-        int col = index % SHADOW_COLS;
-        int row = index / SHADOW_COLS;
-        glViewport(col * SHADOW_TILE, row * SHADOW_TILE, SHADOW_TILE, SHADOW_TILE);
+        glBindFramebuffer(GL_FRAMEBUFFER, (uint32_t)prevFBO);
+        glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
+    }
 
-        s_ShadowShader->Bind();
+    // Bind the atlas FBO and restrict rasterization to one tile (a zero viewport when the
+    // layout has no room left, so stray casters draw nothing). Returns the tile's
+    // (offset, size) in atlas UV, or zero size when there was no room.
+    static glm::vec4 BeginTile(uint32_t fbo, uint32_t atlasW, uint32_t atlasH, uint32_t tile, int col, int row,
+            const Ref<Shader>& shader, int* prevFBO, int* prevViewport){
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, prevFBO);
+        glGetIntegerv(GL_VIEWPORT, prevViewport);
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        shader->Bind();
+        if ((uint32_t)(col + 1) * tile > atlasW || (uint32_t)(row + 1) * tile > atlasH){
+            glViewport(0, 0, 0, 0);
+            return glm::vec4(0.0f);
+        }
+        glViewport(col * tile, row * tile, tile, tile);
+        // Slope-scaled offset on the casters: steep surfaces need more bias than flat ones.
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glPolygonOffset(1.5f, 2.0f);
+        return glm::vec4((float)(col * tile) / atlasW, (float)(row * tile) / atlasH,
+                         (float)tile / atlasW, (float)tile / atlasH);
+    }
+
+    void Renderer::BeginShadowPass(int lightIndex, const glm::mat4& lightSpaceMatrix, const ShadowSettings& settings){
+        if (lightIndex < 0 || lightIndex >= MAX_DIR_LIGHTS) { return; }
+        int& slot = s_DirSlotOf[lightIndex];
+        if (slot < 0) { slot = s_DirShadowSlots++; }
+        const uint32_t tile = s_DirAtlas.tile;
+        const int cols = (int)(s_DirAtlas.width / tile);
+        glm::vec4 rect = BeginTile(s_DirAtlas.fbo, s_DirAtlas.width, s_DirAtlas.height, tile, slot % cols, slot / cols,
+                                   s_ShadowShader, &s_PrevFBO, s_PrevViewport);
         s_ShadowShader->SetMat4("u_LightSpaceMatrix", lightSpaceMatrix);
+
+        // The light space is an orthographic projection of a rigid view, so the lengths of
+        // its x and z rows give the frustum's world width and depth range.
+        float width = 2.0f / std::max(glm::length(glm::vec3(lightSpaceMatrix[0][0], lightSpaceMatrix[1][0], lightSpaceMatrix[2][0])), 1e-6f);
+        float depth = 2.0f / std::max(glm::length(glm::vec3(lightSpaceMatrix[0][2], lightSpaceMatrix[1][2], lightSpaceMatrix[2][2])), 1e-6f);
+        float texelWorld = width / (float)tile;
+        float tanAngle = std::tan(glm::radians(std::max(settings.softness, 0.0f)));
+
+        s_LightSpaceMatrix[lightIndex] = lightSpaceMatrix;
+        s_DirShadowRect[lightIndex] = rect;
+        // x: penumbra width in tile UV per unit of (raw) blocker-receiver depth
+        // y: strength, z: depth bias (raw depth), w: normal offset (world)
+        s_DirShadowParams[lightIndex] = glm::vec4(tanAngle * depth / width, glm::clamp(settings.strength, 0.0f, 1.0f),
+                                                  settings.bias * texelWorld / depth, settings.normalBias * texelWorld);
+        // x: one texel in tile UV, y: raw depth per tile UV on a 45-degree slope
+        s_DirShadowInfo[lightIndex] = glm::vec4(1.0f / (float)tile, width / depth, 0.0f, 0.0f);
+    }
+
+    void Renderer::BeginPointShadowPass(int lightIndex, int face, const glm::vec3& position, float range, const ShadowSettings& settings){
+        if (lightIndex < 0 || lightIndex >= MAX_POINT_LIGHTS || face < 0 || face >= 6) { return; }
+        int& slot = s_PointSlotOf[lightIndex];
+        if (slot < 0) { slot = s_PointShadowSlots++; }
+        const uint32_t tile = s_PointAtlas.tile;
+        // Each light owns a 3x2 block of face tiles; blocks fill the atlas left to right.
+        const int blocksPerRow = (int)(s_PointAtlas.width / (tile * 3));
+        int col = (slot % blocksPerRow) * 3 + face % 3;
+        int row = (slot / blocksPerRow) * 2 + face / 3;
+        glm::vec4 rect = BeginTile(s_PointAtlas.fbo, s_PointAtlas.width, s_PointAtlas.height, tile, col, row,
+                                   s_ShadowShader, &s_PrevFBO, s_PrevViewport);
+        range = std::max(range, POINT_NEAR * 2.0f);
+        glm::mat4 matrix = GetPointShadowMatrix(position, face, range);
+        s_ShadowShader->SetMat4("u_LightSpaceMatrix", matrix);
+
+        s_PointShadowMatrix[lightIndex * 6 + face] = matrix;
+        s_PointShadowRect[lightIndex * 6 + face] = rect;
+        // x: light radius (world), y: strength, z: depth bias (texels), w: normal offset (texels)
+        s_PointShadowParams[lightIndex] = glm::vec4(std::max(settings.softness, 0.0f), glm::clamp(settings.strength, 0.0f, 1.0f),
+                                                    settings.bias, settings.normalBias);
+        // x: near, y: far, z: one texel in tile UV, w: tan(half fov)
+        s_PointShadowInfo[lightIndex] = glm::vec4(POINT_NEAR, range, 1.0f / (float)tile, POINT_TAN_HALF_FOV);
     }
 
     void Renderer::SubmitShadow(const Ref<VertexArray>& vertexArray, const glm::mat4& transform){
@@ -122,6 +242,7 @@ namespace Phoenix{
     }
 
     void Renderer::EndShadowPass(){
+        glDisable(GL_POLYGON_OFFSET_FILL);
         s_ShadowShader->Unbind();
         glBindFramebuffer(GL_FRAMEBUFFER, (uint32_t)s_PrevFBO);
         glViewport(s_PrevViewport[0], s_PrevViewport[1], s_PrevViewport[2], s_PrevViewport[3]);
@@ -145,13 +266,29 @@ namespace Phoenix{
         shader->SetMat4("projection", projection);
         shader->SetFloat3("cameraPos", cameraPos);
 
-        // Shadow atlas on texture unit 1 (diffuse=0, normal map=2). The light matrices are
-        // a plain uniform array (dynamic indexing of non-samplers IS allowed).
-        shader->SetInt("u_ShadowsEnabled", s_ShadowsEnabled ? 1 : 0);
-        shader->SetInt("u_NumShadows", s_NumShadows);
-        shader->SetInt("u_ShadowMap", 1);
-        glBindTextureUnit(1, s_ShadowAtlasTex);
+        // Shadow atlases + this frame's per-light shadow tiles. The matrices/params are
+        // plain uniform arrays (dynamic indexing of non-samplers IS allowed). With shadows
+        // globally off every tile size is zero, i.e. nothing is shadowed.
+        static const glm::vec4 noRects[MAX_POINT_LIGHTS * 6] = {};
+        shader->SetInt("u_ShadowMap", (int)DIR_SHADOW_UNIT);
+        shader->SetInt("u_ShadowDepth", (int)DIR_DEPTH_UNIT);
+        shader->SetInt("u_PointShadowMap", (int)POINT_SHADOW_UNIT);
+        shader->SetInt("u_PointShadowDepth", (int)POINT_DEPTH_UNIT);
+        glBindTextureUnit(DIR_SHADOW_UNIT, s_DirAtlas.texture);
+        glBindTextureUnit(DIR_DEPTH_UNIT, s_DirAtlas.texture);
+        glBindTextureUnit(POINT_SHADOW_UNIT, s_PointAtlas.texture);
+        glBindTextureUnit(POINT_DEPTH_UNIT, s_PointAtlas.texture);
+        glBindSampler(DIR_DEPTH_UNIT, s_RawDepthSampler);
+        glBindSampler(POINT_DEPTH_UNIT, s_RawDepthSampler);
         shader->SetMat4Array("u_LightSpaceMatrices", s_LightSpaceMatrix, MAX_DIR_LIGHTS);
+        shader->SetFloat4Array("u_DirShadowRect", s_ShadowsEnabled ? s_DirShadowRect : noRects, MAX_DIR_LIGHTS);
+        shader->SetFloat4Array("u_DirShadowParams", s_DirShadowParams, MAX_DIR_LIGHTS);
+        shader->SetFloat4Array("u_DirShadowInfo", s_DirShadowInfo, MAX_DIR_LIGHTS);
+        shader->SetMat4Array("u_PointShadowMatrices", s_PointShadowMatrix, MAX_POINT_LIGHTS * 6);
+        shader->SetFloat4Array("u_PointShadowRect", s_ShadowsEnabled ? s_PointShadowRect : noRects, MAX_POINT_LIGHTS * 6);
+        shader->SetFloat4Array("u_PointShadowParams", s_PointShadowParams, MAX_POINT_LIGHTS);
+        shader->SetFloat4Array("u_PointShadowInfo", s_PointShadowInfo, MAX_POINT_LIGHTS);
+        shader->SetInt("u_ShadowSamples", s_ShadowSamples);
         shader->SetInt("u_LinearLighting", s_LinearLighting ? 1 : 0);
     }
 
@@ -243,7 +380,6 @@ namespace Phoenix{
         }
     }
 
-    // Texture units: 0 = diffuse, 1 = shadow map array, 2 = normal map.
     static const uint32_t NORMAL_MAP_UNIT = 2;
 
     // Upload material params + bind its textures. The material's own diffuse path (set via
@@ -256,6 +392,7 @@ namespace Phoenix{
         shader->SetFloat("material.shininess", material.shininess);
         shader->SetFloat3("u_Emissive", Renderer::ToLinear(material.emissive) * material.emissiveStrength);
         shader->SetFloat("u_Reflectivity", material.reflectivity);
+        shader->SetInt("u_ReceiveShadows", material.receiveShadows ? 1 : 0);
 
         Ref<Texture2D> diffuse = !material.diffusePath.empty() ? Texture2D::Create(material.diffusePath) : diffuseMap;
         if (diffuse){
@@ -433,6 +570,14 @@ namespace Phoenix{
         s_WaterShader->SetFloat("u_Foam", params.foam);
         s_WaterShader->SetFloat("u_WaterSize", params.size);
 
+        // The sun's (directional light 0's) shadow darkens the water and hides its glint.
+        s_WaterShader->SetInt("u_ShadowMap", (int)DIR_SHADOW_UNIT);
+        glBindTextureUnit(DIR_SHADOW_UNIT, s_DirAtlas.texture);
+        s_WaterShader->SetMat4("u_LightSpaceMatrix", s_LightSpaceMatrix[0]);
+        s_WaterShader->SetFloat4("u_ShadowRect", s_ShadowsEnabled ? s_DirShadowRect[0] : glm::vec4(0.0f));
+        s_WaterShader->SetFloat4("u_ShadowParams", s_DirShadowParams[0]);
+        s_WaterShader->SetFloat4("u_ShadowInfo", s_DirShadowInfo[0]);
+
         // Dynamic ripple heightfield on unit 3 (0 diffuse, 1 shadow atlas, 2 normal map).
         s_WaterShader->SetInt("u_HasRipples", params.rippleTexture ? 1 : 0);
         if (params.rippleTexture){
@@ -451,9 +596,9 @@ namespace Phoenix{
 
 	void Renderer::EndScene(){
         s_RenderLightCube->m_Shader->Unbind();
-        // Reset for next frame; if no shadow pass runs, shadows stay disabled.
-        s_ShadowsEnabled = false;
-        s_NumShadows = 0;
+        // Other passes (bloom, ImGui) use these units with the textures' own state.
+        glBindSampler(DIR_DEPTH_UNIT, 0);
+        glBindSampler(POINT_DEPTH_UNIT, 0);
 	}
 
 }

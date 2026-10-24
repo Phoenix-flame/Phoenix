@@ -112,6 +112,10 @@ private:
     void UpdateSimulation(float frameSeconds);
     AIPanelContext MakeAIContext();
 
+    // Populate m_Scene with the shadow showcase: soft sun shadows with contact hardening,
+    // shadows falling on other objects, and two orbiting point lights with cube shadows.
+    void BuildShadowShowcase();
+
     // Terrain sculpting: raycast to the terrain plane and raise/lower/smooth heights.
     void SculptTerrain(TerrainComponent& terrain, const glm::vec3& terrainPos,
                        const glm::vec3& terrainScale, const glm::vec3& rayOrigin,

@@ -544,6 +544,40 @@ namespace Phoenix{
 	}
 
 
+    // Cast / receive shadow toggles shared by every component that draws with a Material.
+    static void DrawShadowFlags(Material& material){
+        ImGui::Checkbox("Cast Shadows", &material.castShadows);
+        ImGui::SameLine();
+        ImGui::Checkbox("Receive Shadows", &material.receiveShadows);
+    }
+
+    // A light's shadow look, under a collapsible (unindented) "Shadow" node; returns false
+    // when collapsed. Directional softness is the sun's angular radius; a point light's is
+    // the bulb's radius in world units.
+    static bool DrawShadowSettings(ShadowSettings& shadow, bool directional){
+        if (!ImGui::TreeNodeEx("Shadow", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_NoTreePushOnOpen)) { return false; }
+        if (directional){
+            ImGui::DragFloat("Softness", &shadow.softness, 0.05f, 0.0f, 10.0f, "%.2f deg");
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Angular radius of the light in degrees (the real sun is ~0.27).\n"
+                                  "Penumbrae widen with distance from the caster; 0 = hard.");
+        }
+        else{
+            ImGui::DragFloat("Softness", &shadow.softness, 0.005f, 0.0f, 2.0f, "%.3f");
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Radius of the light source in world units.\n"
+                                  "Penumbrae widen with distance from the caster; 0 = hard.");
+        }
+        ImGui::SliderFloat("Strength", &shadow.strength, 0.0f, 1.0f);
+        ImGui::DragFloat("Bias", &shadow.bias, 0.05f, 0.0f, 10.0f, "%.2f");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Depth bias in shadow texels. Raise it if surfaces show\n"
+                              "striped self-shadowing (acne); lower it if shadows detach\n"
+                              "from their casters.");
+        ImGui::DragFloat("Normal Bias", &shadow.normalBias, 0.05f, 0.0f, 10.0f, "%.2f");
+        return true;
+    }
+
     static void DrawVec3Control(const std::string& label, glm::vec3& values, float resetValue = 0.0f, float columnWidth = 100.0f
             ,std::string label1="X", std::string label2="Y", std::string label3="Z"){
         ImGuiIO& io = ImGui::GetIO();
@@ -712,6 +746,7 @@ namespace Phoenix{
             ImGui::ColorEdit3("Emissive", glm::value_ptr(component.material.emissive));
             ImGui::DragFloat("Glow Strength", &component.material.emissiveStrength, 0.05f, 0.0f, 10.0f);
             ImGui::SliderFloat("Reflectivity", &component.material.reflectivity, 0.0f, 1.0f);
+            DrawShadowFlags(component.material);
 		});
 
         DrawComponent<PrimitiveComponent>("Shape", entity, [](PrimitiveComponent& component){
@@ -726,6 +761,7 @@ namespace Phoenix{
             ImGui::ColorEdit3("Emissive", glm::value_ptr(component.material.emissive));
             ImGui::DragFloat("Glow Strength", &component.material.emissiveStrength, 0.05f, 0.0f, 10.0f);
             ImGui::SliderFloat("Reflectivity", &component.material.reflectivity, 0.0f, 1.0f);
+            DrawShadowFlags(component.material);
 		});
 
         DrawComponent<AnimationComponent>("Animation", entity, [entity](AnimationComponent& component) mutable {
@@ -808,11 +844,18 @@ namespace Phoenix{
                 component.material.diffuse.z = diffuse[2];
             }
             ImGui::DragFloat("Shininess", &component.material.shininess, 1.0f, 0.0f, 128.0f);
+            DrawShadowFlags(component.material);
         });
 
         DrawComponent<DirLightComponent>("Directional Light", entity, [](auto& component){
 			ImGui::Checkbox("Active", &component.isActive);
 			ImGui::Checkbox("Casts Shadow", &component.castsShadow);
+			if (component.castsShadow && DrawShadowSettings(component.shadow, true)){
+				ImGui::DragFloat("Distance", &component.shadowDistance, 0.5f, 1.0f, 500.0f, "%.1f");
+				if (ImGui::IsItemHovered())
+					ImGui::SetTooltip("How far from the camera shadows reach (the whole scene\n"
+					                  "is covered when it is smaller). Shorter = sharper.");
+			}
 
 			float ambient[] = {component.ambient.x, component.ambient.y, component.ambient.z};
             if (ImGui::ColorEdit3("Ambient", ambient)){
@@ -836,6 +879,9 @@ namespace Phoenix{
 
 		DrawComponent<PointLightComponent>("Point Light", entity, [](auto& component){
 			ImGui::Checkbox("Active", &component.isActive);
+			ImGui::Checkbox("Casts Shadow", &component.castsShadow);
+			if (component.castsShadow)
+				DrawShadowSettings(component.shadow, false);
 			float ambient[] = {component.ambient.x, component.ambient.y, component.ambient.z};
             if (ImGui::ColorEdit3("Ambient", ambient)){
                 component.ambient.x = ambient[0];
@@ -1047,6 +1093,7 @@ namespace Phoenix{
 			ImGui::ColorEdit3("Color", glm::value_ptr(component.material.diffuse));
 			component.material.ambient = component.material.diffuse * 0.6f;
 			ImGui::SliderFloat("Reflectivity", &component.material.reflectivity, 0.0f, 1.0f);
+			DrawShadowFlags(component.material);
 			ImGui::Checkbox("Collider on Play", &component.generateCollider);
 			ImGui::TextDisabled("%d x %d grid, %.0f units. Sculpt via Settings > Terrain Sculpt.",
 				component.resolution, component.resolution, component.size);

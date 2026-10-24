@@ -41,6 +41,8 @@ namespace Phoenix{
         out << YAML::Key << "reflectivity" << YAML::Value << material.reflectivity;
         out << YAML::Key << "diffusePath" << YAML::Value << material.diffusePath;
         out << YAML::Key << "normalPath"  << YAML::Value << material.normalPath;
+        out << YAML::Key << "castShadows" << YAML::Value << material.castShadows;
+        out << YAML::Key << "receiveShadows" << YAML::Value << material.receiveShadows;
         out << YAML::EndMap;
     }
 
@@ -56,7 +58,28 @@ namespace Phoenix{
         material.reflectivity = node["reflectivity"].as<float>(material.reflectivity);
         material.diffusePath = node["diffusePath"].as<std::string>(material.diffusePath);
         material.normalPath  = node["normalPath"].as<std::string>(material.normalPath);
+        material.castShadows = node["castShadows"].as<bool>(material.castShadows);
+        material.receiveShadows = node["receiveShadows"].as<bool>(material.receiveShadows);
         return material;
+    }
+
+    static void SerializeShadow(YAML::Emitter& out, const ShadowSettings& shadow){
+        out << YAML::Key << "Shadow" << YAML::Value << YAML::BeginMap;
+        out << YAML::Key << "softness"   << YAML::Value << shadow.softness;
+        out << YAML::Key << "strength"   << YAML::Value << shadow.strength;
+        out << YAML::Key << "bias"       << YAML::Value << shadow.bias;
+        out << YAML::Key << "normalBias" << YAML::Value << shadow.normalBias;
+        out << YAML::EndMap;
+    }
+
+    static ShadowSettings ReadShadow(const YAML::Node& node, const ShadowSettings& fallback){
+        ShadowSettings shadow = fallback;
+        if (!node || !node.IsMap()) { return shadow; }
+        shadow.softness   = node["softness"].as<float>(shadow.softness);
+        shadow.strength   = node["strength"].as<float>(shadow.strength);
+        shadow.bias       = node["bias"].as<float>(shadow.bias);
+        shadow.normalBias = node["normalBias"].as<float>(shadow.normalBias);
+        return shadow;
     }
 
     SceneSerializer::SceneSerializer(const Ref<Scene>& scene) : m_Scene(scene) {}
@@ -126,6 +149,8 @@ namespace Phoenix{
             out << YAML::Key << "constant"  << YAML::Value << pl.constant;
             out << YAML::Key << "linear"    << YAML::Value << pl.linear;
             out << YAML::Key << "quadratic" << YAML::Value << pl.quadratic;
+            out << YAML::Key << "castsShadow" << YAML::Value << pl.castsShadow;
+            SerializeShadow(out, pl.shadow);
             out << YAML::EndMap;
         }
         else if (entity.HasComponent<DirLightComponent>()){
@@ -136,6 +161,8 @@ namespace Phoenix{
             out << YAML::Key << "specular" << YAML::Value << dl.specular;
             out << YAML::Key << "isActive" << YAML::Value << dl.isActive;
             out << YAML::Key << "castsShadow" << YAML::Value << dl.castsShadow;
+            out << YAML::Key << "shadowDistance" << YAML::Value << dl.shadowDistance;
+            SerializeShadow(out, dl.shadow);
             out << YAML::EndMap;
         }
 
@@ -481,6 +508,8 @@ namespace Phoenix{
             pl.constant  = n["constant"].as<float>(def.constant);
             pl.linear    = n["linear"].as<float>(def.linear);
             pl.quadratic = n["quadratic"].as<float>(def.quadratic);
+            pl.castsShadow = n["castsShadow"].as<bool>(def.castsShadow);
+            pl.shadow    = ReadShadow(n["Shadow"], def.shadow);
         }
         else if (entity.HasComponent<PointLightComponent>()) entity.RemoveComponent<PointLightComponent>();
 
@@ -492,6 +521,8 @@ namespace Phoenix{
             dl.specular = ReadVec3(n["specular"], def.specular);
             dl.isActive = n["isActive"].as<bool>(def.isActive);
             if (n["castsShadow"]) dl.castsShadow = n["castsShadow"].as<bool>(def.castsShadow);
+            dl.shadowDistance = n["shadowDistance"].as<float>(def.shadowDistance);
+            dl.shadow = ReadShadow(n["Shadow"], def.shadow);
         }
         else if (entity.HasComponent<DirLightComponent>()) entity.RemoveComponent<DirLightComponent>();
 
