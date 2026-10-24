@@ -243,8 +243,8 @@ geometry-agnostic path:
 Renderer::BeginScene(projection, view, cameraPos);
 Renderer::SetLights(ambient, dirLights, dirLightDirs, numDirLights,
                     pointLights, pointLightPositions, numPointLights);
-Renderer::Submit(vertexArray, material, transform, diffuseMap);   // any indexed mesh
-Renderer::SubmitAnimated(vertexArray, material, transform, boneMatrices, diffuseMap);
+Renderer::Submit(vertexArray, material, transform, maps);   // any indexed mesh
+Renderer::SubmitAnimated(vertexArray, material, transform, boneMatrices, maps);
 Renderer::EndScene();
 ```
 
@@ -256,10 +256,34 @@ one-file program that uses exactly this API to draw a lit, spinning cube.
 
 <img src="images/example.png" alt="The minimal Example app: a lit orange cube with a small settings panel" width="480">
 
+`maps` (`SurfaceMaps`) carries the textures a mesh brings: diffuse, normal and height maps
+and an alpha cutoff; a material's own texture paths override them.
+
 Textures loaded from disk get a full mip chain with trilinear + anisotropic filtering, and
 are cached by path so a model whose sub-meshes share a material uploads it once.
 
+**Surface depth.** Normal maps can be scaled (*Normal Strength*), and a **height map**
+(white = high) adds **parallax occlusion mapping**: texture lookups follow the view ray
+into the height field, so bricks and tiles look carved in and hide each other at
+grazing angles (*Parallax Depth*, in texture units). Assign one in the **Textures**
+panel, or let a model bring its own: OBJ `disp`, or a `<normal map>_height.png/.jpg`
+file beside a model's normal map (for formats such as glTF that have no height slot).
+
+**Anti-aliasing.** MSAA (2x / 4x / 8x) smooths geometry edges; cut-out materials (leaves,
+chains) use **alpha-to-coverage** under MSAA, so their edges are smoothed too instead of
+stair-stepped. **FXAA** (3.11 quality) runs on the final image and also catches shading
+and specular aliasing that MSAA leaves alone; it is on by default and combines with MSAA
+(*Settings → Rendering*).
+
 ### Lighting & Shadows
+
+**Ambient light** has three parts: the flat *Ambient Light* colour, **sky light** (*Sky
+Light* under *Settings → Environment*: up-facing surfaces take the sky's colour, down-facing
+ones the ground's, so the scene isn't lit one flat colour), and **screen-space ambient
+occlusion** (SSAO, *Settings → Rendering*). SSAO renders the camera's depth in a prepass,
+tests hemisphere samples around each pixel against it, blurs the result with a
+depth-aware filter, and darkens ambient light in corners, creases and where objects meet
+(radius in metres, strength).
 
 - **Ambient**: a single global ambient colour (editable in Settings, serialized).
 - **Directional lights** (`DirLightComponent`): up to 8; each aims along its entity's
@@ -699,10 +723,13 @@ Open via **File → Showcases**:
 
 ![Contact-hardening sun shadows (left) and coloured point-light shadows (right)](images/soft-shadows.png)
 - **Sponza** — the Crytek Sponza atrium (glTF: 262k triangles, 69 textures) with
-  normal-mapped stone, cloth banners and alpha-tested foliage, sunlit through the open
-  roof with soft shadows under a gradient sky. Press **Play** to fly through it: free flight is on, so **WASD**
-  flies, **E / Space** rises, **Q** sinks, hold the **right mouse** button to look,
-  **Shift** goes 4x faster and the wheel sets the speed. The paper-plane button in the
+  normal-mapped stone, parallax-mapped walls and floor, cloth banners and alpha-tested
+  foliage, sunlit through the open roof with soft shadows, sky light and ambient
+  occlusion under a gradient sky. Press **Play** to fly through it: free flight is on, so the
+  mouse is captured and looks around freely, without limit in any direction; **WASD**
+  flies, **E / Space** rises, **Q** sinks, **Shift** goes 4x faster and the wheel sets the
+  speed. **Esc** frees the mouse (then hold the right button to look); click the viewport
+  to capture it again. The paper-plane button in the
   viewport tool strip (or *View → Free Flight*) turns free flight on for any scene that
   has no primary camera. Assets and credits: [`Sandbox/assets/models/sponza`](Sandbox/assets/models/sponza/README.txt).
 - **Physics** — restitution and friction tests, a jointed wrecking ball, a

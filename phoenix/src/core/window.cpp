@@ -163,6 +163,20 @@ namespace Phoenix{
         return _data.VSync;
     }
 
+    void Window::SetCursorLocked(bool locked){
+        glfwSetInputMode(_window, GLFW_CURSOR, locked ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+        if (glfwRawMouseMotionSupported())
+            glfwSetInputMode(_window, GLFW_RAW_MOUSE_MOTION, locked ? GLFW_TRUE : GLFW_FALSE);
+    }
+
+    bool Window::IsCursorLocked() const{
+        return glfwGetInputMode(_window, GLFW_CURSOR) == GLFW_CURSOR_DISABLED;
+    }
+
+    bool Window::IsFocused() const{
+        return glfwGetWindowAttrib(_window, GLFW_FOCUSED) == GLFW_TRUE;
+    }
+
     void Window::Minimize(){
         glfwIconifyWindow(_window);
     }

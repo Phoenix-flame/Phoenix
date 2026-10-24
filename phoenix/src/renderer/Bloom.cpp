@@ -122,7 +122,8 @@ namespace Phoenix{
         glDrawArrays(GL_TRIANGLES, 0, 6);
     }
 
-    void Bloom::Composite(uint32_t targetFBO, float intensity, float threshold, float exposure, bool encodeSRGB){
+    void Bloom::Composite(uint32_t targetFBO, float intensity, float threshold, float exposure, bool encodeSRGB, bool fxaa,
+                          bool tonemap){
         if (!m_HDRFBO) { return; }
 
         if (m_MSAAFBO){
@@ -174,6 +175,9 @@ namespace Phoenix{
         m_CompositeShader->SetFloat("u_Intensity", bloomTex ? intensity : 0.0f);
         m_CompositeShader->SetFloat("u_Exposure", exposure);
         m_CompositeShader->SetInt("u_EncodeSRGB", encodeSRGB ? 1 : 0);
+        m_CompositeShader->SetInt("u_FXAA", fxaa ? 1 : 0);
+        m_CompositeShader->SetInt("u_Tonemap", tonemap ? 1 : 0);
+        m_CompositeShader->SetFloat2("u_TexelSize", glm::vec2(1.0f / (float)m_Width, 1.0f / (float)m_Height));
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, m_HDRColor);
         glActiveTexture(GL_TEXTURE1);

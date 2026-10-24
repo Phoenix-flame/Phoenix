@@ -62,6 +62,12 @@ namespace Phoenix{
         // (or above it, e.g. over a panel). Used to snap-maximize on title-bar drags.
         bool IsAtMonitorTop(const glm::vec2& screenPos, float margin = 2.0f) const;
 
+        // Locked: the cursor is hidden and held in the window, and its position keeps
+        // counting past the screen edges (unbounded mouse look). Raw motion when supported.
+        void SetCursorLocked(bool locked);
+        bool IsCursorLocked() const;
+        bool IsFocused() const;
+
     private:
         virtual void Init(const WindowProperties& props);
         virtual void Shutdown();

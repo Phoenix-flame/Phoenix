@@ -21,9 +21,11 @@ namespace Phoenix{
 
         // Run the bloom passes and composite into targetFBO (0 = default framebuffer).
         // intensity <= 0 skips the bloom passes (tonemap only). encodeSRGB applies the
-        // sRGB transfer curve after tonemapping, for linear lighting.
+        // sRGB transfer curve after tonemapping, for linear lighting. fxaa anti-aliases
+        // the final image (FXAA); tonemap false copies the scene through unchanged (for
+        // FXAA alone, without bloom or linear lighting).
         void Composite(uint32_t targetFBO, float intensity, float threshold, float exposure,
-                       bool encodeSRGB = false);
+                       bool encodeSRGB = false, bool fxaa = false, bool tonemap = true);
     private:
         void DrawFullscreenQuad();
 

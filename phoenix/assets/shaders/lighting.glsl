@@ -140,21 +140,39 @@ uniform sampler2D u_DiffuseMap;
 uniform bool u_HasDiffuseMap;
 
 // Cut-out materials (foliage, chains): fragments whose diffuse alpha is below this are
-// discarded. 0 = opaque.
+// discarded. 0 = opaque. Under MSAA the edge becomes coverage instead (alpha-to-coverage).
 uniform float u_AlphaCutoff;
+uniform bool u_AlphaToCoverage;
 
-// Optional tangent-space normal map ("depth"/surface detail). The tangent frame is
-// derived from screen-space derivatives, so no per-vertex tangents are needed.
+// Optional tangent-space normal map (surface detail), its bumps scaled by u_NormalStrength.
+// The tangent frame is derived from screen-space derivatives, so no per-vertex tangents
+// are needed.
 uniform sampler2D u_NormalMap;
 uniform bool u_HasNormalMap;
+uniform float u_NormalStrength;
+
+// Optional height map (white = high) for parallax occlusion mapping: texture lookups are
+// shifted along the view ray until it meets the height field, so the surface looks
+// carved u_ParallaxDepth deep (in texture units) and its relief hides itself.
+uniform sampler2D u_HeightMap;
+uniform bool u_HasHeightMap;
+uniform float u_ParallaxDepth;
+
+// Screen-space ambient occlusion (Renderer SSAO pass): darkens ambient light in creases
+// and corners. Sampled per pixel; 1 = open.
+uniform sampler2D u_AOMap;
+uniform bool u_HasAO;
+uniform vec2 u_AOInvSize; // 1 / target size in pixels
 
 // pow(0, 0) is undefined in GLSL (NaN on some drivers, which bloom then smears into
 // black blocks), and the editor allows shininess 0, so keep the exponent >= 1.
 float Shininess() { return max(material.shininess, 1.0); }
 
-vec3 PerturbNormal(vec3 N, vec2 uv)
+// Tangent frame from screen-space derivatives: T and B follow the texture's u and v
+// across the surface. False where the uv doesn't vary (e.g. a mesh without texcoords):
+// the frame is undefined there and inversesqrt(0) would turn normals into NaN.
+bool CotangentFrame(vec3 N, vec2 uv, out mat3 TBN)
 {
-    vec3 mapN = texture(u_NormalMap, uv).xyz * 2.0 - 1.0;
     vec3 dp1 = dFdx(FragPos);
     vec3 dp2 = dFdy(FragPos);
     vec2 duv1 = dFdx(uv);
@@ -163,13 +181,47 @@ vec3 PerturbNormal(vec3 N, vec2 uv)
     vec3 dp1perp = cross(N, dp1);
     vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
     vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
-    // No UV variation (e.g. a mesh without texcoords): the tangent frame is undefined
-    // and inversesqrt(0) would turn the normal into NaN, so keep the surface normal.
     float lenSq = max(dot(T, T), dot(B, B));
-    if (lenSq < 1e-12) { return N; }
+    TBN = mat3(1.0);
+    if (lenSq < 1e-12) { return false; }
     float invmax = inversesqrt(lenSq);
-    mat3 TBN = mat3(T * invmax, B * invmax, N);
+    TBN = mat3(T * invmax, B * invmax, N);
+    return true;
+}
+
+// Lookups take the unshifted uv's derivatives: parallax shifts are discontinuous at
+// silhouettes of the relief, where automatic derivatives would pick a tiny mip level.
+vec3 PerturbNormal(mat3 TBN, vec2 uv, vec2 dx, vec2 dy)
+{
+    vec3 mapN = textureGrad(u_NormalMap, uv, dx, dy).xyz * 2.0 - 1.0;
+    mapN.xy *= u_NormalStrength;
     return normalize(TBN * mapN);
+}
+
+// Parallax occlusion mapping: march the view ray down through layers of the height field
+// (more layers at grazing angles), then interpolate between the last two layers.
+vec2 ParallaxUV(mat3 TBN, vec3 viewDir, vec2 uv, vec2 dx, vec2 dy)
+{
+    vec3 v = vec3(dot(viewDir, normalize(TBN[0])), dot(viewDir, normalize(TBN[1])), dot(viewDir, TBN[2]));
+    v.z = max(v.z, 0.15); // grazing views would shift without bound
+    float layers = mix(32.0, 8.0, clamp(v.z, 0.0, 1.0));
+    float layerDepth = 1.0 / layers;
+    vec2 delta = v.xy / v.z * u_ParallaxDepth / layers;
+
+    vec2 cur = uv;
+    float depth = 0.0;
+    float surface = 1.0 - textureGrad(u_HeightMap, cur, dx, dy).r;
+    for (int i = 0; i < 32; i++){
+        if (depth >= surface) { break; }
+        cur -= delta;
+        depth += layerDepth;
+        surface = 1.0 - textureGrad(u_HeightMap, cur, dx, dy).r;
+    }
+    vec2 prev = cur + delta;
+    float after = surface - depth;
+    float before = (1.0 - textureGrad(u_HeightMap, prev, dx, dy).r) - (depth - layerDepth);
+    float w = after / min(after - before, -1e-5);
+    return mix(cur, prev, clamp(w, 0.0, 1.0));
 }
 
 // The scene's sky (Renderer::SetSky), mirrored by reflections: its panorama in Panorama
@@ -192,6 +244,23 @@ vec3 SampleEnvironment(vec3 dir)
     float t = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
     vec3 sky = mix(u_SkyHorizon, u_SkyZenith, smoothstep(0.5, 1.0, t));
     return mix(u_SkyGround, sky, smoothstep(0.45, 0.55, t)) * u_SkyIntensity;
+}
+
+// Sky light (u_SkyAmbient > 0): ambient light from the sky dome instead of one flat colour.
+// Up-facing surfaces get the sky, down-facing ones the ground bounce, sides a mix. A
+// panorama is read at a very blurry mip, roughly the light from that half of the sky.
+uniform float u_SkyAmbient;
+
+vec3 SkyLight(vec3 n)
+{
+    if (u_SkyHasPanorama){
+        float u = atan(n.x, -n.z) / 6.2831853 + 0.5 + u_SkyRotation / 6.2831853;
+        float v = asin(clamp(n.y, -1.0, 1.0)) / 3.14159265 + 0.5;
+        float lod = max(log2(float(textureSize(u_SkyPanorama, 0).x)) - 2.0, 0.0);
+        return textureLod(u_SkyPanorama, vec2(u, v), lod).rgb * u_SkyIntensity;
+    }
+    vec3 sky = mix(u_SkyHorizon, u_SkyZenith, clamp(n.y, 0.0, 1.0) * 0.6);
+    return mix(u_SkyGround, sky, smoothstep(-0.6, 0.6, n.y)) * u_SkyIntensity;
 }
 
 // ---- Soft shadows (PCSS) ------------------------------------------------------------
@@ -356,20 +425,20 @@ float PointShadow(int j, vec3 geomNormal, vec3 lightPos, float phi)
     return FilterShadow(u_PointShadowMap, rect, proj.xy, ref, radius, slope, texel, count, phi) * params.y;
 }
 
-vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 diffuseColor, float shadow)
+vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir, vec3 diffuseColor, float shadow, float ao)
 {
     vec3 lightDir = normalize(-light.direction);
     float diff = max(dot(normal, lightDir), 0.0);
     vec3 reflectDir = reflect(-lightDir, normal);
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), Shininess());
-    vec3 ambient  = light.ambient  * diffuseColor;
+    vec3 ambient  = light.ambient  * diffuseColor * ao;
     vec3 diffuse  = light.diffuse  * diff * diffuseColor;
     vec3 specular = light.specular * spec * material.specular;
     // ambient still applies in shadow; diffuse+specular are occluded
     return ambient + (1.0 - shadow) * (diffuse + specular);
 }
 
-vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 diffuseColor, float shadow)
+vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 diffuseColor, float shadow, float ao)
 {
     vec3 lightDir = normalize(light.position - fragPos);
     float diff = max(dot(normal, lightDir), 0.0);
@@ -378,7 +447,7 @@ vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, v
     float distance    = length(light.position - fragPos);
     float attenuation = 1.0 / (light.constant + light.linear * distance +
   			     light.quadratic * (distance * distance));
-    vec3 ambient  = light.ambient  * diffuseColor;
+    vec3 ambient  = light.ambient  * diffuseColor * ao;
     vec3 diffuse  = light.diffuse  * diff * diffuseColor;
     vec3 specular = light.specular * spec * material.specular;
     ambient  *= attenuation;
@@ -389,18 +458,32 @@ vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, v
 
 void main()
 {
-    vec3 norm = normalize(Normal);
-    if (u_HasNormalMap) { norm = PerturbNormal(norm, TexCoords); }
+    vec3 geomNormal = normalize(Normal);
     vec3 viewDir = normalize(cameraPos - FragPos);
-    vec4 diffuseSample = u_HasDiffuseMap ? texture(u_DiffuseMap, TexCoords) : vec4(material.diffuse, 1.0);
-    vec3 diffuseColor = diffuseSample.rgb;
 
-    // global ambient
-    vec3 result = u_Ambient * diffuseColor;
+    // Derivatives first, in uniform control flow: the texture lookups below may move.
+    vec2 dx = dFdx(TexCoords);
+    vec2 dy = dFdy(TexCoords);
+    mat3 TBN;
+    bool haveFrame = CotangentFrame(geomNormal, TexCoords, TBN);
+
+    vec2 uv = TexCoords;
+    if (u_HasHeightMap && haveFrame) { uv = ParallaxUV(TBN, viewDir, uv, dx, dy); }
+
+    vec3 norm = geomNormal;
+    if (u_HasNormalMap && haveFrame) { norm = PerturbNormal(TBN, uv, dx, dy); }
+    vec4 diffuseSample = u_HasDiffuseMap ? textureGrad(u_DiffuseMap, uv, dx, dy) : vec4(material.diffuse, 1.0);
+    vec3 diffuseColor = diffuseSample.rgb;
+    float alphaWidth = fwidth(diffuseSample.a);
+
+    float ao = u_HasAO ? texture(u_AOMap, gl_FragCoord.xy * u_AOInvSize).r : 1.0;
+
+    // global ambient + sky light, both occluded in creases
+    vec3 result = u_Ambient * diffuseColor * ao;
+    if (u_SkyAmbient > 0.0) { result += SkyLight(norm) * u_SkyAmbient * diffuseColor * ao; }
 
     // Shadows use the geometric normal: a normal map's bumps shouldn't move the
     // shadow-map lookup.
-    vec3 geomNormal = normalize(Normal);
     float phi = ShadowNoise();
 
     // Directional lights. A surface facing away from a light gets no diffuse/specular
@@ -412,7 +495,7 @@ void main()
         if (u_ReceiveShadows && dot(norm, lightDir) > 0.0)
             shadow = DirShadow(i, geomNormal, lightDir, phi);
         shadow = clamp(QuadAverage(shadow), 0.0, 1.0);
-        result += CalcDirLight(dirLights[i], norm, viewDir, diffuseColor, shadow);
+        result += CalcDirLight(dirLights[i], norm, viewDir, diffuseColor, shadow, ao);
     }
 
     // Point lights, each optionally with an omnidirectional shadow.
@@ -422,7 +505,7 @@ void main()
         if (u_ReceiveShadows && dot(norm, pointLights[i].position - FragPos) > 0.0)
             shadow = PointShadow(i, geomNormal, pointLights[i].position, phi);
         shadow = clamp(QuadAverage(shadow), 0.0, 1.0);
-        result += CalcPointLight(pointLights[i], norm, FragPos, viewDir, diffuseColor, shadow);
+        result += CalcPointLight(pointLights[i], norm, FragPos, viewDir, diffuseColor, shadow, ao);
     }
 
     // environment reflection (mirror a procedural sky/ground)
@@ -434,9 +517,17 @@ void main()
     // emissive / glow
     result += u_Emissive;
 
-    // Alpha test last: discarding earlier would leave QuadAverage's derivatives
-    // undefined for the rest of the pixel quad.
-    if (diffuseSample.a < u_AlphaCutoff) { discard; }
+    // Cut-outs. Alpha-to-coverage: an alpha sharpened to about one pixel of falloff, which
+    // the hardware turns into MSAA sample coverage (smooth edges). Otherwise an alpha test,
+    // last: discarding earlier would leave QuadAverage's derivatives undefined for the
+    // rest of the pixel quad.
+    float alpha = 1.0;
+    if (u_AlphaCutoff > 0.0){
+        if (u_AlphaToCoverage)
+            alpha = clamp((diffuseSample.a - u_AlphaCutoff) / max(alphaWidth, 1e-4) + 0.5, 0.0, 1.0);
+        else if (diffuseSample.a < u_AlphaCutoff)
+            discard;
+    }
 
-    FragColor = vec4(result, 1.0);
+    FragColor = vec4(result, alpha);
 }

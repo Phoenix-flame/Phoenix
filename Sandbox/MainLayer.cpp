@@ -2597,7 +2597,7 @@ void MainLayer::BuildSponzaShowcase() {
     // textured interior with normal-mapped stone, cloth banners and alpha-tested foliage
     // and chains. Sunlight falls through the open roof and casts shadows across the
     // atrium floor. Load time is a few seconds (262k triangles, 69 textures).
-    m_Scene->AmbientColor() = glm::vec3(0.16f, 0.16f, 0.18f);
+    m_Scene->AmbientColor() = glm::vec3(0.10f, 0.095f, 0.09f);
 
     {
         auto sponza = m_Scene->CreateEntity("Sponza");
@@ -2607,6 +2607,8 @@ void MainLayer::BuildSponzaShowcase() {
         mesh.material.diffuse = glm::vec3(1.0f);
         mesh.material.specular = glm::vec3(0.12f);
         mesh.material.shininess = 16.0f;
+        // Height maps beside the normal maps (make_height_maps.py) carve the walls and floor.
+        mesh.material.parallaxDepth = 0.06f;
         // The glTF scales its root node by 0.008 (the loader ignores node transforms),
         // giving an atrium about 30 x 12 x 18 m.
         sponza.GetComponent<TransformComponent>().Scale = glm::vec3(0.008f);
@@ -2628,6 +2630,8 @@ void MainLayer::BuildSponzaShowcase() {
     m_Scene->Sky().mode = SkySettings::Mode::Gradient;
     m_Scene->Sky().zenith = glm::vec3(0.22f, 0.45f, 0.85f);
     m_Scene->Sky().horizon = glm::vec3(0.70f, 0.78f, 0.88f);
+    // Sky light on top of a low flat ambient: the floor catches the sky, undersides stay dim.
+    m_Scene->Sky().ambient = 0.12f;
 
     // Eye level at the east end, looking down the atrium toward the lion relief, as in the
     // classic screenshots; orbiting swings around the middle of the atrium. Press Play to
@@ -3033,15 +3037,20 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
 
     // Update
     m_MainCamera.SetFlyMode(IsFlying());
-    if (m_ViewportHovered){
+    // Give the mouse back when flying ends or the app loses focus (e.g. Alt+Tab).
+    if (m_MouseCaptured && (!IsFlying() || !Application::Get().GetWindow().IsFocused()))
+        SetMouseCaptured(false);
+    if (m_ViewportHovered || m_MouseCaptured){
         PHX_PROFILE("MainCamera Update");
         m_MainCamera.OnUpdate(ts);
     }
 
     // Linear lighting needs the HDR path even without bloom: its composite pass is
-    // where the linear result is tonemapped and encoded to sRGB for display.
+    // where the linear result is tonemapped and encoded to sRGB for display. FXAA runs
+    // in that pass too (without tonemapping when it is the only reason for it).
     const bool linear = Phoenix::Renderer::IsLinearLighting();
-    const bool hdr = m_BloomEnabled || linear;
+    const bool tonemap = m_BloomEnabled || linear;
+    const bool hdr = tonemap || m_FXAA;
     // MSAA lives on whichever target the scene renders into; the composite writes
     // m_Framebuffer's single-sample texture directly, so it needs no samples then.
     m_Framebuffer->SetSamples(hdr ? 1 : (uint32_t)m_MSAASamples);
@@ -3056,7 +3065,7 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
             m_Scene->OnRender(m_MainCamera, ts, m_SceneEditor->GetSelectedEntity());
         }
         m_Bloom.Composite(m_Framebuffer->GetRendererID(), m_BloomEnabled ? m_BloomIntensity : 0.0f,
-                          m_BloomThreshold, m_Exposure, linear);
+                          m_BloomThreshold, m_Exposure, linear, m_FXAA, tonemap);
     }
     else{
         m_Framebuffer->Bind();
@@ -3072,7 +3081,7 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
 
 
 void MainLayer::OnEvent(Phoenix::Event& e) {
-    if (m_ViewportHovered){
+    if (m_ViewportHovered || m_MouseCaptured){
         m_MainCamera.OnEvent(e);
     }
     
@@ -3112,7 +3121,23 @@ void MainLayer::ExportScene() {
 
 void MainLayer::TogglePlay() {
     if (m_Scene->IsRunning()) { StopRuntime(); }
-    else                      { StartRuntime(); }
+    else{
+        StartRuntime();
+        // Straight into mouse look. Only for Play pressed here: a Python trainer starting
+        // the simulation must not grab the mouse.
+        if (IsFlying()) { SetMouseCaptured(true); }
+    }
+}
+
+void MainLayer::SetMouseCaptured(bool captured) {
+    if (captured == m_MouseCaptured) { return; }
+    m_MouseCaptured = captured;
+    Application::Get().GetWindow().SetCursorLocked(captured);
+    // The locked cursor's position is meaningless to the UI: no hovering or clicking panels.
+    ImGuiIO& io = ImGui::GetIO();
+    if (captured) { io.ConfigFlags |= ImGuiConfigFlags_NoMouse; }
+    else          { io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse; }
+    m_MainCamera.SetMouseCaptured(captured);
 }
 
 void MainLayer::OnImGuiRender(){
@@ -3183,7 +3208,8 @@ void MainLayer::OnImGuiRender(){
     m_ViewportFocused = ImGui::IsWindowFocused();
     m_ViewportHovered = ImGui::IsWindowHovered();
 
-    Application::Get().GetImGuiLayer()->BlockEvents(!m_ViewportFocused || !m_ViewportHovered);
+    // A captured mouse belongs to the viewport (ImGui sees no mouse then).
+    Application::Get().GetImGuiLayer()->BlockEvents(!m_MouseCaptured && (!m_ViewportFocused || !m_ViewportHovered));
 
     ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
     m_ViewportSize = { viewportPanelSize.x, viewportPanelSize.y };
@@ -3262,9 +3288,14 @@ void MainLayer::OnImGuiRender(){
         }
     }
 
+    // While flying, a click in the viewport takes the mouse back for mouse look.
+    const bool flying = IsFlying();
+    if (flying && !m_MouseCaptured && m_ViewportHovered && !overlayHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+        SetMouseCaptured(true);
+
     // Click-to-select: cast a ray from the cursor and pick the nearest entity.
-    // Skipped while interacting with the gizmo, orbiting, or sculpting.
-    if (!m_TerrainSculpt && m_ViewportHovered && !overlayHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
+    // Skipped while interacting with the gizmo, orbiting, sculpting or flying.
+    if (!flying && !m_TerrainSculpt && m_ViewportHovered && !overlayHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
         && !ImGuizmo::IsUsing() && !ImGuizmo::IsOver())
     {
         glm::vec3 rayOrigin, rayDir;
@@ -3804,7 +3835,7 @@ void MainLayer::DrawViewportOverlay(const ImVec2& imageMin, const ImVec2& imageS
     x += button + gap;
     ImGui::SetCursorScreenPos(ImVec2(x, y));
     if (EditorUI::IconButton("##ToolFly", EditorUI::Icon::Fly, ImVec2(button, button), m_FreeFlight,
-            "Free flight in Play: WASD fly, hold right mouse to look (scenes without a primary camera)"))
+            "Free flight in Play: WASD fly, mouse look (Esc frees the mouse; scenes without a primary camera)"))
         m_FreeFlight = !m_FreeFlight;
 
     // Play state: accent frame + badge (top-right).
@@ -3820,9 +3851,10 @@ void MainLayer::DrawViewportOverlay(const ImVec2& imageMin, const ImVec2& imageS
 
     // Free flight controls (bottom-centre).
     if (IsFlying()){
-        char text[160];
-        std::snprintf(text, sizeof(text), "Free flight  -  hold right mouse to look   WASD fly   E / Space up   Q down   "
-            "Shift fast   wheel speed (%.1f m/s)", m_MainCamera.GetFlySpeed());
+        char text[200];
+        std::snprintf(text, sizeof(text), "%s   WASD fly   E / Space up   Q down   Shift fast   wheel speed (%.1f m/s)",
+            m_MouseCaptured ? "Mouse look  -  Esc frees the mouse" : "Click the viewport for mouse look",
+            m_MainCamera.GetFlySpeed());
         ImVec2 size = EditorUI::PillSize(text, 5.0f);
         EditorUI::DrawPill(dl, ImVec2(imageMin.x + (imageSize.x - size.x) * 0.5f, imageMin.y + imageSize.y - size.y - margin),
             text, EditorUI::Accent(), IM_COL32(18, 19, 22, 215), 5.0f);
@@ -3951,6 +3983,10 @@ void MainLayer::DrawSettingsPanel(){
         }
         if (sky.mode != SkySettings::Mode::Color)
             ImGui::DragFloat("Sky Intensity", &sky.intensity, 0.01f, 0.0f, 8.0f, "%.2f");
+        ImGui::SliderFloat("Sky Light", &sky.ambient, 0.0f, 2.0f, "%.2f");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Ambient light from the sky: surfaces facing up get the sky's colour,\n"
+                              "facing down the ground's. Adds to Ambient Light below.");
         ImGui::Spacing();
         ImGui::ColorEdit3("Ambient Light", glm::value_ptr(m_Scene->AmbientColor()));
         ImGui::Spacing();
@@ -3979,6 +4015,10 @@ void MainLayer::DrawSettingsPanel(){
                 ImGui::EndCombo();
             }
             if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Smooths the edges and corners of objects."); }
+            ImGui::Checkbox("FXAA", &m_FXAA);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Post-process anti-aliasing on the final image: also smooths shading\n"
+                                  "and texture shimmer that MSAA leaves alone. Combines with MSAA.");
         }
         ImGui::Checkbox("Bloom", &m_BloomEnabled);
         if (m_BloomEnabled || linearLighting)
@@ -3986,6 +4026,20 @@ void MainLayer::DrawSettingsPanel(){
         if (m_BloomEnabled){
             ImGui::DragFloat("Bloom Intensity", &m_BloomIntensity, 0.05f, 0.0f, 5.0f);
             ImGui::DragFloat("Bloom Threshold", &m_BloomThreshold, 0.05f, 0.0f, 5.0f);
+        }
+        bool ssao = Phoenix::Renderer::IsSSAOEnabled();
+        if (ImGui::Checkbox("Ambient Occlusion", &ssao))
+            Phoenix::Renderer::SetSSAOEnabled(ssao);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Screen-space ambient occlusion: darkens ambient light in corners,\n"
+                              "creases and where objects meet.");
+        if (ssao){
+            float radius = Phoenix::Renderer::GetSSAORadius();
+            if (ImGui::SliderFloat("AO Radius", &radius, 0.05f, 3.0f, "%.2f m"))
+                Phoenix::Renderer::SetSSAORadius(radius);
+            float strength = Phoenix::Renderer::GetSSAOStrength();
+            if (ImGui::SliderFloat("AO Strength", &strength, 0.0f, 4.0f, "%.2f"))
+                Phoenix::Renderer::SetSSAOStrength(strength);
         }
         bool shadows = Phoenix::Renderer::AreShadowsEnabled();
         if (ImGui::Checkbox("Shadows", &shadows))
@@ -4134,7 +4188,8 @@ void MainLayer::DrawHelpPopups(){
             { "Play / Stop",                    "F5" },
             { "Pause / Step one decision",      "F6 / F7" },
             { "Frame selection",                "F" },
-            { "Free flight (Play, fly tool on)", "WASD, E / Q, hold RMB to look" },
+            { "Free flight (Play, fly tool on)", "WASD, E / Q, mouse to look" },
+            { "Free / recapture the mouse",     "Esc / click the viewport" },
             { "Free flight speed",              "Shift (4x) / Wheel" },
             { "Drive a Keyboard-policy agent",  "WASD / arrows" },
             { "This window",                    "F1" },
@@ -4257,8 +4312,10 @@ void MainLayer::HandleShortcuts(){
     }
     if (pressed(ImGuiKey_F1)) { m_OpenShortcuts = true; }
 
-    // Esc deselects, unless it is closing a popup.
-    if (pressed(ImGuiKey_Escape) && !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId))
+    // Esc releases a captured mouse, else deselects (unless it is closing a popup).
+    if (pressed(ImGuiKey_Escape) && m_MouseCaptured)
+        SetMouseCaptured(false);
+    else if (pressed(ImGuiKey_Escape) && !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId))
         m_SceneEditor->SetSelectedEntity({});
 
     // Gizmo operation shortcuts (only when not mid-manipulation).

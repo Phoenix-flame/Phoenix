@@ -13,6 +13,10 @@ metallic-roughness maps; foliage, chain and plant base colours carry an alpha
 mask, alphaMode MASK). The engine uses the base colour and normal maps and
 alpha-tests the masked materials; metallic-roughness maps are not read.
 
+The *_height.jpg files are not part of the original: make_height_maps.py derives
+them from the normal maps of the tiling materials (walls, floor, bricks, cloth)
+for parallax occlusion mapping. Re-run it if the normal maps change.
+
 Credits / licence
 -----------------
 The Atrium Sponza Palace, Dubrovnik, remodelled by Frank Meinl at Crytek

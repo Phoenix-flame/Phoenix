@@ -18,5 +18,6 @@ namespace Phoenix{
         std::string panorama;    // equirectangular image (.jpg/.png/.hdr), path relative to the executable
         float rotation = 0.0f;   // panorama turn about +Y, degrees
         float intensity = 1.0f;  // brightness multiplier for the gradient / panorama
+        float ambient = 0.0f;    // sky light: ambient lighting from the sky dome (0 = only the flat Ambient colour)
     };
 }
