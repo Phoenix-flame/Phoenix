@@ -55,7 +55,7 @@ namespace Phoenix{
 
     void AIPanels::DrawTrainingPanel(AIPanelContext& ctx){
         if (!showTraining) { return; }
-        if (!ImGui::Begin("Training", &showTraining)) { ImGui::End(); return; }
+        if (!ImGui::Begin("Training")) { ImGui::End(); return; }
 
         DrawRunControls(ctx);
         ImGui::Spacing();
@@ -293,8 +293,10 @@ namespace Phoenix{
         float w = ImGui::GetContentRegionAvail().x;
         ImDrawList* dl = ImGui::GetWindowDrawList();
         dl->AddRectFilled(p, ImVec2(p.x + w, p.y + size), ImGui::GetColorU32(ImGuiCol_FrameBg), 6.0f);
+        // Everything stays inside the box; the circles' lower halves are clipped.
+        dl->PushClipRect(p, ImVec2(p.x + w, p.y + size), true);
         ImVec2 c(p.x + w * 0.5f, p.y + size - 14.0f);
-        float radius = size - 26.0f;
+        float radius = std::max(1.0f, std::min(size - 26.0f, w * 0.5f - 10.0f));
         dl->AddCircle(c, radius, IM_COL32(255, 255, 255, 20), 48);
         dl->AddCircle(c, radius * 0.5f, IM_COL32(255, 255, 255, 14), 48);
 
@@ -321,12 +323,13 @@ namespace Phoenix{
             dl->AddText(ImVec2(x + 12.0f, p.y + 5.0f), EditorUI::MutedColor(), sensor.detectableTags[k].c_str());
             x += 22.0f + ImGui::CalcTextSize(sensor.detectableTags[k].c_str()).x;
         }
+        dl->PopClipRect();
         ImGui::Dummy(ImVec2(w, size));
     }
 
     void AIPanels::DrawAgentMonitor(AIPanelContext& ctx){
         if (!showAgentMonitor) { return; }
-        if (!ImGui::Begin("Agent Monitor", &showAgentMonitor)) { ImGui::End(); return; }
+        if (!ImGui::Begin("Agent Monitor")) { ImGui::End(); return; }
 
         Scene& scene = *ctx.scene;
         Environment* env = ctx.environment;

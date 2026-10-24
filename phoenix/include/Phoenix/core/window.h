@@ -58,6 +58,9 @@ namespace Phoenix{
         void SetSize(int width, int height);
         // Cursor position in desktop coordinates (window position + cursor offset).
         glm::vec2 GetCursorScreenPosition() const;
+        // True when a desktop point is at the top edge of its monitor's usable area
+        // (or above it, e.g. over a panel). Used to snap-maximize on title-bar drags.
+        bool IsAtMonitorTop(const glm::vec2& screenPos, float margin = 2.0f) const;
 
     private:
         virtual void Init(const WindowProperties& props);

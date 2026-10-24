@@ -203,7 +203,7 @@ namespace Phoenix{
 
     void SceneEditor::TimelinePanel(){
         if (!m_ShowTimeline) { return; }
-        ImGui::Begin("Timeline", &m_ShowTimeline);
+        ImGui::Begin("Timeline");
 
         Entity e = m_SelectedEntity;
         if (!e || !e.HasComponent<AnimationComponent>() || !e.HasComponent<MeshComponent>()){
@@ -297,7 +297,7 @@ namespace Phoenix{
 
     void SceneEditor::TexturePanel(){
         if (!m_ShowTextures) { return; }
-        ImGui::Begin("Textures", &m_ShowTextures);
+        ImGui::Begin("Textures");
 
         // Load a texture file into the palette (path relative to the executable, e.g.
         // "assets/textures/brick.png"). Texture2D caches by path.
@@ -600,12 +600,14 @@ namespace Phoenix{
         ImGui::SetColumnWidth(0, columnWidth);
         ImGui::Text(label.c_str(), nullptr);
         ImGui::NextColumn();
-        ImGui::PushMultiItemsWidths(3, ImGui::GetContentRegionAvail().x);
-
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{ 4, 4 });
 
         float lineHeight = ImGui::GetIO().FontDefault->FontSize + ImGui::GetStyle().FramePadding.y * 2.0;
         ImVec2 buttonSize = { lineHeight + 3.0f, lineHeight };
+        // Three buttons + three fields with five gaps must fit the column.
+        float spacing = ImGui::GetStyle().ItemSpacing.x;
+        float fieldWidth = (ImGui::GetContentRegionAvail().x - 3.0f * buttonSize.x - 5.0f * spacing) / 3.0f;
+        fieldWidth = fieldWidth > 1.0f ? fieldWidth : 1.0f;
 
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.78f, 0.25f, 0.27f, 1.0f });
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{ 0.88f, 0.35f, 0.36f, 1.0f });
@@ -617,8 +619,8 @@ namespace Phoenix{
         ImGui::PopStyleColor(3);
 
         ImGui::SameLine();
+        ImGui::SetNextItemWidth(fieldWidth);
         ImGui::DragFloat((std::string("##") + label1).c_str(), &values.x, 0.1f, 0.0f, 0.0f, "%.2f");
-        ImGui::PopItemWidth();
         ImGui::SameLine();
 
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.33f, 0.62f, 0.30f, 1.0f });
@@ -631,8 +633,8 @@ namespace Phoenix{
         ImGui::PopStyleColor(3);
 
         ImGui::SameLine();
+        ImGui::SetNextItemWidth(fieldWidth);
         ImGui::DragFloat((std::string("##") + label2).c_str(), &values.y, 0.1f, 0.0f, 0.0f, "%.2f");
-        ImGui::PopItemWidth();
         ImGui::SameLine();
 
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.25f, 0.45f, 0.82f, 1.0f });
@@ -645,8 +647,8 @@ namespace Phoenix{
         ImGui::PopStyleColor(3);
 
         ImGui::SameLine();
+        ImGui::SetNextItemWidth(fieldWidth);
         ImGui::DragFloat((std::string("##") + label3).c_str(), &values.z, 0.1f, 0.0f, 0.0f, "%.2f");
-        ImGui::PopItemWidth();
 
         ImGui::PopStyleVar();
 

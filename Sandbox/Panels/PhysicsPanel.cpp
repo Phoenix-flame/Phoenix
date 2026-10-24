@@ -13,7 +13,7 @@ namespace Phoenix{
 
     void SceneEditor::PhysicsPanel(){
         if (!m_ShowPhysics) { return; }
-        ImGui::Begin("Physics", &m_ShowPhysics);
+        ImGui::Begin("Physics");
         ScenePhysicsSettings& settings = m_ActiveScene->PhysicsSettings();
         PhysicsDebugSettings& debug = m_ActiveScene->PhysicsDebug();
         const bool running = m_ActiveScene->IsRunning();

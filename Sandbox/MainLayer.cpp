@@ -3539,6 +3539,9 @@ void MainLayer::DrawTitleBar(){
     if (m_TitleDragging){
         if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)){
             m_TitleDragging = false;
+            // Like a native title bar: dropping the window at the top of the screen maximizes it.
+            if (m_TitleDragMoved && !window.IsMaximized() && window.IsAtMonitorTop(window.GetCursorScreenPosition()))
+                window.Maximize();
         }
         else{
             glm::vec2 cursor = window.GetCursorScreenPosition();
@@ -3840,7 +3843,7 @@ void MainLayer::DrawViewportOverlay(const ImVec2& imageMin, const ImVec2& imageS
 void MainLayer::DrawSettingsPanel(){
     if (!m_ShowSettings)
         return;
-    ImGui::Begin("Settings", &m_ShowSettings);
+    ImGui::Begin("Settings");
     // Widgets take the space left of a fixed label column, so labels never clip.
     ImGui::PushItemWidth(-130.0f);
 
@@ -4022,7 +4025,7 @@ void MainLayer::DrawSettingsPanel(){
 void MainLayer::DrawProfilerPanel(){
     if (!m_ShowProfiler)
         return;
-    ImGui::Begin("Profiler", &m_ShowProfiler);
+    ImGui::Begin("Profiler");
     const ImGuiIO& io = ImGui::GetIO();
 
     // Headline numbers.
@@ -4076,7 +4079,7 @@ void MainLayer::DrawProfilerPanel(){
 void MainLayer::DrawShaderLibraryPanel(){
     if (!m_ShowShaderLibrary)
         return;
-    ImGui::Begin("Shader Library", &m_ShowShaderLibrary);
+    ImGui::Begin("Shader Library");
     if (ImGui::Button("Import Shader...", ImVec2(-FLT_MIN, 0.0f)))
         m_OpenImportShader = true;
     ImGui::Spacing();

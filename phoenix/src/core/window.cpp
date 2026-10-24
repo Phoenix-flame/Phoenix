@@ -193,6 +193,22 @@ namespace Phoenix{
         glfwSetWindowSize(_window, width, height);
     }
 
+    bool Window::IsAtMonitorTop(const glm::vec2& p, float margin) const{
+        int count = 0;
+        GLFWmonitor** monitors = glfwGetMonitors(&count);
+        for (int i = 0; i < count; i++){
+            int mx = 0, my = 0;
+            glfwGetMonitorPos(monitors[i], &mx, &my);
+            const GLFWvidmode* mode = glfwGetVideoMode(monitors[i]);
+            if (!mode) { continue; }
+            if (p.x < (float)mx || p.x >= (float)(mx + mode->width)) { continue; }
+            int wx = 0, wy = 0, ww = 0, wh = 0;
+            glfwGetMonitorWorkarea(monitors[i], &wx, &wy, &ww, &wh);
+            return p.y <= (float)wy + margin;
+        }
+        return false;
+    }
+
     glm::vec2 Window::GetCursorScreenPosition() const{
         double cx = 0.0, cy = 0.0;
         glfwGetCursorPos(_window, &cx, &cy);
