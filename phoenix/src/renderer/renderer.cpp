@@ -37,6 +37,7 @@ namespace Phoenix{
     int Renderer::s_PrevViewport[4] = { 0, 0, 0, 0 };
     bool Renderer::s_LinearLighting = false;
     Ref<Shader> Renderer::s_SkyShader;
+    Renderer::SSAOState Renderer::s_SSAO;
     uint32_t Renderer::s_SkyVAO = 0;
     SkySettings Renderer::s_Sky;
     Ref<Texture2D> Renderer::s_SkyPanorama;
@@ -102,6 +103,8 @@ namespace Phoenix{
         s_FluidCompositeShader = Shader::Create("assets/shaders/fluid_composite.glsl");
         s_ShadowShader = Shader::Create("assets/shaders/shadow_depth.glsl");
         s_SkyShader = Shader::Create("assets/shaders/sky.glsl");
+        s_SSAO.aoShader = Shader::Create("assets/shaders/ssao.glsl");
+        s_SSAO.blurShader = Shader::Create("assets/shaders/ssao_blur.glsl");
         glGenVertexArrays(1, &s_SkyVAO);
 
         s_DirAtlas.Init(DIR_ATLAS_W, DIR_ATLAS_H);
@@ -313,6 +316,12 @@ namespace Phoenix{
         shader->SetFloat4Array("u_DirShadowParams", s_DirShadowParams, MAX_DIR_LIGHTS);
         shader->SetFloat4Array("u_DirShadowInfo", s_DirShadowInfo, MAX_DIR_LIGHTS);
         BindSkyUniforms(shader);
+        shader->SetInt("u_AOMap", (int)AO_UNIT);
+        shader->SetInt("u_HasAO", s_SSAO.ready ? 1 : 0);
+        if (s_SSAO.ready){
+            glBindTextureUnit(AO_UNIT, s_SSAO.blurTexture);
+            shader->SetFloat2("u_AOInvSize", glm::vec2(1.0f / (float)s_SSAO.width, 1.0f / (float)s_SSAO.height));
+        }
         shader->SetMat4Array("u_PointShadowMatrices", s_PointShadowMatrix, MAX_POINT_LIGHTS * 6);
         shader->SetFloat4Array("u_PointShadowRect", s_ShadowsEnabled ? s_PointShadowRect : noRects, MAX_POINT_LIGHTS * 6);
         shader->SetFloat4Array("u_PointShadowParams", s_PointShadowParams, MAX_POINT_LIGHTS);
@@ -410,11 +419,10 @@ namespace Phoenix{
 
     static const uint32_t NORMAL_MAP_UNIT = 2;
 
-    // Upload material params + bind its textures. The material's own diffuse / normal paths
-    // (set via the Textures panel) override the mesh-embedded `diffuseMap` / `normalMap`;
-    // paths are resolved through Texture2D's path cache.
-    static void BindMaterial(const Ref<Shader>& shader, const Material& material, const Ref<Texture2D>& diffuseMap,
-            const Ref<Texture2D>& normalMap, float alphaCutoff){
+    // Upload material params + bind its textures. The material's own diffuse / normal /
+    // height paths (set via the Textures panel) override the mesh's maps; paths are
+    // resolved through Texture2D's path cache.
+    static void BindMaterial(const Ref<Shader>& shader, const Material& material, const SurfaceMaps& maps){
         shader->SetFloat3("material.ambient", Renderer::ToLinear(material.ambient));
         shader->SetFloat3("material.diffuse", Renderer::ToLinear(material.diffuse));
         shader->SetFloat3("material.specular", Renderer::ToLinear(material.specular));
@@ -423,7 +431,7 @@ namespace Phoenix{
         shader->SetFloat("u_Reflectivity", material.reflectivity);
         shader->SetInt("u_ReceiveShadows", material.receiveShadows ? 1 : 0);
 
-        Ref<Texture2D> diffuse = !material.diffusePath.empty() ? Texture2D::Create(material.diffusePath) : diffuseMap;
+        Ref<Texture2D> diffuse = !material.diffusePath.empty() ? Texture2D::Create(material.diffusePath) : maps.diffuse;
         if (diffuse){
             diffuse->Bind(0, Renderer::IsLinearLighting()); // colour data: sRGB-decoded when linear
             shader->SetInt("u_DiffuseMap", 0);
@@ -433,45 +441,71 @@ namespace Phoenix{
             shader->SetInt("u_HasDiffuseMap", 0);
         }
         // The cutoff tests the diffuse map's alpha, so it needs one.
-        shader->SetFloat("u_AlphaCutoff", diffuse ? alphaCutoff : 0.0f);
+        shader->SetFloat("u_AlphaCutoff", diffuse ? maps.alphaCutoff : 0.0f);
 
-        Ref<Texture2D> normal = !material.normalPath.empty() ? Texture2D::Create(material.normalPath) : normalMap;
+        Ref<Texture2D> normal = !material.normalPath.empty() ? Texture2D::Create(material.normalPath) : maps.normal;
         if (normal){
             normal->Bind(NORMAL_MAP_UNIT);
             shader->SetInt("u_NormalMap", (int)NORMAL_MAP_UNIT);
             shader->SetInt("u_HasNormalMap", 1);
+            shader->SetFloat("u_NormalStrength", std::max(material.normalStrength, 0.0f));
         }
         else{
             shader->SetInt("u_HasNormalMap", 0);
         }
+
+        Ref<Texture2D> height = !material.heightPath.empty() ? Texture2D::Create(material.heightPath) : maps.height;
+        if (height && material.parallaxDepth > 0.0f){
+            height->Bind(HEIGHT_UNIT);
+            shader->SetInt("u_HeightMap", (int)HEIGHT_UNIT);
+            shader->SetInt("u_HasHeightMap", 1);
+            shader->SetFloat("u_ParallaxDepth", material.parallaxDepth);
+        }
+        else{
+            shader->SetInt("u_HasHeightMap", 0);
+        }
+    }
+
+    // Draw with the lighting shader bound and the material uploaded. Cut-outs under MSAA
+    // use alpha-to-coverage: the alpha edge becomes partial sample coverage (smooth,
+    // anti-aliased leaves) instead of a hard per-pixel discard.
+    static void DrawSurface(const Ref<Shader>& shader, const Ref<VertexArray>& vertexArray, float alphaCutoff){
+        GLint sampleBuffers = 0;
+        if (alphaCutoff > 0.0f) { glGetIntegerv(GL_SAMPLE_BUFFERS, &sampleBuffers); }
+        const bool alphaToCoverage = sampleBuffers > 0;
+        shader->SetInt("u_AlphaToCoverage", alphaToCoverage ? 1 : 0);
+        if (alphaToCoverage){
+            glDisable(GL_BLEND); // the coverage alpha must not also blend
+            glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+        }
+        vertexArray->Bind();
+        RenderCommand::DrawIndexed(vertexArray);
+        if (alphaToCoverage){
+            glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+            glEnable(GL_BLEND);
+        }
     }
 
     void Renderer::Submit(const Ref<VertexArray>& vertexArray, const Material& material, const glm::mat4& transform,
-            const Ref<Texture2D>& diffuseMap, const Ref<Texture2D>& normalMap, float alphaCutoff){
+            const SurfaceMaps& maps){
         auto& shader = s_RenderLightCube->m_Shader;
-        BindMaterial(shader, material, diffuseMap, normalMap, alphaCutoff);
+        BindMaterial(shader, material, maps);
         shader->SetMat4("model", transform);
         shader->UploadUniformMat3("u_NormalMatrix", glm::transpose(glm::inverse(glm::mat3(transform))));
         shader->SetInt("u_Animated", 0);
-
-        vertexArray->Bind();
-        RenderCommand::DrawIndexed(vertexArray);
+        DrawSurface(shader, vertexArray, maps.alphaCutoff);
     }
 
     void Renderer::SubmitAnimated(const Ref<VertexArray>& vertexArray, const Material& material, const glm::mat4& transform,
-            const std::vector<glm::mat4>& boneMatrices, const Ref<Texture2D>& diffuseMap,
-            const Ref<Texture2D>& normalMap, float alphaCutoff){
+            const std::vector<glm::mat4>& boneMatrices, const SurfaceMaps& maps){
         auto& shader = s_RenderLightCube->m_Shader;
-        BindMaterial(shader, material, diffuseMap, normalMap, alphaCutoff);
+        BindMaterial(shader, material, maps);
         shader->SetMat4("model", transform);
         shader->UploadUniformMat3("u_NormalMatrix", glm::transpose(glm::inverse(glm::mat3(transform))));
         shader->SetInt("u_Animated", 1);
         if (!boneMatrices.empty())
             shader->SetMat4Array("u_BoneMatrices", boneMatrices.data(), (uint32_t)boneMatrices.size());
-
-        vertexArray->Bind();
-        RenderCommand::DrawIndexed(vertexArray);
-
+        DrawSurface(shader, vertexArray, maps.alphaCutoff);
         shader->SetInt("u_Animated", 0); // reset so following draws aren't skinned
     }
 
@@ -657,8 +691,6 @@ namespace Phoenix{
         glDepthMask(GL_TRUE);
     }
 
-    // Panorama on its own unit: 0 diffuse, 1 shadow atlas, 2 normal map, 3 ripples, 4-6 atlases.
-    static const uint32_t SKY_PANORAMA_UNIT = 7;
 
     void Renderer::SetSky(const SkySettings& sky, bool hasSun, const glm::vec3& sunDir, const glm::vec3& sunColor){
         s_Sky = sky;
@@ -677,6 +709,7 @@ namespace Phoenix{
         shader->SetFloat3("u_SkyGround", ToLinear(s_Sky.ground));
         shader->SetFloat("u_SkyIntensity", std::max(s_Sky.intensity, 0.0f));
         shader->SetFloat("u_SkyRotation", glm::radians(s_Sky.rotation));
+        shader->SetFloat("u_SkyAmbient", std::max(s_Sky.ambient, 0.0f));
         shader->SetInt("u_SkyHasPanorama", s_SkyPanorama ? 1 : 0);
         // Always on its own unit, even unused, so it never shares one with another sampler type.
         shader->SetInt("u_SkyPanorama", (int)SKY_PANORAMA_UNIT);
@@ -709,8 +742,108 @@ namespace Phoenix{
         s_RenderLightCube->m_Shader->Bind();
     }
 
+    void Renderer::ResizeSSAOTargets(uint32_t width, uint32_t height){
+        if (width == s_SSAO.width && height == s_SSAO.height && s_SSAO.depthFBO) { return; }
+        if (s_SSAO.depthFBO){
+            uint32_t fbos[] = { s_SSAO.depthFBO, s_SSAO.aoFBO, s_SSAO.blurFBO };
+            uint32_t textures[] = { s_SSAO.depthTexture, s_SSAO.aoTexture, s_SSAO.blurTexture };
+            glDeleteFramebuffers(3, fbos);
+            glDeleteTextures(3, textures);
+        }
+        s_SSAO.width = width;
+        s_SSAO.height = height;
+
+        auto makeTexture = [&](GLenum internalFormat, GLenum format, GLenum type){
+            uint32_t texture = 0;
+            glGenTextures(1, &texture);
+            glBindTexture(GL_TEXTURE_2D, texture);
+            glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, format, type, nullptr);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            return texture;
+        };
+        auto makeFBO = [](uint32_t texture, GLenum attachment){
+            uint32_t fbo = 0;
+            glGenFramebuffers(1, &fbo);
+            glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, attachment, GL_TEXTURE_2D, texture, 0);
+            if (attachment == GL_DEPTH_ATTACHMENT) { glDrawBuffer(GL_NONE); glReadBuffer(GL_NONE); }
+            PHX_CORE_ASSERT(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE, "SSAO framebuffer incomplete!");
+            return fbo;
+        };
+        s_SSAO.depthTexture = makeTexture(GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT, GL_FLOAT);
+        s_SSAO.aoTexture = makeTexture(GL_R8, GL_RED, GL_UNSIGNED_BYTE);
+        s_SSAO.blurTexture = makeTexture(GL_R8, GL_RED, GL_UNSIGNED_BYTE);
+        s_SSAO.depthFBO = makeFBO(s_SSAO.depthTexture, GL_DEPTH_ATTACHMENT);
+        s_SSAO.aoFBO = makeFBO(s_SSAO.aoTexture, GL_COLOR_ATTACHMENT0);
+        s_SSAO.blurFBO = makeFBO(s_SSAO.blurTexture, GL_COLOR_ATTACHMENT0);
+    }
+
+    void Renderer::BeginDepthPrepass(const glm::mat4& viewProjection){
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &s_PrevFBO);
+        glGetIntegerv(GL_VIEWPORT, s_PrevViewport);
+        // Same size as the scene's target, so the lighting pass reads it 1:1 by pixel.
+        uint32_t width = (uint32_t)std::max(s_PrevViewport[2], 1), height = (uint32_t)std::max(s_PrevViewport[3], 1);
+        ResizeSSAOTargets(width, height);
+        glBindFramebuffer(GL_FRAMEBUFFER, s_SSAO.depthFBO);
+        glViewport(0, 0, width, height);
+        glEnable(GL_DEPTH_TEST);
+        glDepthMask(GL_TRUE);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        // The shadow depth shader is a plain depth-only pass (cut-outs included).
+        s_ShadowShader->Bind();
+        s_ShadowShader->SetMat4("u_LightSpaceMatrix", viewProjection);
+    }
+
+    void Renderer::EndDepthPrepass(const glm::mat4& projection){
+        s_ShadowShader->Unbind();
+        GLboolean blendWasOn = glIsEnabled(GL_BLEND);
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_BLEND);
+        glBindVertexArray(s_SkyVAO); // fullscreen triangle from gl_VertexID
+        const glm::vec2 invSize(1.0f / (float)s_SSAO.width, 1.0f / (float)s_SSAO.height);
+        const glm::mat4 invProjection = glm::inverse(projection);
+
+        // Occlusion: hemisphere samples around each pixel's position, tested against depth.
+        glBindFramebuffer(GL_FRAMEBUFFER, s_SSAO.aoFBO);
+        auto& ao = s_SSAO.aoShader;
+        ao->Bind();
+        glBindTextureUnit(0, s_SSAO.depthTexture);
+        ao->SetInt("u_Depth", 0);
+        ao->SetMat4("u_Projection", projection);
+        ao->SetMat4("u_InvProjection", invProjection);
+        ao->SetFloat2("u_InvSize", invSize);
+        ao->SetFloat("u_Radius", std::max(s_SSAO.radius, 0.01f));
+        ao->SetFloat("u_Strength", std::max(s_SSAO.strength, 0.0f));
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+
+        // Depth-aware blur: smooths the per-pixel sample rotation away without bleeding
+        // occlusion across depth edges.
+        glBindFramebuffer(GL_FRAMEBUFFER, s_SSAO.blurFBO);
+        auto& blur = s_SSAO.blurShader;
+        blur->Bind();
+        glBindTextureUnit(0, s_SSAO.aoTexture);
+        glBindTextureUnit(1, s_SSAO.depthTexture);
+        blur->SetInt("u_AO", 0);
+        blur->SetInt("u_Depth", 1);
+        blur->SetMat4("u_InvProjection", invProjection);
+        blur->SetFloat2("u_InvSize", invSize);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+
+        glBindVertexArray(0);
+        glBindTextureUnit(1, 0);
+        if (blendWasOn) { glEnable(GL_BLEND); }
+        glEnable(GL_DEPTH_TEST);
+        glBindFramebuffer(GL_FRAMEBUFFER, (uint32_t)s_PrevFBO);
+        glViewport(s_PrevViewport[0], s_PrevViewport[1], s_PrevViewport[2], s_PrevViewport[3]);
+        s_SSAO.ready = true;
+    }
+
 	void Renderer::EndScene(){
         s_RenderLightCube->m_Shader->Unbind();
+        s_SSAO.ready = false; // this frame's occlusion; the next frame renders its own
         // Other passes (bloom, ImGui) use these units with the textures' own state.
         glBindSampler(DIR_DEPTH_UNIT, 0);
         glBindSampler(POINT_DEPTH_UNIT, 0);

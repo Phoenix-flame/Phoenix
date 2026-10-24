@@ -2597,7 +2597,7 @@ void MainLayer::BuildSponzaShowcase() {
     // textured interior with normal-mapped stone, cloth banners and alpha-tested foliage
     // and chains. Sunlight falls through the open roof and casts shadows across the
     // atrium floor. Load time is a few seconds (262k triangles, 69 textures).
-    m_Scene->AmbientColor() = glm::vec3(0.16f, 0.16f, 0.18f);
+    m_Scene->AmbientColor() = glm::vec3(0.10f, 0.095f, 0.09f);
 
     {
         auto sponza = m_Scene->CreateEntity("Sponza");
@@ -2607,6 +2607,8 @@ void MainLayer::BuildSponzaShowcase() {
         mesh.material.diffuse = glm::vec3(1.0f);
         mesh.material.specular = glm::vec3(0.12f);
         mesh.material.shininess = 16.0f;
+        // Height maps beside the normal maps (make_height_maps.py) carve the walls and floor.
+        mesh.material.parallaxDepth = 0.06f;
         // The glTF scales its root node by 0.008 (the loader ignores node transforms),
         // giving an atrium about 30 x 12 x 18 m.
         sponza.GetComponent<TransformComponent>().Scale = glm::vec3(0.008f);
@@ -2628,6 +2630,8 @@ void MainLayer::BuildSponzaShowcase() {
     m_Scene->Sky().mode = SkySettings::Mode::Gradient;
     m_Scene->Sky().zenith = glm::vec3(0.22f, 0.45f, 0.85f);
     m_Scene->Sky().horizon = glm::vec3(0.70f, 0.78f, 0.88f);
+    // Sky light on top of a low flat ambient: the floor catches the sky, undersides stay dim.
+    m_Scene->Sky().ambient = 0.12f;
 
     // Eye level at the east end, looking down the atrium toward the lion relief, as in the
     // classic screenshots; orbiting swings around the middle of the atrium. Press Play to
@@ -3042,9 +3046,11 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
     }
 
     // Linear lighting needs the HDR path even without bloom: its composite pass is
-    // where the linear result is tonemapped and encoded to sRGB for display.
+    // where the linear result is tonemapped and encoded to sRGB for display. FXAA runs
+    // in that pass too (without tonemapping when it is the only reason for it).
     const bool linear = Phoenix::Renderer::IsLinearLighting();
-    const bool hdr = m_BloomEnabled || linear;
+    const bool tonemap = m_BloomEnabled || linear;
+    const bool hdr = tonemap || m_FXAA;
     // MSAA lives on whichever target the scene renders into; the composite writes
     // m_Framebuffer's single-sample texture directly, so it needs no samples then.
     m_Framebuffer->SetSamples(hdr ? 1 : (uint32_t)m_MSAASamples);
@@ -3059,7 +3065,7 @@ void MainLayer::OnUpdate(Phoenix::Timestep ts) {
             m_Scene->OnRender(m_MainCamera, ts, m_SceneEditor->GetSelectedEntity());
         }
         m_Bloom.Composite(m_Framebuffer->GetRendererID(), m_BloomEnabled ? m_BloomIntensity : 0.0f,
-                          m_BloomThreshold, m_Exposure, linear);
+                          m_BloomThreshold, m_Exposure, linear, m_FXAA, tonemap);
     }
     else{
         m_Framebuffer->Bind();
@@ -3977,6 +3983,10 @@ void MainLayer::DrawSettingsPanel(){
         }
         if (sky.mode != SkySettings::Mode::Color)
             ImGui::DragFloat("Sky Intensity", &sky.intensity, 0.01f, 0.0f, 8.0f, "%.2f");
+        ImGui::SliderFloat("Sky Light", &sky.ambient, 0.0f, 2.0f, "%.2f");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Ambient light from the sky: surfaces facing up get the sky's colour,\n"
+                              "facing down the ground's. Adds to Ambient Light below.");
         ImGui::Spacing();
         ImGui::ColorEdit3("Ambient Light", glm::value_ptr(m_Scene->AmbientColor()));
         ImGui::Spacing();
@@ -4005,6 +4015,10 @@ void MainLayer::DrawSettingsPanel(){
                 ImGui::EndCombo();
             }
             if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Smooths the edges and corners of objects."); }
+            ImGui::Checkbox("FXAA", &m_FXAA);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Post-process anti-aliasing on the final image: also smooths shading\n"
+                                  "and texture shimmer that MSAA leaves alone. Combines with MSAA.");
         }
         ImGui::Checkbox("Bloom", &m_BloomEnabled);
         if (m_BloomEnabled || linearLighting)
@@ -4012,6 +4026,20 @@ void MainLayer::DrawSettingsPanel(){
         if (m_BloomEnabled){
             ImGui::DragFloat("Bloom Intensity", &m_BloomIntensity, 0.05f, 0.0f, 5.0f);
             ImGui::DragFloat("Bloom Threshold", &m_BloomThreshold, 0.05f, 0.0f, 5.0f);
+        }
+        bool ssao = Phoenix::Renderer::IsSSAOEnabled();
+        if (ImGui::Checkbox("Ambient Occlusion", &ssao))
+            Phoenix::Renderer::SetSSAOEnabled(ssao);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Screen-space ambient occlusion: darkens ambient light in corners,\n"
+                              "creases and where objects meet.");
+        if (ssao){
+            float radius = Phoenix::Renderer::GetSSAORadius();
+            if (ImGui::SliderFloat("AO Radius", &radius, 0.05f, 3.0f, "%.2f m"))
+                Phoenix::Renderer::SetSSAORadius(radius);
+            float strength = Phoenix::Renderer::GetSSAOStrength();
+            if (ImGui::SliderFloat("AO Strength", &strength, 0.0f, 4.0f, "%.2f"))
+                Phoenix::Renderer::SetSSAOStrength(strength);
         }
         bool shadows = Phoenix::Renderer::AreShadowsEnabled();
         if (ImGui::Checkbox("Shadows", &shadows))

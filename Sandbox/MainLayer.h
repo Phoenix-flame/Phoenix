@@ -219,6 +219,7 @@ private:
     Bloom m_Bloom;
     int m_MSAASamples = 4; // 1 = anti-aliasing off
     bool m_BloomEnabled = true;
+    bool m_FXAA = true; // post-process anti-aliasing (on top of MSAA)
     float m_BloomIntensity = 1.0f;
     float m_BloomThreshold = 1.0f;
     float m_Exposure = 1.8f; // pre-tonemap exposure (compensates for ACES darkening)

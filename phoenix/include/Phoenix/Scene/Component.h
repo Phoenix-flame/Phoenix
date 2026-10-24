@@ -77,6 +77,11 @@ namespace Phoenix{
         // draw time.
         std::string diffusePath;
         std::string normalPath;
+        // Height map (white = high) for parallax occlusion mapping: the surface looks
+        // carved in to parallaxDepth (texture-space units; 0 = flat). Overrides a mesh's own.
+        std::string heightPath;
+        float parallaxDepth = 0.04f;
+        float normalStrength = 1.0f; // scales the normal map's bumps (0 = flat)
         // Shadow participation: castShadows puts the object into the lights' shadow maps;
         // receiveShadows lets shadows fall on it. (Geometry on a light entity, its marker
         // or bulb, never casts: it would block its own light.)

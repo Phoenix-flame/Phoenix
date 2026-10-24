@@ -11,6 +11,7 @@
 #include <chrono>
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
 
 namespace Phoenix{
 
@@ -97,6 +98,18 @@ namespace Phoenix{
         }
     }
 
+    // "<dir>/bricks_n.jpg" -> "<dir>/bricks_n_height.png" (or .jpg) if such a file exists.
+    // Formats like glTF have no height-map slot, so parallax maps sit beside the normal map.
+    static std::string FindHeightBeside(const std::string& normalPath){
+        std::filesystem::path p(normalPath);
+        for (const char* ext : { ".png", ".jpg", ".jpeg" }){
+            std::filesystem::path candidate = p.parent_path() / (p.stem().string() + "_height" + ext);
+            std::error_code ec;
+            if (std::filesystem::exists(candidate, ec)) { return candidate.string(); }
+        }
+        return {};
+    }
+
     static void ProcessMeshData(aiMesh* mesh, const aiScene* scene, const std::string& directory,
             std::vector<MeshData>& out, std::map<std::string, BoneInfo>& boneInfoMap, int& boneCounter){
         MeshData data;
@@ -140,6 +153,15 @@ namespace Phoenix{
                 aiString name;
                 material->GetTexture(aiTextureType_NORMALS, 0, &name);
                 data.normalPath = directory + "/" + std::string(name.C_Str());
+            }
+            // Parallax height map: OBJ "disp", else a "<normal map>_height" file beside it.
+            if (material->GetTextureCount(aiTextureType_DISPLACEMENT) > 0){
+                aiString name;
+                material->GetTexture(aiTextureType_DISPLACEMENT, 0, &name);
+                data.heightPath = directory + "/" + std::string(name.C_Str());
+            }
+            else if (!data.normalPath.empty()){
+                data.heightPath = FindHeightBeside(data.normalPath);
             }
             // glTF cut-out materials (leaves, chains): alpha-test against the cutoff.
             aiString alphaMode;
@@ -277,6 +299,8 @@ namespace Phoenix{
                 mesh->SetDiffuseMap(Texture2D::Create(md.diffusePath));
             if (!md.normalPath.empty())
                 mesh->SetNormalMap(Texture2D::Create(md.normalPath));
+            if (!md.heightPath.empty())
+                mesh->SetHeightMap(Texture2D::Create(md.heightPath));
             mesh->SetAlphaCutoff(md.alphaCutoff);
             m_Meshes.push_back(mesh);
         }

@@ -316,7 +316,7 @@ namespace Phoenix{
         Material* mat = EntityMaterial(m_SelectedEntity);
         ImGui::Separator();
         if (mat){
-            for (const std::string& pth : { mat->diffusePath, mat->normalPath })
+            for (const std::string& pth : { mat->diffusePath, mat->normalPath, mat->heightPath })
                 if (!pth.empty() && std::find(m_LoadedTextures.begin(), m_LoadedTextures.end(), pth) == m_LoadedTextures.end())
                     m_LoadedTextures.push_back(pth);
 
@@ -325,13 +325,20 @@ namespace Phoenix{
             ImGui::SameLine(); if (ImGui::SmallButton("Clear##diff")) { mat->diffusePath.clear(); }
             ImGui::Text("Normal:  %s", mat->normalPath.empty() ? "(none)" : mat->normalPath.c_str());
             ImGui::SameLine(); if (ImGui::SmallButton("Clear##norm")) { mat->normalPath.clear(); }
+            ImGui::Text("Height:  %s", mat->heightPath.empty() ? "(none)" : mat->heightPath.c_str());
+            ImGui::SameLine(); if (ImGui::SmallButton("Clear##height")) { mat->heightPath.clear(); }
+            // Also apply to maps a model brings itself (e.g. a glTF's normal maps).
+            ImGui::SliderFloat("Normal Strength", &mat->normalStrength, 0.0f, 3.0f, "%.2f");
+            ImGui::SliderFloat("Parallax Depth", &mat->parallaxDepth, 0.0f, 0.15f, "%.3f");
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("How deep a height map carves the surface (texture units). 0 turns parallax off.");
         }
         else{
             ImGui::TextDisabled("Select an object with a material to assign textures.");
         }
 
         ImGui::Separator();
-        ImGui::TextDisabled("Palette  (Diffuse / Normal assigns to the selected object)");
+        ImGui::TextDisabled("Palette  (Diffuse / Normal / Height assigns to the selected object)");
 
         for (size_t i = 0; i < m_LoadedTextures.size(); i++){
             ImGui::PushID((int)i);
@@ -347,6 +354,8 @@ namespace Phoenix{
             if (ImGui::SmallButton("Diffuse") && mat) { mat->diffusePath = path; }
             ImGui::SameLine();
             if (ImGui::SmallButton("Normal") && mat)  { mat->normalPath = path; }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Height") && mat)  { mat->heightPath = path; }
             ImGui::SameLine();
             if (ImGui::SmallButton("Remove")){ m_LoadedTextures.erase(m_LoadedTextures.begin() + i); ImGui::EndGroup(); ImGui::PopID(); break; }
             ImGui::EndGroup();

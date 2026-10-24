@@ -44,6 +44,7 @@ namespace Phoenix{
         out << YAML::Key << "Panorama" << YAML::Value << sky.panorama;
         out << YAML::Key << "Rotation" << YAML::Value << sky.rotation;
         out << YAML::Key << "Intensity" << YAML::Value << sky.intensity;
+        out << YAML::Key << "SkyLight" << YAML::Value << sky.ambient;
         out << YAML::EndMap;
     }
 
@@ -62,6 +63,7 @@ namespace Phoenix{
         sky.panorama = node["Panorama"].as<std::string>(def.panorama);
         sky.rotation = node["Rotation"].as<float>(def.rotation);
         sky.intensity = node["Intensity"].as<float>(def.intensity);
+        sky.ambient = node["SkyLight"].as<float>(def.ambient);
     }
 
     static void WriteBool3(YAML::Emitter& out, const bool v[3]){
@@ -188,6 +190,9 @@ namespace Phoenix{
         out << YAML::Key << "reflectivity" << YAML::Value << material.reflectivity;
         out << YAML::Key << "diffusePath" << YAML::Value << material.diffusePath;
         out << YAML::Key << "normalPath"  << YAML::Value << material.normalPath;
+        out << YAML::Key << "heightPath"  << YAML::Value << material.heightPath;
+        out << YAML::Key << "parallaxDepth" << YAML::Value << material.parallaxDepth;
+        out << YAML::Key << "normalStrength" << YAML::Value << material.normalStrength;
         out << YAML::Key << "castShadows" << YAML::Value << material.castShadows;
         out << YAML::Key << "receiveShadows" << YAML::Value << material.receiveShadows;
         out << YAML::EndMap;
@@ -205,6 +210,9 @@ namespace Phoenix{
         material.reflectivity = node["reflectivity"].as<float>(material.reflectivity);
         material.diffusePath = node["diffusePath"].as<std::string>(material.diffusePath);
         material.normalPath  = node["normalPath"].as<std::string>(material.normalPath);
+        material.heightPath  = node["heightPath"].as<std::string>(material.heightPath);
+        material.parallaxDepth = node["parallaxDepth"].as<float>(material.parallaxDepth);
+        material.normalStrength = node["normalStrength"].as<float>(material.normalStrength);
         material.castShadows = node["castShadows"].as<bool>(material.castShadows);
         material.receiveShadows = node["receiveShadows"].as<bool>(material.receiveShadows);
         return material;

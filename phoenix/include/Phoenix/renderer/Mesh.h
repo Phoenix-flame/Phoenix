@@ -28,6 +28,7 @@ namespace Phoenix{
         std::vector<uint32_t> indices;
         std::string diffusePath; // absolute path; empty if the mesh has no diffuse map
         std::string normalPath;  // tangent-space normal map; empty if none
+        std::string heightPath;  // height map for parallax (white = high); empty if none
         float alphaCutoff = 0.0f; // alpha-tested (cut-out) when > 0, e.g. glTF alphaMode MASK
     };
 
@@ -52,6 +53,8 @@ namespace Phoenix{
         const Ref<Texture2D>& GetDiffuseMap() const { return m_DiffuseMap; }
         void SetNormalMap(const Ref<Texture2D>& normalMap) { m_NormalMap = normalMap; }
         const Ref<Texture2D>& GetNormalMap() const { return m_NormalMap; }
+        void SetHeightMap(const Ref<Texture2D>& heightMap) { m_HeightMap = heightMap; }
+        const Ref<Texture2D>& GetHeightMap() const { return m_HeightMap; }
 
         // Fragments whose diffuse-map alpha is below this are discarded (foliage, chains,
         // fences); 0 draws the mesh opaque.
@@ -66,6 +69,7 @@ namespace Phoenix{
         uint32_t m_IndexCount = 0;
         Ref<Texture2D> m_DiffuseMap;
         Ref<Texture2D> m_NormalMap;
+        Ref<Texture2D> m_HeightMap;
         float m_AlphaCutoff = 0.0f;
         std::vector<glm::vec3> m_Positions;
         std::vector<uint32_t> m_Indices;

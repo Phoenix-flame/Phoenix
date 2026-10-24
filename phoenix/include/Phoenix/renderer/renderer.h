@@ -147,6 +147,14 @@ namespace Phoenix{
     };
 
 
+    // Textures a mesh brings to a draw; the material's own texture paths override them.
+    struct SurfaceMaps{
+        Ref<Texture2D> diffuse;  // sampled in place of material.diffuse
+        Ref<Texture2D> normal;   // tangent-space surface detail
+        Ref<Texture2D> height;   // parallax occlusion mapping (white = high)
+        float alphaCutoff = 0.0f; // > 0: cut out where the diffuse alpha is below it (foliage)
+    };
+
     class Renderer{
 	public:
 		static void Init();
@@ -176,18 +184,14 @@ namespace Phoenix{
 			const glm::vec3 pointLightPos[],
 			int numOfPointLight);
 
-		// Draw any indexed geometry (position@0, normal@1, texcoord@2) with the lighting
-		// shader. If diffuseMap is non-null it is sampled in place of material.diffuse;
-		// normalMap adds surface detail unless the material sets its own. alphaCutoff > 0
-		// discards fragments whose diffuse alpha falls below it (cut-out foliage).
+		// Draw any indexed geometry (position@0, normal@1, texcoord@2) with the lighting shader.
 		static void Submit(const Ref<VertexArray>& vertexArray, const Material& material, const glm::mat4& transform = glm::mat4(1.0f),
-			const Ref<Texture2D>& diffuseMap = nullptr, const Ref<Texture2D>& normalMap = nullptr, float alphaCutoff = 0.0f);
+			const SurfaceMaps& maps = {});
 
 		// Draw a skinned mesh: same as Submit but uploads the per-frame bone matrices
 		// and enables vertex skinning in the shader.
 		static void SubmitAnimated(const Ref<VertexArray>& vertexArray, const Material& material, const glm::mat4& transform,
-			const std::vector<glm::mat4>& boneMatrices, const Ref<Texture2D>& diffuseMap = nullptr,
-			const Ref<Texture2D>& normalMap = nullptr, float alphaCutoff = 0.0f);
+			const std::vector<glm::mat4>& boneMatrices, const SurfaceMaps& maps = {});
 
 		// Convenience: draw the built-in unit cube.
 		static void SubmitCube(const Material& material, const glm::mat4& transform = glm::mat4(1.0f));
@@ -216,6 +220,19 @@ namespace Phoenix{
 			const std::vector<glm::mat4>& boneMatrices, const Ref<Texture2D>& alphaMap = nullptr, float alphaCutoff = 0.0f);
 		static void SubmitShadowCube(const glm::mat4& transform);
 		static void EndShadowPass();
+
+		// Screen-space ambient occlusion. Each frame, after the shadow passes and before
+		// BeginScene: BeginDepthPrepass(viewProj), submit every opaque object with the
+		// SubmitShadow* calls, EndDepthPrepass(projection). The occlusion then darkens
+		// ambient light in that frame's lighting pass. Radius is in world units.
+		static void SetSSAOEnabled(bool enabled) { s_SSAO.enabled = enabled; }
+		static bool IsSSAOEnabled() { return s_SSAO.enabled; }
+		static void SetSSAORadius(float radius) { s_SSAO.radius = radius; }
+		static float GetSSAORadius() { return s_SSAO.radius; }
+		static void SetSSAOStrength(float strength) { s_SSAO.strength = strength; }
+		static float GetSSAOStrength() { return s_SSAO.strength; }
+		static void BeginDepthPrepass(const glm::mat4& viewProjection);
+		static void EndDepthPrepass(const glm::mat4& projection);
 
 		// Edge length (texels) of a directional light's shadow tile when numDirShadows
 		// lights cast shadows; fit light frusta to it so they can snap to whole texels.
@@ -403,6 +420,22 @@ namespace Phoenix{
         static int s_PrevFBO;
         static int s_PrevViewport[4];
         static bool s_LinearLighting;
+
+        // SSAO targets, sized to the scene's render target: camera depth, raw occlusion,
+        // and the blurred occlusion the lighting pass reads (valid until EndScene).
+        struct SSAOState{
+            bool enabled = true;
+            float radius = 0.5f;
+            float strength = 1.5f;
+            uint32_t width = 0, height = 0;
+            uint32_t depthFBO = 0, depthTexture = 0;
+            uint32_t aoFBO = 0, aoTexture = 0;
+            uint32_t blurFBO = 0, blurTexture = 0;
+            bool ready = false;
+            Ref<Shader> aoShader, blurShader;
+        };
+        static SSAOState s_SSAO;
+        static void ResizeSSAOTargets(uint32_t width, uint32_t height);
 
         static void BindSkyUniforms(const Ref<Shader>& shader);
         static Ref<Shader> s_SkyShader;
