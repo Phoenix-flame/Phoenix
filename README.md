@@ -45,7 +45,9 @@ playing, and serializing scenes.
   submission API.
 - **Phong lighting**: global ambient, up to eight directional lights, up to four
   point lights, per-material emissive/reflectivity, diffuse + normal maps.
-- **Multi-light directional shadow mapping** with hardware PCF for smooth, unbanded soft shadows.
+- **Soft shadows (PCSS)** from up to eight directional lights and four point lights (omnidirectional
+  cube shadows): penumbrae widen with distance from the caster and harden at contact, with
+  per-light softness/strength/bias, per-object cast/receive flags, and shadows on water.
 - **HDR bloom / neon glow** pipeline with ACES tonemapping and exposure control.
 - **Opt-in linear lighting**: sRGB-correct textures, colours and output.
 - **Procedural environment reflections** (sky/ground) per material.
@@ -106,12 +108,54 @@ are cached by path so a model whose sub-meshes share a material uploads it once.
   attenuation.
 - **Emissive objects also emit light**: any material with `emissiveStrength > 0` is added
   as a gentle coloured point light onto its surroundings (until the 4-light cap).
-- **Shadows**: **multi-light** directional shadow mapping — up to 8 directional lights,
-  each rendering a 1024² tile of one shared depth atlas from its POV, sampled with a 3×3
-  kernel of **hardware PCF** taps (`sampler2DShadow`) for smooth edges. Toggle per light
-  with *Casts Shadow*. Animated
-  meshes are skinned in the shadow pass too, so a walking character casts a correctly posed
-  shadow. (Point lights light the scene but don't cast shadows yet.)
+- **Shadows** — see below.
+
+#### Shadows
+
+![The Shadow Showcase: soft sun shadows, a table and a fan shading other objects, and a lantern of two point lights](images/shadow-showcase.png)
+
+- **Multiple shadowed lights**: every directional light (up to 8) and every point light
+  (up to 4) can cast its own shadow (*Casts Shadow* on the light). Directional lights
+  render into tiles of one depth atlas (2048² each when one or two cast, 1024² for up to
+  eight); point lights render six cube faces each into a second atlas, so they throw
+  shadows in every direction. Overlapping coloured lights give coloured shadows.
+- **Soft shadows with contact hardening** (percentage-closer soft shadows): a blocker
+  search finds how far the receiver is behind its occluders, and the filter widens with
+  that distance and with the light's size. Shadows stay crisp where an object touches the
+  ground and blur further away. Filtering uses hardware PCF taps on a per-pixel-rotated
+  Vogel disk. **Softness** is the light's size: the sun's angular radius in degrees (the
+  real sun is ~0.27°), or a point light's bulb radius in world units; 0 gives hard
+  shadows.
+- **Shadows on other objects**: everything that draws (cubes, shapes, meshes, terrain) can
+  cast onto everything else, including itself; the sun's shadow also falls on **water**.
+  Per object, the material's **Cast Shadows** / **Receive Shadows** switch it off.
+  Geometry on a light entity (its marker cube or bulb) never casts.
+- **Stable, scene-fitted sun shadows**: a directional light's shadow box covers the view
+  out to its **Distance** (or the whole scene when that is smaller), reaches back to every
+  caster, and moves in whole texels so edges don't crawl as the camera moves. Casters
+  outside a light's frustum (or a point light's range) are culled.
+- **No acne**: receivers are offset along their normal and the depth bias grows with the
+  surface slope and filter size. **Bias** / **Normal Bias** (in shadow texels) and
+  **Strength** are per light.
+- Animated meshes are skinned in the shadow passes too, so a walking character casts a
+  correctly posed shadow.
+- **Settings → Shadows** turns all shadows off; **Shadow Samples** trades smoothness of
+  wide penumbrae for speed (default 16).
+
+`Scene::OnUpdate` drives this; outside a scene the renderer API is (all before `BeginScene`,
+light indices as passed to `SetLights`):
+
+```cpp
+Renderer::BeginShadows(numDirShadows, numPointShadows);        // once per frame
+Renderer::BeginShadowPass(i, lightSpaceMatrix, light.shadow);   // directional light i
+Renderer::SubmitShadow(vertexArray, transform);                // ...each caster
+Renderer::EndShadowPass();
+for (int face = 0; face < 6; face++){                          // point light j
+    Renderer::BeginPointShadowPass(j, face, position, range, light.shadow);
+    Renderer::SubmitShadow(vertexArray, transform);            // ...each caster
+    Renderer::EndShadowPass();
+}
+```
 
 ### Post-Processing (Bloom / Glow)
 
@@ -253,7 +297,8 @@ The Sandbox app provides:
   entity's animation, with its event markers on the ruler (events are added in the
   Animation component's properties).
 - **Script Editor**, **Textures**, **Shader Library**, **Profiler** panels.
-- **Settings** — ambient, linear lighting, bloom/exposure, sculpt brush, vsync.
+- **Settings** — ambient, linear lighting, bloom/exposure, shadows/shadow samples, sculpt
+  brush, vsync.
 - **File / Edit menus** — load showcases, import/export scenes & shaders, undo/redo.
 
 **Controls**
@@ -286,6 +331,14 @@ Open via the **File** menu:
   jump.
 - **Load Multi-Shadow Showcase** — three coloured directional lights, each casting its own
   shadow.
+- **Load Shadow Showcase** — soft sun shadows (a row of spheres at rising heights, a tall
+  obelisk) whose penumbrae widen away from the contact point; shadows on other objects (a
+  table shading the box beneath it and catching the shadows of what stands on it, a
+  pillar and a spinning fan shading a staircase, the backpack on a pedestal); and a lantern
+  where two coloured point lights cast radial cube-map shadows onto the floor and back
+  wall. Press **Run** to spin the fan, bounce a sphere and orbit the lantern lights.
+
+![Contact-hardening sun shadows (left) and coloured point-light shadows (right)](images/soft-shadows.png)
 - **Load Physics Showcase** — restitution and friction tests, a jointed wrecking ball, a
   hinged seesaw, a Lua-driven kinematic spinner, a tethered balloon and a CCD cannon.
 
@@ -318,9 +371,9 @@ in [`Sandbox/assets/models/README.txt`](Sandbox/assets/models/README.txt).
 | `PrimitiveComponent` | Built-in shape (cube/sphere/cylinder/cone/plane) + material |
 | `CameraFollowComponent` | Third-person camera that trails a tagged entity |
 | `CubeComponent` | Built-in unit cube + material |
-| `Material` | Ambient/diffuse/specular/shininess + emissive + reflectivity |
-| `DirLightComponent` | Directional light (sun) |
-| `PointLightComponent` | Point light with attenuation |
+| `Material` | Ambient/diffuse/specular/shininess + emissive + reflectivity + cast/receive shadows |
+| `DirLightComponent` | Directional light (sun), with soft shadow settings |
+| `PointLightComponent` | Point light with attenuation and an omnidirectional shadow |
 | `RigidBodyComponent` | Static / Dynamic / Kinematic body |
 | `Box/Sphere/Capsule/CylinderColliderComponent` | Primitive colliders |
 | `MeshColliderComponent` | Convex-hull / triangle-mesh collider |

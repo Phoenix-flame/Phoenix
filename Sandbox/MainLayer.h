@@ -72,6 +72,9 @@ private:
     void BuildMultiShadowShowcase();
     // Populate m_Scene with the physics playground (joints, materials, triggers, cannon).
     void BuildPhysicsShowcase();
+    // Populate m_Scene with the shadow showcase: soft sun shadows with contact hardening,
+    // shadows falling on other objects, and two orbiting point lights with cube shadows.
+    void BuildShadowShowcase();
 
     // Terrain sculpting: raycast to the terrain plane and raise/lower/smooth heights.
     void SculptTerrain(TerrainComponent& terrain, const glm::vec3& terrainPos,

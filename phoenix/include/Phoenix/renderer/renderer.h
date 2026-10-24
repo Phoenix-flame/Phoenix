@@ -158,14 +158,15 @@ namespace Phoenix{
 		static void BeginScene(const glm::mat4& projection, const glm::mat4& view, const glm::vec3& cameraPos);
 		static void EndScene();
 
-		// Up to this many directional lights, each with its own shadow map. Must match
-		// NR_DIR_LIGHTS / NR_SHADOWS in lighting.glsl. Shadow maps bind to units 1..N,
-		// so the normal map uses unit 1 + MAX_DIR_LIGHTS.
+		// Up to this many directional / point lights, each optionally with its own shadow.
+		// Must match NR_DIR_LIGHTS / NR_POINT_LIGHTS in lighting.glsl.
 		static const int MAX_DIR_LIGHTS = 8;
+		static const int MAX_POINT_LIGHTS = 4;
 
 		// Upload the lighting environment once per scene, before any Submit calls.
 		// Pass arrays of directional lights (with their world-space directions) and point
-		// lights. Directional light i is shadowed by shadow map i (see BeginShadowPass).
+		// lights. Light i is shadowed by the shadow rendered for light index i (see
+		// BeginShadowPass / BeginPointShadowPass).
 		static void SetLights(
 			const glm::vec3& ambient,
 			const DirLightComponent dirLights[],
@@ -191,16 +192,37 @@ namespace Phoenix{
 		// after drawing the affected objects.
 		static void SetWireframe(bool enabled);
 
-		// Directional shadow maps (one per directional light, up to MAX_DIR_LIGHTS). For
-		// each shadow-casting light call BeginShadowPass(index, lightSpace), submit all
-		// casters, then EndShadowPass — all BEFORE BeginScene. The lighting pass samples
-		// shadow map i for directional light i. Each pass saves/restores the FBO+viewport.
-		static void BeginShadowPass(int index, const glm::mat4& lightSpaceMatrix);
+		// Shadows. Each frame, BEFORE BeginScene:
+		//   BeginShadows(numDir, numPoint)            -- counts pick the atlas tile sizes
+		//   for each shadowed directional light i:  BeginShadowPass(i, lightSpace, settings),
+		//                                            submit casters, EndShadowPass()
+		//   for each shadowed point light i, face 0..5: BeginPointShadowPass(i, face, ...),
+		//                                            submit casters, EndShadowPass()
+		// Light index i is the light's index in the SetLights arrays. Lights without a
+		// pass are unshadowed. Each pass saves/restores the FBO + viewport.
+		static void BeginShadows(int numDirShadows, int numPointShadows);
+		static void BeginShadowPass(int lightIndex, const glm::mat4& lightSpaceMatrix, const ShadowSettings& settings = {});
+		static void BeginPointShadowPass(int lightIndex, int face, const glm::vec3& position, float range,
+			const ShadowSettings& settings = {});
 		static void SubmitShadow(const Ref<VertexArray>& vertexArray, const glm::mat4& transform);
 		static void SubmitShadowAnimated(const Ref<VertexArray>& vertexArray, const glm::mat4& transform,
 			const std::vector<glm::mat4>& boneMatrices);
 		static void SubmitShadowCube(const glm::mat4& transform);
 		static void EndShadowPass();
+
+		// Edge length (texels) of a directional light's shadow tile when numDirShadows
+		// lights cast shadows; fit light frusta to it so they can snap to whole texels.
+		static uint32_t GetDirShadowResolution(int numDirShadows);
+		// View-projection of one cube face (0..5 = +X,-X,+Y,-Y,+Z,-Z) of a point light's
+		// shadow; slightly wider than 90 degrees so soft filtering never runs off a face.
+		static glm::mat4 GetPointShadowMatrix(const glm::vec3& position, int face, float range);
+
+		// Global shadow switches (editor Settings). Samples = taps per shadow lookup:
+		// more = smoother soft penumbrae, slower.
+		static void SetShadowsEnabled(bool enabled) { s_ShadowsEnabled = enabled; }
+		static bool AreShadowsEnabled() { return s_ShadowsEnabled; }
+		static void SetShadowSamples(int samples);
+		static int GetShadowSamples() { return s_ShadowSamples; }
 
 		// Selection outline: stencils the object's silhouette, then draws a slightly
 		// enlarged flat-color version only where the stencil is unset, leaving a thin
@@ -261,16 +283,37 @@ namespace Phoenix{
         static Ref<Shader> s_OutlineShader;
         static Ref<Shader> s_WaterShader;
 
-        // Directional shadow maps packed into ONE depth-texture ATLAS (a grid of tiles,
-        // one tile per light). The fragment shader picks a light's tile by UV-offset math
-        // on a plain sampler2DShadow — avoiding sampler arrays / array-samplers, which
-        // this GLSL-ES-on-desktop driver won't dynamically index. s_NumShadows = tiles used.
-        static uint32_t s_ShadowFBO;
-        static uint32_t s_ShadowAtlasTex;
+        // Shadow maps are packed into two depth-texture ATLASES (directional: one tile
+        // per light; point: six face tiles per light). The fragment shader picks a tile by
+        // UV-offset math on a plain sampler2DShadow, avoiding sampler arrays, which this
+        // GLSL-ES-on-desktop driver won't dynamically index. Each atlas is also bound a
+        // second time through a non-comparing sampler object to read raw depths for the
+        // soft-shadow blocker search.
+        struct ShadowAtlas{
+            uint32_t fbo = 0, texture = 0;
+            uint32_t width = 0, height = 0;
+            uint32_t tile = 0;          // tile edge in texels for this frame's layout
+            void Init(uint32_t w, uint32_t h);
+        };
+        static ShadowAtlas s_DirAtlas, s_PointAtlas;
+        static uint32_t s_RawDepthSampler;
         static Ref<Shader> s_ShadowShader;
+
+        // Per-light shadow state for the current frame, indexed like the SetLights arrays.
+        // A zero rect size means "this light has no shadow".
         static glm::mat4 s_LightSpaceMatrix[MAX_DIR_LIGHTS];
-        static int s_NumShadows;
+        static glm::vec4 s_DirShadowRect[MAX_DIR_LIGHTS];
+        static glm::vec4 s_DirShadowParams[MAX_DIR_LIGHTS];
+        static glm::vec4 s_DirShadowInfo[MAX_DIR_LIGHTS];
+        static glm::mat4 s_PointShadowMatrix[MAX_POINT_LIGHTS * 6];
+        static glm::vec4 s_PointShadowRect[MAX_POINT_LIGHTS * 6];
+        static glm::vec4 s_PointShadowParams[MAX_POINT_LIGHTS];
+        static glm::vec4 s_PointShadowInfo[MAX_POINT_LIGHTS];
+        static int s_DirShadowSlots, s_PointShadowSlots;     // atlas slots handed out this frame
+        static int s_DirSlotOf[MAX_DIR_LIGHTS], s_PointSlotOf[MAX_POINT_LIGHTS];
+
         static bool s_ShadowsEnabled;
+        static int s_ShadowSamples;
         static int s_PrevFBO;
         static int s_PrevViewport[4];
         static bool s_LinearLighting;

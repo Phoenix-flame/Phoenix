@@ -61,6 +61,11 @@ namespace Phoenix{
         // GL texture is resolved/cached from the path at draw time.
         std::string diffusePath;
         std::string normalPath;
+        // Shadow participation: castShadows puts the object into the lights' shadow maps;
+        // receiveShadows lets shadows fall on it. (Geometry on a light entity, its marker
+        // or bulb, never casts: it would block its own light.)
+        bool castShadows = true;
+        bool receiveShadows = true;
     };
 
     struct MeshComponent{
@@ -290,6 +295,16 @@ namespace Phoenix{
     };
 
 
+    // How a light's shadow looks. Softness is the size of the light source: a bigger
+    // source casts a wider penumbra that still hardens where the caster touches the
+    // receiver (percentage-closer soft shadows).
+    struct ShadowSettings{
+        float softness = 1.0f;   // directional: angular radius in degrees; point: radius in world units; 0 = hard
+        float strength = 1.0f;   // 0 = no shadow, 1 = shadowed areas get only ambient light
+        float bias = 1.0f;       // depth bias in shadow-map texels: raise against acne, lower against gaps at contacts
+        float normalBias = 1.5f; // receivers are offset along their normal by this many texels
+    };
+
     struct DirLightComponent{
         // diffuse is the dominant term so the light is actually directional; its own
         // ambient is small since the scene has a separate global ambient. (Previously
@@ -299,10 +314,15 @@ namespace Phoenix{
         glm::vec3 specular = glm::vec3(1.0f);
         bool isActive = true;
         bool castsShadow = true; // render a shadow map for this light
+        ShadowSettings shadow;
+        // Directional only: shadows cover the view out to this distance from the camera
+        // (or the whole scene, if that is smaller). Shorter = sharper shadow texels.
+        float shadowDistance = 40.0f;
         DirLightComponent() = default;
         DirLightComponent(const DirLightComponent&) = default;
     };
 
+    // Point lights cast omnidirectional shadows (six shadow-map faces each).
     struct PointLightComponent: public DirLightComponent{
         float constant = 1.0f;
         float linear = 0.02f;
@@ -310,7 +330,7 @@ namespace Phoenix{
         void SetConstant(float constant) { this->constant = constant;} 
         void SetLinear(float linear) { this->linear = linear;} 
         void SetQuadratic(float quadratic) { this->quadratic = quadratic;} 
-        PointLightComponent() = default;
+        PointLightComponent() { shadow.softness = 0.1f; } // a 10 cm bulb
         PointLightComponent(const PointLightComponent&) = default;
     };
 

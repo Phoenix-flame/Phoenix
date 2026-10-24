@@ -103,6 +103,33 @@ uniform float u_Foam;    // foam intensity (0 disables)
 uniform bool u_LinearLighting;
 vec3 SrgbToLinear(vec3 c) { return u_LinearLighting ? pow(c, vec3(2.2)) : c; }
 
+// The sun's (directional light 0's) shadow tile in the shadow atlas; zero rect size =
+// unshadowed. Same layout as lighting.glsl's u_DirShadow* arrays. A small fixed PCF disk
+// is enough on a moving, transparent surface.
+uniform highp sampler2DShadow u_ShadowMap;
+uniform mat4 u_LightSpaceMatrix;
+uniform vec4 u_ShadowRect;
+uniform vec4 u_ShadowParams; // y strength, z depth bias (raw)
+uniform vec4 u_ShadowInfo;   // x texel (tile uv)
+
+float SunShadow(){
+    if (u_ShadowRect.z <= 0.0) { return 0.0; }
+    vec4 ls = u_LightSpaceMatrix * vec4(FragPos, 1.0);
+    vec3 proj = ls.xyz / ls.w * 0.5 + 0.5;
+    if (proj.z >= 1.0 || proj.x <= 0.0 || proj.x >= 1.0 || proj.y <= 0.0 || proj.y >= 1.0) { return 0.0; }
+    float texel = u_ShadowInfo.x;
+    float lit = 0.0;
+    for (int x = -1; x <= 1; x++){
+        for (int y = -1; y <= 1; y++){
+            vec2 uv = clamp(proj.xy + vec2(float(x), float(y)) * 1.5 * texel, vec2(0.5 * texel), vec2(1.0 - 0.5 * texel));
+            lit += texture(u_ShadowMap, vec3(u_ShadowRect.xy + uv * u_ShadowRect.zw, proj.z - u_ShadowParams.z));
+        }
+    }
+    vec2 edge = abs(proj.xy - 0.5);
+    float fade = 1.0 - smoothstep(0.45, 0.5, max(edge.x, edge.y));
+    return (1.0 - lit / 9.0) * fade * u_ShadowParams.y;
+}
+
 // Same procedural sky/ground as the reflective materials.
 vec3 SampleEnvironment(vec3 dir){
     float t = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
@@ -132,7 +159,12 @@ void main(){
     vec3 H = normalize(L + V);
     float spec = pow(max(dot(N, H), 0.0), 200.0);
 
-    vec3 color = mix(waterColor, envColor, fresnel) + vec3(spec);
+    // Shadowed water loses the sun's glint and reads darker (less light scattered back).
+    float shadow = SunShadow();
+    spec *= 1.0 - shadow;
+    waterColor *= 1.0 - 0.45 * shadow;
+
+    vec3 color = mix(waterColor, envColor * (1.0 - 0.3 * shadow), fresnel) + vec3(spec);
 
     // Foam on sharp crests and where ripples are active.
     float foam = u_Foam * clamp(smoothstep(0.62, 0.95, Crest) + Ripple, 0.0, 1.0);
