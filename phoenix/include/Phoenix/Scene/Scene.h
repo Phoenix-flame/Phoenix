@@ -124,7 +124,7 @@ namespace Phoenix{
         // Counted from the registry so it can't drift from the actual components
         // (Add/Remove Component, undo, load all change it).
         int GetNumberOfPointLights();
-        static constexpr int MAX_NUM_POINT_LIGHTS = 4; // NR_POINT_LIGHTS in lighting.glsl
+        static constexpr int MAX_NUM_POINT_LIGHTS = 8; // NR_POINT_LIGHTS in lighting.glsl
 
         // Global ambient light (editable; serialized).
         glm::vec3& AmbientColor() { return m_AmbientColor; }
@@ -211,6 +211,8 @@ namespace Phoenix{
         // Particle fluids back to their starting blocks, pool spray cleared (Play start
         // and every RL episode).
         void ResetFluids();
+        // Fires back to their starting state (lit or not): Play start and every RL episode.
+        void ResetFires();
 
         // Runtime physics body for an entity: its rigid body, terrain collider or
         // character capsule (InvalidBody if none / not running).
@@ -259,6 +261,8 @@ namespace Phoenix{
         // One physics step of every particle fluid (and pool spray), with the hand-off
         // of particles into pools.
         void UpdateFluids(float dt);
+        // Fires, once per rendered frame (edit and play): put out, lit, stepped at 60 Hz.
+        void UpdateFires(float dt, const glm::mat4& viewProjection);
         // Starts the entity's enabled scripts; `args` becomes their SPAWN table.
         void StartScripts(Entity entity, const ScriptArgs* args);
         // Destroys everything QueueDestroy collected.

@@ -101,6 +101,8 @@ namespace Phoenix{
         s_FluidParticleShader = Shader::Create("assets/shaders/fluid_particles.glsl");
         s_FluidSmoothShader = Shader::Create("assets/shaders/fluid_smooth.glsl");
         s_FluidCompositeShader = Shader::Create("assets/shaders/fluid_composite.glsl");
+        s_FireVolumeShader = Shader::Create("assets/shaders/fire_volume.glsl");
+        s_FireEmberShader = Shader::Create("assets/shaders/fire_embers.glsl");
         s_ShadowShader = Shader::Create("assets/shaders/shadow_depth.glsl");
         s_SkyShader = Shader::Create("assets/shaders/sky.glsl");
         s_SSAO.aoShader = Shader::Create("assets/shaders/ssao.glsl");
@@ -146,7 +148,8 @@ namespace Phoenix{
         for (int i = 0; i < MAX_POINT_LIGHTS; i++){ s_PointShadowParams[i] = glm::vec4(0.0f); s_PointSlotOf[i] = -1; }
         s_DirShadowSlots = s_PointShadowSlots = 0;
         s_DirAtlas.tile = GetDirShadowResolution(numDirShadows);
-        s_PointAtlas.tile = numPointShadows <= 1 ? 1024 : 512;
+        // 3x2 face tiles per light: one light at 1024, four at 512, eight at 256.
+        s_PointAtlas.tile = numPointShadows <= 1 ? 1024 : (numPointShadows <= 4 ? 512 : 256);
 
         // Clear what this frame will use: unrendered texels read as "lit".
         if (numDirShadows <= 0 && numPointShadows <= 0) { return; }
@@ -330,7 +333,7 @@ namespace Phoenix{
     }
 
     // Uniform names for the light arrays, built once rather than every frame.
-    static const int NUM_POINT_LIGHTS = 4; // NR_POINT_LIGHTS in lighting.glsl
+    static const int NUM_POINT_LIGHTS = 8; // NR_POINT_LIGHTS in lighting.glsl
 
     struct DirLightUniformNames { std::string ambient, diffuse, specular, direction; };
     struct PointLightUniformNames { std::string constant, linear, quadratic, ambient, diffuse, specular, position; };

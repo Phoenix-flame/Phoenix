@@ -31,6 +31,7 @@ Gymnasium-compatible API. Phoenix provides the environment; the learning algorit
   - [Water](#water)
   - [Pools](#pools)
   - [Particle Fluids](#particle-fluids)
+  - [Fire](#fire)
   - [Lua Scripting](#lua-scripting)
   - [Scene Serialization](#scene-serialization)
   - [The Editor](#the-editor)
@@ -56,9 +57,9 @@ Gymnasium-compatible API. Phoenix provides the environment; the learning algorit
 - **Entity Component System** powered by [EnTT](https://github.com/skypjack/entt).
 - **Forward renderer** (OpenGL 4.5 with GLSL ES 3.00 shaders) with a geometry-agnostic
   submission API.
-- **Phong lighting**: global ambient, up to eight directional lights, up to four
+- **Phong lighting**: global ambient, up to eight directional lights, up to eight
   point lights, per-material emissive/reflectivity, diffuse + normal maps.
-- **Soft shadows (PCSS)** from up to eight directional lights and four point lights (omnidirectional
+- **Soft shadows (PCSS)** from up to eight directional lights and eight point lights (omnidirectional
   cube shadows): penumbrae widen with distance from the caster and harden at contact, with
   per-light softness/strength/bias, per-object cast/receive flags, and shadows on water.
 - **HDR bloom / neon glow** pipeline with ACES tonemapping and exposure control.
@@ -74,6 +75,9 @@ Gymnasium-compatible API. Phoenix provides the environment; the learning algorit
   primitive dummies), on a fixed, deterministic timestep.
 - **Editable terrain** with a Blender-style sculpt brush (raise / lower / smooth).
 - **Animated transparent water** surfaces for lakes/oceans.
+- **Simulated fire** for torches, candles, campfires and braziers: burning gas on a grid,
+  rendered as glowing soot with smoke, heat haze and embers, lighting the scene with a
+  flickering, shadow-casting light.
 - **Lua scripting** with an in-editor, syntax-highlighted code editor that runs while playing.
 - **Scene serialization** (YAML) plus snapshot-based **undo/redo**.
 - **Full editor**: hierarchy, properties inspector, gizmos, click-to-pick, play/pause/step,
@@ -288,10 +292,10 @@ depth-aware filter, and darkens ambient light in corners, creases and where obje
 - **Ambient**: a single global ambient colour (editable in Settings, serialized).
 - **Directional lights** (`DirLightComponent`): up to 8; each aims along its entity's
   local −Z, visualized with an arrow gizmo, and can cast its own shadow.
-- **Point lights** (`PointLightComponent`): up to 4, with constant/linear/quadratic
-  attenuation.
+- **Point lights** (`PointLightComponent`): up to 8 (fires' lights included), with
+  constant/linear/quadratic attenuation.
 - **Emissive objects also emit light**: any material with `emissiveStrength > 0` is added
-  as a gentle coloured point light onto its surroundings (until the 4-light cap).
+  as a gentle coloured point light onto its surroundings (until the 8-light cap).
 - **Shadows** — see below.
 
 #### Shadows
@@ -299,10 +303,11 @@ depth-aware filter, and darkens ambient light in corners, creases and where obje
 ![The Shadow Showcase: soft sun shadows, a table and a fan shading other objects, and a lantern of two point lights](images/shadow-showcase.png)
 
 - **Multiple shadowed lights**: every directional light (up to 8) and every point light
-  (up to 4) can cast its own shadow (*Casts Shadow* on the light). Directional lights
+  (up to 8) can cast its own shadow (*Casts Shadow* on the light). Directional lights
   render into tiles of one depth atlas (2048² each when one or two cast, 1024² for up to
-  eight); point lights render six cube faces each into a second atlas, so they throw
-  shadows in every direction. Overlapping coloured lights give coloured shadows.
+  eight); point lights render six cube faces each into a second atlas (1024² faces for one
+  light, 512² for up to four, 256² for up to eight), so they throw shadows in every
+  direction. Overlapping coloured lights give coloured shadows.
 - **Soft shadows with contact hardening** (percentage-closer soft shadows): a blocker
   search finds how far the receiver is behind its occluders, and the filter widens with
   that distance and with the light's size. Shadows stay crisp where an object touches the
@@ -589,6 +594,48 @@ entity (on Play and every RL episode) and/or pours from the entity along its loc
 - The **Fluid** showcase adds a dam break on the pool deck and a stream poured into the
   water to the Pool showcase.
 
+### Fire
+
+![The Fire showcase: a torch-lit dungeon room with a campfire, a brazier and candles](images/fire-showcase.png)
+
+`FireComponent` is a simulated flame. **Create > Fire** adds a torch, candle, campfire or
+brazier (with a model from the dungeon kit) or a bare flame; **Add Component > Fire** sets
+any entity alight, with the flame's source placed in the entity's frame (on a torch's head,
+in a brazier's bowl). Presets set typical values for each kind.
+
+- **Simulation**: burning gas on a small grid in an upright box above the source (Nguyen,
+  Fedkiw & Jensen 2002, on Fedkiw, Stam & Jensen's smoke). Fuel fed into the source burns
+  once it is hot enough, heating the gas and making smoke; hot gas rises (buoyancy) and
+  cools by radiation (T⁴). The flow is kept incompressible (Jacobi pressure solve),
+  vorticity confinement keeps the curls that split a flame into tongues, a little noise
+  turbulence makes it waver, and MacCormack advection keeps its edges crisp. It steps at
+  60 Hz in edit mode too. The box stays upright whatever holds it, and air streams past a
+  moving source: a carried torch's flame trails behind it. Each fire has its own wind.
+- **Rendering**: each flame's grid is ray-marched. A flame's light is soot glowing at the
+  gas's temperature, and soot lives where fuel burns: the glow is the black-body colour of
+  the temperature weighted by the unburnt fuel, so the flame ends where its fuel runs out
+  and the hot gas above it only shows as **heat haze** (it bends the view behind it). Soot
+  absorbs as it emits (Kirchhoff), so thin flames are translucent and thick ones glow at
+  their temperature's black-body brightness. The reaction zone adds a faint blue, smoke
+  absorbs, and **embers** fly off as motion-blurred streaks that cool as they rise.
+- **Light**: every fire lights its surroundings with a point light at its flame's centre
+  of heat, coloured by its temperature, whose strength follows the flame's radiated power:
+  it flickers, and its shadows dance, with the flame. The four fires nearest the camera
+  cast shadows; a fire's own model (the torch) doesn't shadow its light.
+- **Water and flame** (while playing): a fire goes out when its source is under a pool's
+  water or particle-fluid liquid lands on it, and dies down; a burning flame lights an
+  unlit fire whose source it touches (carry a torch to a candle). Lua: `Ignite`,
+  `Extinguish`, `IsBurning`, `SetFireWind`.
+- **Performance**: the CPU path spreads several fires over the cores (one fire per core at
+  a time); fires out of view step every other frame, and fires that are out stop once their
+  smoke has cleared. Settings > OpenCL > Fires steps grids of 8000+ cells on the device,
+  bit-identical to the CPU.
+- The **Fire** showcase is a torch-lit dungeon room: wall torches, a brazier on a column, a
+  campfire and candles. Press **Play** and a torch is lit at the brazier and carried around
+  the room. Models:
+  KayKit Dungeon Remastered and Kenney (both CC0), see
+  [`Sandbox/assets/models/dungeon`](Sandbox/assets/models/dungeon/README.txt).
+
 ### Lua Scripting
 
 `LuaScriptComponent` holds a Lua source string that runs while the scene is **playing**
@@ -619,6 +666,7 @@ are loaded — no `io`/`os`). The API covers:
 - **Vehicle**: `SetVehicleInput(forward, right [, brake, handbrake])`, `GetVehicleSpeed()`,
   `GetEngineRPM()` → rpm, gear
 - **Ragdoll**: `SetRagdoll(on)`, `IsRagdoll()`, `RagdollImpulse(vx, vy, vz)`
+- **Fire**: `Ignite()`, `Extinguish()`, `IsBurning()`, `SetFireWind(x, y, z)`
 - **Callbacks**:
   - `OnCollisionEnter(other, otherId, px,py,pz, nx,ny,nz, speed)` and `OnCollisionExit(other, otherId)`
   - `OnTriggerEnter(other, otherId)` and `OnTriggerExit(other, otherId)` for sensors
@@ -708,6 +756,10 @@ Open via **File → Showcases**:
   below the surface for the underwater view.
 - **Fluid** — the pool plus particle water: a block on the deck collapses and spills over
   the edge into the pool, and a stream pours into it.
+- **Fire** — a torch-lit dungeon room: wall torches, a brazier on a column, a campfire and
+  candles, all simulated flames lighting the room with flickering light and shadows. Press
+  **Play** and an unlit torch is held in the brazier's flame until it catches, then carried
+  around the campfire (its flame trailing behind it), snuffed out and lit again.
 - **Robot** — skeletal animation: a rigged character on a shadow-receiving
   floor with a follow camera. Press **Play**, click the viewport, then drive it with the
   arrow keys (Shift runs, Space jumps); a Lua state machine crossfades idle / walk / run /
@@ -786,6 +838,7 @@ in [`Sandbox/assets/models/README.txt`](Sandbox/assets/models/README.txt).
 | `ForceFieldComponent` | Wind / updraft / attractor zone |
 | `TerrainComponent` | Editable heightmap terrain |
 | `WaterComponent` | Animated transparent water surface |
+| `FireComponent` | Simulated flame (torch, candle, campfire, brazier) with its light, smoke and embers |
 | `WireframeComponent` | Draw the entity as wireframe |
 | `LuaScriptComponent` | Lua script run while playing |
 | `AgentComponent` | RL agent: policy, control, action space, observations, rewards |
@@ -836,7 +889,7 @@ the next launch. The engine's own runtime assets (its shaders and the UI fonts) 
 ### OpenCL (optional, experimental)
 
 `-DPHOENIX_OPENCL=ON` (needs `ocl-icd-opencl-dev` and an OpenCL driver) adds a shared OpenCL
-device (a GPU if one is found) and a **Settings > OpenCL** section with four switches, all off
+device (a GPU if one is found) and a **Settings > OpenCL** section with five switches, all off
 by default:
 
 - **Ray Sensors**: every agent's Ray Sensor rays are cast in one batch against Reward Zones
@@ -851,6 +904,7 @@ by default:
 - **Terrain Generation**: noise terrain (Generate, and per-episode randomization) is computed
   on the device.
 - **Particle Fluids**: fluids of 2000 particles or more step on the device.
+- **Fires**: fire grids of 8000 cells or more step on the device.
 
 Each feature keeps a CPU path that runs the same code and gives bit-identical results (on
 devices with correctly rounded division and square root): small workloads stay on the CPU,
@@ -860,8 +914,8 @@ and as OpenCL C.
 
 Two tools check the device against the CPU and time them:
 `cmake --build build --target ray_batch_bench` (also checks mirrored bodies against Jolt) and
-`cmake --build build --target compute_bench` (water ripples, pool grids, terrain generation
-and a particle-fluid dam break).
+`cmake --build build --target compute_bench` (water ripples, pool grids, terrain generation,
+a particle-fluid dam break and two fires).
 
 ---
 

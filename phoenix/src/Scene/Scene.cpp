@@ -717,6 +717,120 @@ namespace Phoenix{
         }
     }
 
+    // Where a fire's source is (world), and its simulation box's min corner.
+    static glm::vec3 FireSource(const FireComponent& f, const TransformComponent& t){
+        return glm::vec3(t.GetTransform() * glm::vec4(f.offset, 1.0f));
+    }
+    static glm::vec3 FireOrigin(const FireComponent& f, const glm::vec3& source){
+        return source - f.sim->GetSettings().source;
+    }
+
+    void Scene::ResetFires(){
+        for (auto entity : m_Registry.view<FireComponent>()){
+            auto& f = m_Registry.get<FireComponent>(entity);
+            f.burning = f.lit;
+            f.started = true;
+            f.doused = 0.0f;
+        }
+    }
+
+    void Scene::UpdateFires(float dt, const glm::mat4& viewProjection){
+        const float step = 1.0f / 60.0f;
+        auto fires = m_Registry.view<FireComponent, TransformComponent>();
+        struct Live{ FireComponent* fire; glm::vec3 source; };
+        std::vector<Live> live;
+        for (auto entity : fires){
+            auto& f = fires.get<FireComponent>(entity);
+            const glm::vec3 source = FireSource(f, fires.get<TransformComponent>(entity));
+            if (!f.sim) { f.sim = CreateRef<FireSim>(); f.hasLastSource = false; }
+            f.sim->SetSettings(f.Settings());
+            if (f.sim->OnDevice() != (FireSim::DefaultOpenCL() && f.sim->Cells() >= FireSim::minDeviceCells))
+                f.sim->UseOpenCL(!f.sim->OnDevice());
+            if (!IsRunning() || !f.started) { f.burning = f.lit; f.started = true; }
+            // The source's velocity (a torch being carried): the air streams past it. The
+            // grid moves with the source; embers already thrown stay where they are.
+            if (f.hasLastSource && dt > 0.0f){
+                glm::vec3 v = (source - f.lastSource) / dt;
+                f.sourceVelocity += (v - f.sourceVelocity) * (1.0f - std::exp(-dt * 10.0f));
+                f.sim->MoveEmbers(f.lastSource - source);
+            }
+            f.lastSource = source;
+            f.hasLastSource = true;
+            live.push_back({ &f, source });
+        }
+        if (live.empty()) { return; }
+
+        // While playing: water puts fires out, flames light the fires they touch.
+        if (IsRunning()){
+            for (Live& l : live){
+                FireComponent& f = *l.fire;
+                if (!f.burning) { continue; }
+                for (auto entity : m_Registry.view<PoolComponent, TransformComponent>()){
+                    auto& pool = m_Registry.get<PoolComponent>(entity);
+                    glm::vec3 local = WorldToPool(m_Registry.get<TransformComponent>(entity), l.source);
+                    glm::vec2 half = pool.size * 0.5f;
+                    float surface = pool.water ? pool.water->SurfaceHeight(local.x, local.z) : 0.0f;
+                    if (std::abs(local.x) < half.x && std::abs(local.z) < half.y && local.y > pool.Floor()
+                        && local.y < pool.WaterLevel() + surface) { f.burning = false; }
+                }
+                // Liquid particles landing on the source: enough of them douse it.
+                const float reach = f.sourceRadius.x + 0.04f, reach2 = reach * reach;
+                int hits = 0;
+                auto count = [&](const ParticleFluid* fluid){
+                    if (!fluid) { return; }
+                    for (const glm::vec4& p : fluid->Positions()){
+                        glm::vec3 d = glm::vec3(p) - l.source;
+                        if (glm::dot(d, d) < reach2) { hits++; }
+                    }
+                };
+                for (auto entity : m_Registry.view<FluidComponent>()) { count(m_Registry.get<FluidComponent>(entity).fluid.get()); }
+                for (auto entity : m_Registry.view<PoolComponent>()) { count(m_Registry.get<PoolComponent>(entity).sprayFluid.get()); }
+                f.doused = f.doused * std::exp(-dt * 2.0f) + (float)hits;
+                if (f.doused > 12.0f) { f.burning = false; }
+            }
+            for (Live& unlit : live){
+                if (unlit.fire->burning) { continue; }
+                for (const Live& flame : live){
+                    if (!flame.fire->burning || flame.fire == unlit.fire) { continue; }
+                    glm::vec3 p = unlit.source - FireOrigin(*flame.fire, flame.source);
+                    if (flame.fire->sim->SampleScalars(p).x > 0.5f) { unlit.fire->burning = true; unlit.fire->doused = 0.0f; break; }
+                }
+            }
+        }
+
+        // Fixed 60 Hz steps (at most two a frame); fires out of view every other frame.
+        std::vector<FireSim::StepRequest> round;
+        for (int pass = 0; pass < 2; pass++){
+            round.clear();
+            for (Live& l : live){
+                FireComponent& f = *l.fire;
+                if (pass == 0){
+                    f.accumulator = std::min(f.accumulator + dt, step * 2.0f);
+                    f.frame++;
+                    glm::vec3 size = f.sim->Size();
+                    bool visible = SphereInFrustum(viewProjection, FireOrigin(f, l.source) + size * 0.5f, glm::length(size) * 0.5f);
+                    if (!visible && (f.frame & 1)) { continue; }   // catches up next frame
+                }
+                if (f.accumulator < step) { continue; }
+                f.accumulator -= step;
+                // A fire that is out stops once its last smoke has cleared.
+                f.quietSteps = f.burning ? 0 : f.quietSteps + 1;
+                if (f.quietSteps > 240) { continue; }
+                round.push_back({ f.sim.get(), step, f.wind - f.sourceVelocity, f.burning });
+            }
+            if (!round.empty()) { FireSim::StepAll(round); }
+        }
+
+        // The light's strength: the radiated power against its slow average (flicker),
+        // fading in and out with the flame.
+        for (Live& l : live){
+            FireComponent& f = *l.fire;
+            float power = f.sim->Power();
+            f.lightPower += (power - f.lightPower) * (1.0f - std::exp(-dt * 25.0f));
+            f.powerAverage += (power - f.powerAverage) * (1.0f - std::exp(-dt * 0.7f));
+        }
+    }
+
     void Scene::ResetFluids(){
         for (auto entity : m_Registry.view<FluidComponent, TransformComponent>())
             RefillFluid(m_Registry.get<FluidComponent>(entity), m_Registry.get<TransformComponent>(entity));
@@ -860,6 +974,7 @@ namespace Phoenix{
         for (auto entity : m_Registry.view<PoolComponent, TransformComponent>()) { pools.push_back(entity); }
         for (auto entity : pools) { CreatePoolBody(entity); }
         ResetFluids();
+        ResetFires();
 
         // Characters: kinematic capsules driven by input, not by the solver.
         auto characterView = m_Registry.view<CharacterControllerComponent, TransformComponent>();
@@ -1413,6 +1528,10 @@ namespace Phoenix{
             glm::vec3 half = glm::max(fluid->blockSize * 0.5f, glm::vec3(fluid->nozzleRadius, 0.05f, fluid->nozzleRadius));
             include(-half, half);
         }
+        if (auto* fire = registry.try_get<FireComponent>(entity)){
+            glm::vec3 r(fire->sourceRadius.x, fire->sourceRadius.y, fire->sourceRadius.x);
+            include(fire->offset - r, fire->offset + r);
+        }
 
         if (lo.x > hi.x) { return false; }
         // Pad flat shapes (planes, flat terrain) so the slab test stays robust.
@@ -1915,19 +2034,76 @@ namespace Phoenix{
         // Representative direction for the water surface (uses one sun).
         glm::vec3 lightDir = numDirLights > 0 ? dirLightDir[0] : glm::vec3(0.0f, -1.0f, 0.0f);
 
-        glm::vec3 pointLightPos[4] = {glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(0.0f)};
-        PointLightComponent pLightComponent[4];
+        // Fires: stepped before the lights are gathered (their light follows the flame).
+        {
+            PHX_PROFILE("Fires");
+            UpdateFires((float)ts, sceneCameraProjection * sceneCameraView);
+        }
+
+        glm::vec3 pointLightPos[MAX_NUM_POINT_LIGHTS];
+        PointLightComponent pLightComponent[MAX_NUM_POINT_LIGHTS];
+        // Entity a point light belongs to whose own geometry mustn't shadow it (fires:
+        // the torch holding the flame); null for the rest.
+        entt::entity pointLightOwner[MAX_NUM_POINT_LIGHTS];
+        for (auto& owner : pointLightOwner) { owner = entt::null; }
         int numPointLight = 0;
-        int numRealPointLights = 0; // the entity point lights come first; emissive ones after
+        int numRealPointLights = 0; // the entity point lights and fires come first; emissive ones after
         auto pLightsView = m_Registry.view<TransformComponent,PointLightComponent>();
         for(auto entity:pLightsView){
-            if (numPointLight >= MAX_NUM_POINT_LIGHTS) { break; } // shader supports up to 4
+            if (numPointLight >= MAX_NUM_POINT_LIGHTS) { break; } // NR_POINT_LIGHTS in the shader
             auto light = pLightsView.get<PointLightComponent>(entity);
             if (!light.isActive) { continue; }
             auto transform = pLightsView.get<TransformComponent>(entity);
             pLightComponent[numPointLight] = light;
             pointLightPos[numPointLight] = transform.Translation;
             numPointLight ++;
+        }
+        // Each fire lights its surroundings from its flame's centre of heat, the nearest
+        // to the camera first while lights are left.
+        {
+            struct FireLight{ entt::entity entity; float distance; };
+            std::vector<FireLight> fireLights;
+            for (auto entity : m_Registry.view<FireComponent, TransformComponent>()){
+                auto& f = m_Registry.get<FireComponent>(entity);
+                if (!f.castLight || !f.sim || f.lightPower <= 0.0f) { continue; }
+                glm::vec3 source = FireSource(f, m_Registry.get<TransformComponent>(entity));
+                fireLights.push_back({ entity, glm::length(source - cameraPos) });
+            }
+            std::sort(fireLights.begin(), fireLights.end(), [](const FireLight& a, const FireLight& b){ return a.distance < b.distance; });
+            const int MAX_FIRE_SHADOWS = 4;
+            int fireShadows = 0;
+            for (const FireLight& fl : fireLights){
+                if (numPointLight >= MAX_NUM_POINT_LIGHTS) { break; }
+                auto& f = m_Registry.get<FireComponent>(fl.entity);
+                glm::vec3 source = FireSource(f, m_Registry.get<TransformComponent>(fl.entity));
+                // The flame's power against its slow average: around 1 for a steady flame
+                // (flickering with it), falling to 0 as a flame dies down.
+                float flicker = f.powerAverage > 1e-12f ? std::min(f.lightPower / f.powerAverage, 2.0f) : 0.0f;
+                float strength = f.lightIntensity * flicker;
+                if (strength <= 1e-3f) { continue; }
+                // The flame's black-body colour, display-encoded unless lighting is linear
+                // (light colours are taken as picked in the editor).
+                glm::vec3 color = Renderer::BlackBodyColor(std::max(f.flameTemperature * f.sim->FlameTemperature(), 1500.0f));
+                if (!Renderer::IsLinearLighting()) { color = glm::pow(color, glm::vec3(1.0f / 2.2f)); }
+                color *= strength;
+                PointLightComponent light;
+                light.ambient = glm::vec3(0.0f);
+                light.diffuse = color;
+                light.specular = color * 0.5f;
+                // Inverse-square beyond a third of lightRange, down to a tenth at lightRange.
+                const float range = std::max(f.lightRange, 0.5f);
+                light.constant = 1.0f;
+                light.linear = 0.0f;
+                light.quadratic = 9.0f / (range * range);
+                // Six shadow faces per light add up: the nearest few fires cast shadows.
+                light.castsShadow = f.castShadows && fireShadows < MAX_FIRE_SHADOWS;
+                fireShadows += light.castsShadow ? 1 : 0;
+                light.shadow.softness = std::max(f.sourceRadius.x, 0.02f);
+                pLightComponent[numPointLight] = light;
+                pointLightPos[numPointLight] = FireOrigin(f, source) + f.sim->PowerCentroid();
+                pointLightOwner[numPointLight] = fl.entity;
+                numPointLight++;
+            }
         }
         numRealPointLights = numPointLight;
 
@@ -2032,16 +2208,19 @@ namespace Phoenix{
                 Ref<Texture2D> alphaMap; // cut-out casters: only opaque texels cast
                 float alphaCutoff;
                 bool castsShadow;        // false: only in the SSAO depth prepass
+                entt::entity owner;
             };
             std::vector<ShadowCaster> casters;
             glm::vec3 sceneLo(std::numeric_limits<float>::max()), sceneHi(-std::numeric_limits<float>::max());
             // The SSAO depth prepass needs everything drawn opaque, shadow caster or not.
             const bool ssao = Renderer::IsSSAOEnabled();
+            entt::entity casterOwner = entt::null;   // set by the loops below
             auto addCaster = [&](bool castsShadow, const Ref<VertexArray>& va, const glm::mat4& transform,
                                  const std::vector<glm::mat4>* bones, const glm::vec3& lo, const glm::vec3& hi,
                                  const Ref<Texture2D>& alphaMap = nullptr, float alphaCutoff = 0.0f){
                 if (!castsShadow && !ssao) { return; }
-                casters.push_back({ va, transform, bones, (lo + hi) * 0.5f, glm::length(hi - lo) * 0.5f, alphaMap, alphaCutoff, castsShadow });
+                casters.push_back({ va, transform, bones, (lo + hi) * 0.5f, glm::length(hi - lo) * 0.5f, alphaMap, alphaCutoff,
+                                    castsShadow, casterOwner });
             };
             auto addBounds = [&](const glm::mat4& transform, const glm::vec3& localLo, const glm::vec3& localHi,
                                  glm::vec3& lo, glm::vec3& hi){
@@ -2060,6 +2239,7 @@ namespace Phoenix{
                 auto cubes = m_Registry.view<CubeComponent, TransformComponent>();
                 Ref<Mesh> cubeMesh = GetPrimitiveMesh(PrimitiveComponent::Type::Cube);
                 for (auto entity : cubes){
+                    casterOwner = entity;
                     glm::mat4 transform = cubes.get<TransformComponent>(entity).GetTransform();
                     glm::vec3 lo, hi;
                     addBounds(transform, unitLo, unitHi, lo, hi);
@@ -2072,6 +2252,7 @@ namespace Phoenix{
                     auto& primitive = primitives.get<PrimitiveComponent>(entity);
                     Ref<Mesh> mesh = GetPrimitiveMesh(primitive.type);
                     if (!mesh) { continue; }
+                    casterOwner = entity;
                     glm::mat4 transform = primitives.get<TransformComponent>(entity).GetTransform();
                     glm::vec3 lo, hi;
                     addBounds(transform, unitLo, unitHi, lo, hi);
@@ -2083,6 +2264,7 @@ namespace Phoenix{
                 for (auto entity : meshes){
                     auto& mesh = meshes.get<MeshComponent>(entity);
                     if (!mesh.model) { continue; }
+                    casterOwner = entity;
                     mesh.model->Update(); // completes async GPU upload once parsing finishes
                     glm::vec3 localLo, localHi;
                     if (!mesh.model->GetLocalBounds(localLo, localHi)) { continue; }
@@ -2102,6 +2284,7 @@ namespace Phoenix{
                                   animated ? &anim->animator->GetFinalBoneMatrices() : nullptr, lo, hi,
                                   subMesh->GetDiffuseMap(), subMesh->GetAlphaCutoff());
                 }
+                casterOwner = entt::null;
 
                 for (const auto& draw : poolDraws){
                     glm::vec2 half = draw.pool->size * 0.5f + draw.pool->coping;
@@ -2130,9 +2313,10 @@ namespace Phoenix{
                 }
             }
 
-            auto submitCasters = [&](const glm::mat4& lightSpace, bool depthPrepass = false){
+            auto submitCasters = [&](const glm::mat4& lightSpace, bool depthPrepass = false, entt::entity skip = entt::null){
                 for (const auto& caster : casters){
                     if (!caster.castsShadow && !depthPrepass) { continue; }
+                    if (skip != entt::null && caster.owner == skip) { continue; }
                     if (!SphereInFrustum(lightSpace, caster.center, caster.radius)) { continue; }
                     if (caster.bones) { Renderer::SubmitShadowAnimated(caster.vertexArray, caster.transform, *caster.bones, caster.alphaMap, caster.alphaCutoff); }
                     else              { Renderer::SubmitShadow(caster.vertexArray, caster.transform, caster.alphaMap, caster.alphaCutoff); }
@@ -2175,7 +2359,7 @@ namespace Phoenix{
                 float range = PointLightRange(pLightComponent[i]);
                 for (int face = 0; face < 6; face++){
                     Renderer::BeginPointShadowPass(i, face, pointLightPos[i], range, pLightComponent[i].shadow);
-                    submitCasters(Renderer::GetPointShadowMatrix(pointLightPos[i], face, range));
+                    submitCasters(Renderer::GetPointShadowMatrix(pointLightPos[i], face, range), false, pointLightOwner[i]);
                     Renderer::EndShadowPass();
                 }
             }
@@ -2310,6 +2494,50 @@ namespace Phoenix{
             if (!fluidDraws.empty()){
                 Renderer::CaptureScene();
                 for (const auto& draw : fluidDraws) { Renderer::RenderFluid(draw.fluid->Positions(), draw.params); }
+            }
+        }
+
+        // Fires over everything drawn so far (their shimmer bends a fresh copy of it), back
+        // to front, then their embers.
+        {
+            struct FireDraw{ FireComponent* fire; Renderer::FireParams params; float distance; };
+            std::vector<FireDraw> fireDraws;
+            for (auto entity : m_Registry.view<FireComponent, TransformComponent>()){
+                auto& f = m_Registry.get<FireComponent>(entity);
+                if (!f.sim || (f.sim->Power() <= 0.0f && f.sim->Embers().empty())) { continue; }
+                glm::vec3 source = FireSource(f, m_Registry.get<TransformComponent>(entity));
+                Renderer::FireParams p;
+                p.origin = FireOrigin(f, source);
+                p.size = f.sim->Size();
+                p.dims = f.sim->Dims();
+                if (!SphereInFrustum(sceneCameraProjection * sceneCameraView, p.origin + p.size * 0.5f, glm::length(p.size) * 0.5f)
+                    && f.sim->Embers().empty()) { continue; }
+                if (!f.volume) { f.volume = CreateRef<FireVolume>(); f.uploadedStep = 0xffffffff; }
+                if (f.uploadedStep != f.sim->StepCount()){
+                    f.volume->Upload(*f.sim);
+                    f.uploadedStep = f.sim->StepCount();
+                }
+                p.volume = f.volume->GetTexture();
+                p.brightness = f.brightness;
+                p.flameTemperature = f.flameTemperature;
+                p.smokeColor = f.smokeColor;
+                p.smokeDensity = f.smokeDensity;
+                p.heatHaze = f.heatHaze;
+                p.time = m_Time;
+                p.ambient = m_AmbientColor;
+                fireDraws.push_back({ &f, p, glm::length(p.origin + p.size * 0.5f - cameraPos) });
+            }
+            if (!fireDraws.empty()){
+                std::sort(fireDraws.begin(), fireDraws.end(), [](const FireDraw& a, const FireDraw& b){ return a.distance > b.distance; });
+                Renderer::CaptureScene();
+                for (const auto& draw : fireDraws) { Renderer::RenderFire(draw.params); }
+                std::vector<Renderer::EmberPoint> embers;
+                for (const auto& draw : fireDraws){
+                    embers.clear();
+                    for (const Ember& e : draw.fire->sim->Embers())
+                        embers.push_back({ draw.params.origin + e.position, e.temperature, e.velocity, e.size * 0.004f });
+                    Renderer::RenderEmbers(embers, draw.fire->flameTemperature, draw.fire->brightness);
+                }
             }
         }
 
@@ -2511,6 +2739,10 @@ namespace Phoenix{
 
     template<>
 	void Scene::OnComponentAdded<FluidComponent>(Entity entity, FluidComponent& component){
+	}
+
+    template<>
+	void Scene::OnComponentAdded<FireComponent>(Entity entity, FireComponent& component){
 	}
 
     template<>

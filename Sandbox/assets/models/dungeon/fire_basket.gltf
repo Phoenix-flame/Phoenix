@@ -1,0 +1,194 @@
+{
+ "asset": {
+  "generator": "UnityGLTF",
+  "version": "2.0"
+ },
+ "extensionsUsed": [
+  "KHR_texture_transform"
+ ],
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0
+   ],
+   "name": "fire-basket"
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 328,
+   "type": "VEC3",
+   "max": [
+    0.2082788646221161,
+    0.16779901087284088,
+    0.20827889442443848
+   ],
+   "min": [
+    -0.2082788646221161,
+    0.0,
+    -0.20827889442443848
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 328,
+   "type": "VEC3",
+   "max": [
+    1.0000001192092896,
+    1.0,
+    1.0
+   ],
+   "min": [
+    -1.0000001192092896,
+    -1.0,
+    -1.0
+   ]
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 328,
+   "type": "VEC4",
+   "max": [
+    1.0000001192092896,
+    0.0,
+    1.0000001192092896,
+    1.0
+   ],
+   "min": [
+    -1.0000001192092896,
+    0.0,
+    -1.0000001192092896,
+    1.0
+   ]
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5126,
+   "count": 328,
+   "type": "VEC2",
+   "max": [
+    0.71875,
+    0.7250000238418579
+   ],
+   "min": [
+    0.71875,
+    0.5249999761581421
+   ]
+  },
+  {
+   "bufferView": 4,
+   "componentType": 5123,
+   "count": 588,
+   "type": "SCALAR",
+   "max": [
+    327.0
+   ],
+   "min": [
+    0.0
+   ]
+  }
+ ],
+ "buffers": [
+  {
+   "byteLength": 16920,
+   "uri": "fire_basket.bin"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteLength": 3936,
+   "byteStride": 12,
+   "target": 34962,
+   "byteOffset": 0
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 3936,
+   "byteLength": 3936,
+   "byteStride": 12,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 7872,
+   "byteLength": 5248,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 13120,
+   "byteLength": 2624,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 15744,
+   "byteLength": 1176,
+   "target": 34963
+  }
+ ],
+ "images": [
+  {
+   "uri": "kenney_graveyard_colormap.png",
+   "name": "colormap"
+  }
+ ],
+ "materials": [
+  {
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 0,
+     "extensions": {
+      "KHR_texture_transform": {
+       "texCoord": 0
+      }
+     }
+    },
+    "metallicFactor": 0.0
+   },
+   "doubleSided": true,
+   "name": "colormap"
+  }
+ ],
+ "meshes": [
+  {
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TANGENT": 2,
+      "TEXCOORD_0": 3
+     },
+     "indices": 4,
+     "material": 0
+    }
+   ],
+   "name": "fire-basket"
+  }
+ ],
+ "nodes": [
+  {
+   "mesh": 0,
+   "name": "fire-basket"
+  }
+ ],
+ "samplers": [
+  {
+   "minFilter": 9987
+  }
+ ],
+ "textures": [
+  {
+   "sampler": 0,
+   "source": 0,
+   "name": "colormap"
+  }
+ ]
+}

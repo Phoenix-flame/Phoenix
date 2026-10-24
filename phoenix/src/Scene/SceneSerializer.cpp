@@ -602,6 +602,40 @@ namespace Phoenix{
             out << YAML::EndMap;
         }
 
+        if (entity.HasComponent<FireComponent>()){
+            auto& f = entity.GetComponent<FireComponent>();
+            out << YAML::Key << "FireComponent" << YAML::Value << YAML::BeginMap;
+            out << YAML::Key << "Lit" << YAML::Value << f.lit;
+            out << YAML::Key << "Offset" << YAML::Value << f.offset;
+            out << YAML::Key << "Width" << YAML::Value << f.width;
+            out << YAML::Key << "Height" << YAML::Value << f.height;
+            out << YAML::Key << "Resolution" << YAML::Value << f.resolution;
+            out << YAML::Key << "PressureIterations" << YAML::Value << f.pressureIterations;
+            out << YAML::Key << "SourceRadius" << YAML::Value << YAML::Flow << YAML::BeginSeq << f.sourceRadius.x << f.sourceRadius.y << YAML::EndSeq;
+            out << YAML::Key << "Fuel" << YAML::Value << f.fuel;
+            out << YAML::Key << "ExitSpeed" << YAML::Value << f.exitSpeed;
+            out << YAML::Key << "BurnRate" << YAML::Value << f.burnRate;
+            out << YAML::Key << "Heat" << YAML::Value << f.heat;
+            out << YAML::Key << "Cooling" << YAML::Value << f.cooling;
+            out << YAML::Key << "Buoyancy" << YAML::Value << f.buoyancy;
+            out << YAML::Key << "Vorticity" << YAML::Value << f.vorticity;
+            out << YAML::Key << "Turbulence" << YAML::Value << f.turbulence;
+            out << YAML::Key << "Smoke" << YAML::Value << f.smoke;
+            out << YAML::Key << "SmokeLife" << YAML::Value << f.smokeLife;
+            out << YAML::Key << "Wind" << YAML::Value << f.wind;
+            out << YAML::Key << "Brightness" << YAML::Value << f.brightness;
+            out << YAML::Key << "FlameTemperature" << YAML::Value << f.flameTemperature;
+            out << YAML::Key << "SmokeColor" << YAML::Value << f.smokeColor;
+            out << YAML::Key << "SmokeDensity" << YAML::Value << f.smokeDensity;
+            out << YAML::Key << "HeatHaze" << YAML::Value << f.heatHaze;
+            out << YAML::Key << "Embers" << YAML::Value << f.embers;
+            out << YAML::Key << "CastLight" << YAML::Value << f.castLight;
+            out << YAML::Key << "LightIntensity" << YAML::Value << f.lightIntensity;
+            out << YAML::Key << "LightRange" << YAML::Value << f.lightRange;
+            out << YAML::Key << "CastShadows" << YAML::Value << f.castShadows;
+            out << YAML::EndMap;
+        }
+
         if (entity.HasComponent<AnimationComponent>()){
             auto& a = entity.GetComponent<AnimationComponent>();
             out << YAML::Key << "AnimationComponent" << YAML::Value << YAML::BeginMap;
@@ -1143,6 +1177,45 @@ namespace Phoenix{
             f.fluid = nullptr;
         }
         else if (entity.HasComponent<FluidComponent>()) entity.RemoveComponent<FluidComponent>();
+
+        if (auto n = node["FireComponent"]){
+            auto& f = entity.HasComponent<FireComponent>() ? entity.GetComponent<FireComponent>() : entity.AddComponent<FireComponent>();
+            const FireComponent def{}; // fallbacks for keys missing from the file
+            f.lit = n["Lit"].as<bool>(def.lit);
+            f.offset = ReadVec3(n["Offset"], def.offset);
+            f.width = n["Width"].as<float>(def.width);
+            f.height = n["Height"].as<float>(def.height);
+            f.resolution = n["Resolution"].as<int>(def.resolution);
+            f.pressureIterations = n["PressureIterations"].as<int>(def.pressureIterations);
+            const YAML::Node radius = n["SourceRadius"];
+            f.sourceRadius = (radius && radius.IsSequence() && radius.size() == 2)
+                ? glm::vec2(radius[0].as<float>(def.sourceRadius.x), radius[1].as<float>(def.sourceRadius.y)) : def.sourceRadius;
+            f.fuel = n["Fuel"].as<float>(def.fuel);
+            f.exitSpeed = n["ExitSpeed"].as<float>(def.exitSpeed);
+            f.burnRate = n["BurnRate"].as<float>(def.burnRate);
+            f.heat = n["Heat"].as<float>(def.heat);
+            f.cooling = n["Cooling"].as<float>(def.cooling);
+            f.buoyancy = n["Buoyancy"].as<float>(def.buoyancy);
+            f.vorticity = n["Vorticity"].as<float>(def.vorticity);
+            f.turbulence = n["Turbulence"].as<float>(def.turbulence);
+            f.smoke = n["Smoke"].as<float>(def.smoke);
+            f.smokeLife = n["SmokeLife"].as<float>(def.smokeLife);
+            f.wind = ReadVec3(n["Wind"], def.wind);
+            f.brightness = n["Brightness"].as<float>(def.brightness);
+            f.flameTemperature = n["FlameTemperature"].as<float>(def.flameTemperature);
+            f.smokeColor = ReadVec3(n["SmokeColor"], def.smokeColor);
+            f.smokeDensity = n["SmokeDensity"].as<float>(def.smokeDensity);
+            f.heatHaze = n["HeatHaze"].as<float>(def.heatHaze);
+            f.embers = n["Embers"].as<float>(def.embers);
+            f.castLight = n["CastLight"].as<bool>(def.castLight);
+            f.lightIntensity = n["LightIntensity"].as<float>(def.lightIntensity);
+            f.lightRange = n["LightRange"].as<float>(def.lightRange);
+            f.castShadows = n["CastShadows"].as<bool>(def.castShadows);
+            // A restored scene keeps the live flame (undo / Stop shouldn't snuff it out);
+            // `burning` follows `lit` again.
+            f.started = false;
+        }
+        else if (entity.HasComponent<FireComponent>()) entity.RemoveComponent<FireComponent>();
 
         if (auto n = node["AnimationComponent"]){
             auto& a = entity.HasComponent<AnimationComponent>() ? entity.GetComponent<AnimationComponent>() : entity.AddComponent<AnimationComponent>();

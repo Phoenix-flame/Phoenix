@@ -1,0 +1,330 @@
+{
+ "asset": {
+  "generator": "UnityGLTF",
+  "version": "2.0"
+ },
+ "extensionsUsed": [
+  "KHR_texture_transform"
+ ],
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0
+   ],
+   "name": "campfire-pit"
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 310,
+   "type": "VEC3",
+   "max": [
+    0.1388842910528183,
+    0.07272504270076752,
+    0.1346159130334854
+   ],
+   "min": [
+    -0.1388842910528183,
+    0.0,
+    -0.1346159130334854
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 310,
+   "type": "VEC3",
+   "max": [
+    0.9901006817817688,
+    1.0,
+    0.9901006817817688
+   ],
+   "min": [
+    -0.9901006817817688,
+    -1.0,
+    -0.9901006817817688
+   ]
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 310,
+   "type": "VEC4",
+   "max": [
+    1.0,
+    0.0,
+    1.0,
+    1.0
+   ],
+   "min": [
+    -1.0,
+    0.0,
+    -1.0,
+    1.0
+   ]
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5126,
+   "count": 310,
+   "type": "VEC2",
+   "max": [
+    0.84375,
+    0.9750000238418579
+   ],
+   "min": [
+    0.84375,
+    0.7749999761581421
+   ]
+  },
+  {
+   "bufferView": 4,
+   "componentType": 5123,
+   "count": 621,
+   "type": "SCALAR",
+   "max": [
+    309.0
+   ],
+   "min": [
+    0.0
+   ]
+  },
+  {
+   "bufferView": 5,
+   "componentType": 5126,
+   "count": 145,
+   "type": "VEC3",
+   "max": [
+    0.09576430916786194,
+    0.09354860335588455,
+    0.08630163222551346
+   ],
+   "min": [
+    -0.09576430916786194,
+    0.0,
+    -0.08630163222551346
+   ]
+  },
+  {
+   "bufferView": 6,
+   "componentType": 5126,
+   "count": 145,
+   "type": "VEC3",
+   "max": [
+    1.0,
+    0.9344295859336853,
+    0.9659258127212524
+   ],
+   "min": [
+    -1.0,
+    -0.9344295859336853,
+    -0.9659258127212524
+   ]
+  },
+  {
+   "bufferView": 7,
+   "componentType": 5126,
+   "count": 145,
+   "type": "VEC4",
+   "max": [
+    1.0,
+    0.0,
+    1.0,
+    1.0
+   ],
+   "min": [
+    -1.0,
+    0.0,
+    -1.0,
+    1.0
+   ]
+  },
+  {
+   "bufferView": 8,
+   "componentType": 5126,
+   "count": 145,
+   "type": "VEC2",
+   "max": [
+    0.59375,
+    0.9750000238418579
+   ],
+   "min": [
+    0.59375,
+    0.7749999761581421
+   ]
+  },
+  {
+   "bufferView": 9,
+   "componentType": 5121,
+   "count": 294,
+   "type": "SCALAR",
+   "max": [
+    144.0
+   ],
+   "min": [
+    0.0
+   ]
+  }
+ ],
+ "buffers": [
+  {
+   "byteLength": 23380,
+   "uri": "campfire_pit.bin"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteLength": 3720,
+   "byteStride": 12,
+   "target": 34962,
+   "byteOffset": 0
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 3720,
+   "byteLength": 3720,
+   "byteStride": 12,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 7440,
+   "byteLength": 4960,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 12400,
+   "byteLength": 2480,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 14880,
+   "byteLength": 1244,
+   "target": 34963
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 16124,
+   "byteLength": 1740,
+   "byteStride": 12,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 17864,
+   "byteLength": 1740,
+   "byteStride": 12,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 19604,
+   "byteLength": 2320,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 21924,
+   "byteLength": 1160,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 23084,
+   "byteLength": 296,
+   "target": 34963
+  }
+ ],
+ "images": [
+  {
+   "uri": "kenney_survival_colormap.png",
+   "name": "colormap"
+  }
+ ],
+ "materials": [
+  {
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 0,
+     "extensions": {
+      "KHR_texture_transform": {
+       "texCoord": 0
+      }
+     }
+    },
+    "metallicFactor": 0.0
+   },
+   "doubleSided": true,
+   "name": "colormap"
+  }
+ ],
+ "meshes": [
+  {
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TANGENT": 2,
+      "TEXCOORD_0": 3
+     },
+     "indices": 4,
+     "material": 0
+    }
+   ],
+   "name": "campfire-pit"
+  },
+  {
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 5,
+      "NORMAL": 6,
+      "TANGENT": 7,
+      "TEXCOORD_0": 8
+     },
+     "indices": 9,
+     "material": 0
+    }
+   ],
+   "name": "wood"
+  }
+ ],
+ "nodes": [
+  {
+   "children": [
+    1
+   ],
+   "mesh": 0,
+   "name": "campfire-pit"
+  },
+  {
+   "mesh": 1,
+   "translation": [
+    -0.00110860611,
+    0.015516879,
+    0.0128750633
+   ],
+   "name": "wood"
+  }
+ ],
+ "samplers": [
+  {
+   "magFilter": 9728,
+   "minFilter": 9984
+  }
+ ],
+ "textures": [
+  {
+   "sampler": 0,
+   "source": 0,
+   "name": "colormap"
+  }
+ ]
+}

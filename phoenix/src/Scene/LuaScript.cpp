@@ -367,6 +367,31 @@ namespace Phoenix{
         return 1;
     }
 
+    // ---- Fire (the script entity's FireComponent) ----
+
+    static FireComponent* ScriptFire(lua_State* L){
+        Entity e = ScriptEntity(L);
+        return e.HasComponent<FireComponent>() ? &e.GetComponent<FireComponent>() : nullptr;
+    }
+    static int l_Ignite(lua_State* L){
+        if (auto* f = ScriptFire(L)) { f->burning = true; f->started = true; f->doused = 0.0f; }
+        return 0;
+    }
+    static int l_Extinguish(lua_State* L){
+        if (auto* f = ScriptFire(L)) { f->burning = false; f->started = true; }
+        return 0;
+    }
+    static int l_IsBurning(lua_State* L){
+        auto* f = ScriptFire(L);
+        lua_pushboolean(L, f && f->burning);
+        return 1;
+    }
+    static int l_SetFireWind(lua_State* L){
+        if (auto* f = ScriptFire(L))
+            f->wind = { (float)luaL_checknumber(L, 1), (float)luaL_checknumber(L, 2), (float)luaL_checknumber(L, 3) };
+        return 0;
+    }
+
     // ---- Joints (the script entity's JointComponent) ----
     // Every function takes an optional joint number (1-based, default 1) as its last
     // argument, for entities with several joints.
@@ -817,6 +842,11 @@ namespace Phoenix{
         { "BreakJoint",     l_BreakJoint,     "Joints", "BreakJoint([joint])", "Removes the joint." },
         { "IsJointBroken",  l_IsJointBroken,  "Joints", "IsJointBroken([joint]) -> bool", "True once the joint has snapped or been broken." },
         { "GetJointCount",  l_GetJointCount,  "Joints", "GetJointCount() -> n", "Number of joints on this entity." },
+
+        { "Ignite",      l_Ignite,      "Fire", "Ignite()", "Lights this entity's fire." },
+        { "Extinguish",  l_Extinguish,  "Fire", "Extinguish()", "Puts this entity's fire out (it dies down over a moment)." },
+        { "IsBurning",   l_IsBurning,   "Fire", "IsBurning() -> bool", "True while the fire burns (water puts it out; a flame touching it lights it)." },
+        { "SetFireWind", l_SetFireWind, "Fire", "SetFireWind(x, y, z)", "Wind blowing on the flame (m/s, world)." },
 
         { "SetVehicleInput", l_SetVehicleInput, "Vehicle", "SetVehicleInput(forward, right [, brake, handbrake])", "forward/right in -1..1, brakes in 0..1; kept until changed." },
         { "GetVehicleSpeed", l_GetVehicleSpeed, "Vehicle", "GetVehicleSpeed() -> m/s", "Speed along the car's forward axis." },

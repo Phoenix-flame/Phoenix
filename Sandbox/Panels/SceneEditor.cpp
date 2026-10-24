@@ -105,6 +105,35 @@ namespace Phoenix{
             m_SelectedEntity = m_ActiveScene->CreateEntity("Fluid");
             m_SelectedEntity.AddComponent<FluidComponent>();
         }
+        if (ImGui::BeginMenu("Fire")){
+            // A simulated flame, with the dungeon kit's model to burn on (or bare).
+            struct FireKind{ const char* label; FireComponent::Preset preset; const char* model; glm::vec3 offset; float scale; };
+            static const FireKind kinds[] = {
+                { "Torch",    FireComponent::Preset::Torch,    "assets/models/dungeon/torch_mounted.gltf", { 0.0f, 0.6f, 0.32f }, 0.7f },
+                { "Candle",   FireComponent::Preset::Candle,   "assets/models/dungeon/candle.gltf",        { 0.0f, 0.89f, 0.0f }, 0.3f },
+                { "Campfire", FireComponent::Preset::Campfire, "assets/models/dungeon/campfire_pit.gltf",  { 0.0f, 0.03f, 0.0f }, 3.5f },
+                { "Brazier",  FireComponent::Preset::Brazier,  "assets/models/dungeon/fire_basket.gltf",   { 0.0f, 0.1f, 0.0f },  1.6f },
+            };
+            for (const FireKind& kind : kinds){
+                if (ImGui::MenuItem(kind.label)){
+                    m_SelectedEntity = m_ActiveScene->CreateEntity(kind.label);
+                    auto& mesh = m_SelectedEntity.AddComponent<MeshComponent>(CreateRef<Model>(kind.model));
+                    mesh.material.ambient = glm::vec3(1.0f);
+                    mesh.material.diffuse = glm::vec3(1.0f);
+                    mesh.material.specular = glm::vec3(0.08f);
+                    m_SelectedEntity.GetComponent<TransformComponent>().Scale = glm::vec3(kind.scale);
+                    auto& fire = m_SelectedEntity.AddComponent<FireComponent>();
+                    fire.ApplyPreset(kind.preset);
+                    fire.offset = kind.offset;
+                }
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Flame Only")){
+                m_SelectedEntity = m_ActiveScene->CreateEntity("Fire");
+                m_SelectedEntity.AddComponent<FireComponent>();
+            }
+            ImGui::EndMenu();
+        }
     }
 
     void SceneEditor::ScenePanel(){
@@ -382,6 +411,15 @@ namespace Phoenix{
             ImU32 fill = positive ? EditorUI::Success(0.3f) : EditorUI::Danger(0.3f);
             dl->AddRectFilled(ImVec2(c.x - r * 0.85f, c.y - r * 0.85f), ImVec2(c.x + r * 0.85f, c.y + r * 0.85f), fill, 2.0f);
             dl->AddRect(ImVec2(c.x - r * 0.85f, c.y - r * 0.85f), ImVec2(c.x + r * 0.85f, c.y + r * 0.85f), col, 2.0f, 0, 1.3f);
+        }
+        else if (entity.HasComponent<FireComponent>()){
+            // A flame: an orange teardrop around a yellow core.
+            dl->PathClear();
+            dl->PathLineTo(ImVec2(c.x, c.y - r * 1.15f));
+            dl->PathBezierCubicCurveTo(ImVec2(c.x + r * 0.5f, c.y - r * 0.35f), ImVec2(c.x + r * 0.95f, c.y + r * 0.1f), ImVec2(c.x, c.y + r * 0.95f));
+            dl->PathBezierCubicCurveTo(ImVec2(c.x - r * 0.95f, c.y + r * 0.1f), ImVec2(c.x - r * 0.5f, c.y - r * 0.35f), ImVec2(c.x, c.y - r * 1.15f));
+            dl->PathFillConvex(IM_COL32(255, 120, 40, 255));
+            dl->AddCircleFilled(ImVec2(c.x, c.y + r * 0.35f), r * 0.38f, IM_COL32(255, 220, 90, 255));
         }
         else if (entity.HasComponent<CameraComponent>()){
             ImU32 col = IM_COL32(110, 170, 255, 255);
@@ -735,6 +773,7 @@ namespace Phoenix{
             AddComponentItem<WireframeComponent>(entity, "Wireframe");
             AddComponentItem<AnimationComponent>(entity, "Animation");
             AddComponentItem<BoneAttachmentComponent>(entity, "Bone Attachment");
+            AddComponentItem<FireComponent>(entity, "Fire");
             ImGui::Separator();
             ImGui::TextDisabled("Lighting & Camera");
             // The shader only lights with the first MAX_NUM_POINT_LIGHTS; more are ignored.
@@ -1594,6 +1633,74 @@ namespace Phoenix{
 			ImGui::TextDisabled("Look");
 			ImGui::ColorEdit3("Colour", glm::value_ptr(component.color));
 			ImGui::DragFloat("Clarity", &component.clarity, 0.05f, 0.05f, 100.0f, "%.2f m");
+		});
+
+		DrawComponent<FireComponent>("Fire", entity, [&](FireComponent& component){
+			ImGui::Checkbox("Lit", &component.lit);
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Burning when the scene starts. While playing, water puts it out and a flame touching its source lights it.");
+			if (m_ActiveScene->IsRunning()){
+				ImGui::SameLine();
+				ImGui::TextDisabled(component.burning ? "(burning)" : "(out)");
+				ImGui::SameLine();
+				if (ImGui::SmallButton(component.burning ? "Put Out" : "Ignite")) { component.burning = !component.burning; component.doused = 0.0f; }
+			}
+			ImGui::TextDisabled("Preset");
+			static const char* presets[] = { "Torch", "Candle", "Campfire", "Brazier" };
+			for (int i = 0; i < 4; i++){
+				if (i > 0) { ImGui::SameLine(); }
+				if (ImGui::SmallButton(presets[i])) { component.ApplyPreset((FireComponent::Preset)i); }
+			}
+			ImGui::DragFloat3("Source", glm::value_ptr(component.offset), 0.01f, -100.0f, 100.0f, "%.3f");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Where the fuel burns, in the entity's frame (e.g. the torch's head).");
+
+			ImGui::Separator();
+			ImGui::TextDisabled("Simulation");
+			ImGui::DragFloat("Width", &component.width, 0.01f, 0.02f, 10.0f, "%.2f m");
+			ImGui::DragFloat("Height", &component.height, 0.01f, 0.02f, 20.0f, "%.2f m");
+			ImGui::SliderInt("Cells Across", &component.resolution, 6, 48);
+			if (component.sim){
+				glm::ivec3 d = component.sim->Dims();
+				ImGui::SameLine();
+				ImGui::TextDisabled("%dx%dx%d%s", d.x, d.y, d.z, component.sim->OnDevice() ? ", OpenCL" : "");
+			}
+			ImGui::SliderInt("Pressure Iterations", &component.pressureIterations, 4, 60);
+			ImGui::DragFloat2("Source Radius", glm::value_ptr(component.sourceRadius), 0.002f, 0.001f, 5.0f, "%.3f m");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Horizontal and vertical radius of the burning region.");
+			ImGui::DragFloat("Fuel", &component.fuel, 0.02f, 0.0f, 10.0f);
+			ImGui::DragFloat("Exit Speed", &component.exitSpeed, 0.01f, 0.0f, 10.0f, "%.2f m/s");
+			ImGui::DragFloat("Burn Rate", &component.burnRate, 0.1f, 0.1f, 60.0f, "%.1f /s");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("How fast fuel burns once hot: faster = shorter flames.");
+			ImGui::DragFloat("Heat", &component.heat, 0.02f, 0.0f, 10.0f);
+			ImGui::DragFloat("Cooling", &component.cooling, 0.1f, 0.0f, 100.0f);
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Radiative cooling of the hot gas (T^4).");
+			ImGui::DragFloat("Buoyancy", &component.buoyancy, 0.05f, 0.0f, 50.0f, "%.2f m/s2");
+			ImGui::DragFloat("Vorticity", &component.vorticity, 0.02f, 0.0f, 10.0f);
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Keeps the swirls that break a flame into tongues.");
+			ImGui::DragFloat("Turbulence", &component.turbulence, 0.05f, 0.0f, 50.0f, "%.2f m/s2");
+			ImGui::DragFloat("Smoke", &component.smoke, 0.01f, 0.0f, 5.0f);
+			ImGui::DragFloat("Smoke Life", &component.smokeLife, 0.05f, 0.0f, 30.0f, "%.2f s");
+			ImGui::DragFloat3("Wind", glm::value_ptr(component.wind), 0.02f, -50.0f, 50.0f, "%.2f");
+
+			ImGui::Separator();
+			ImGui::TextDisabled("Look");
+			ImGui::DragFloat("Brightness", &component.brightness, 0.02f, 0.0f, 50.0f);
+			ImGui::DragFloat("Flame Temperature", &component.flameTemperature, 10.0f, 1000.0f, 3500.0f, "%.0f K");
+			if (ImGui::IsItemHovered()) ImGui::SetTooltip("Black-body temperature of the hottest flame: ~1900 K is a wood or candle flame.");
+			ImGui::ColorEdit3("Smoke Colour", glm::value_ptr(component.smokeColor));
+			ImGui::DragFloat("Smoke Density", &component.smokeDensity, 0.02f, 0.0f, 20.0f);
+			ImGui::SliderFloat("Heat Haze", &component.heatHaze, 0.0f, 3.0f);
+			ImGui::DragFloat("Embers", &component.embers, 0.2f, 0.0f, 100.0f, "%.1f /s");
+
+			ImGui::Separator();
+			ImGui::TextDisabled("Light");
+			ImGui::Checkbox("Cast Light", &component.castLight);
+			if (component.castLight){
+				ImGui::SameLine();
+				ImGui::Checkbox("Shadows", &component.castShadows);
+				if (ImGui::IsItemHovered()) ImGui::SetTooltip("The four fires nearest the camera cast shadows.");
+				ImGui::DragFloat("Intensity", &component.lightIntensity, 0.02f, 0.0f, 20.0f);
+				ImGui::DragFloat("Range", &component.lightRange, 0.05f, 0.5f, 50.0f, "%.2f m");
+			}
 		});
 
 		DrawComponent<WaterComponent>("Water", entity, [](WaterComponent& component){

@@ -12,7 +12,11 @@
 #include <Phoenix/Scene/TerrainGenerator.h>
 #include <Phoenix/renderer/PoolWater.h>
 #include <Phoenix/Physics/ParticleFluid.h>
+#include <Phoenix/Physics/FireSim.h>
+#include <Phoenix/renderer/FireVolume.h>
 #include <unordered_set>
+#include <algorithm>
+#include <cmath>
 #include <Phoenix/renderer/WaterRipples.h>
 #include <Phoenix/Scene/ScriptableEntity.h>
 #include <Phoenix/Scene/Sky.h>
@@ -624,6 +628,132 @@ namespace Phoenix{
             s.friction = friction;
             s.surfaceTension = surfaceTension;
             s.lifetime = lifetime;
+            return s;
+        }
+    };
+
+    // A fire (see FireSim): a flame simulated as burning gas in a small box above its
+    // source, which sits at `offset` in the entity's frame (on a torch's head, in a
+    // brazier's bowl). The box stays upright, so the flame rises whatever holds it, and
+    // trails behind when the entity moves or the wind blows. It lights its surroundings
+    // with a point light that follows the flame's heat (flicker and dancing shadows),
+    // throws embers, and goes out when its source is under a pool's water or doused
+    // by a particle fluid; a burning flame lights an unlit fire it touches. Simulates
+    // in edit mode too.
+    struct FireComponent{
+        enum class Preset { Torch = 0, Candle, Campfire, Brazier };
+
+        bool lit = true;                    // burning when the scene starts
+        glm::vec3 offset = glm::vec3(0.0f); // source, in the entity's frame (scaled with it)
+
+        // Simulation box: width x height x width (m) above the source, in cells across.
+        float width = 0.4f;
+        float height = 0.8f;
+        int resolution = 16;
+        int pressureIterations = 12;
+        glm::vec2 sourceRadius = glm::vec2(0.09f, 0.05f);   // burning region: horizontal, vertical (m)
+
+        // Combustion and gas.
+        float fuel = 1.5f;
+        float exitSpeed = 0.5f;             // m/s
+        float burnRate = 7.0f;              // 1/s: higher burns out sooner (shorter flames)
+        float heat = 2.2f;
+        float cooling = 10.0f;
+        float buoyancy = 4.0f;              // m/s^2 per unit of temperature
+        float vorticity = 1.6f;
+        float turbulence = 4.0f;
+        float smoke = 0.35f;
+        float smokeLife = 1.2f;             // s
+        glm::vec3 wind = glm::vec3(0.0f);   // m/s (world)
+
+        // Look.
+        float brightness = 1.0f;
+        float flameTemperature = 1900.0f;   // kelvin at temperature 1 (colour: red-orange-yellow)
+        glm::vec3 smokeColor = glm::vec3(0.12f, 0.11f, 0.10f);
+        float smokeDensity = 1.0f;
+        float heatHaze = 1.0f;              // refraction of the hot air above the flame
+        float embers = 4.0f;                // per second
+
+        // Light: a point light at the flame's centre of heat, its strength following the
+        // flame's radiated power.
+        bool castLight = true;
+        float lightIntensity = 1.0f;
+        float lightRange = 4.0f;            // m: down to a tenth of its strength there
+        bool castShadows = true;
+
+        Ref<FireSim> sim;                   // live flame; not serialized
+        Ref<FireVolume> volume;             // its GPU copy
+        uint32_t uploadedStep = 0xffffffff; // sim step the volume holds
+        int frame = 0;                      // runtime: frames since created (off-screen fires step every other one)
+        float powerAverage = 0.0f;          // runtime: slow average of the radiated power
+        bool burning = false;               // runtime: lit now (set from `lit` when the scene starts)
+        bool started = false;               // runtime: `burning` initialised
+        float accumulator = 0.0f;           // runtime: seconds not yet simulated
+        float lightPower = 0.0f;            // runtime: smoothed radiated power (relative)
+        glm::vec3 lastSource = glm::vec3(0.0f);
+        bool hasLastSource = false;
+        glm::vec3 sourceVelocity = glm::vec3(0.0f);
+        float doused = 0.0f;                // runtime: water that hit the source lately
+        int quietSteps = 0;                 // runtime: steps since it went out
+
+        FireComponent() = default;
+        FireComponent(const FireComponent& o)
+            : lit(o.lit), offset(o.offset), width(o.width), height(o.height), resolution(o.resolution),
+              pressureIterations(o.pressureIterations), sourceRadius(o.sourceRadius),
+              fuel(o.fuel), exitSpeed(o.exitSpeed), burnRate(o.burnRate), heat(o.heat), cooling(o.cooling),
+              buoyancy(o.buoyancy), vorticity(o.vorticity), turbulence(o.turbulence), smoke(o.smoke),
+              smokeLife(o.smokeLife), wind(o.wind),
+              brightness(o.brightness), flameTemperature(o.flameTemperature), smokeColor(o.smokeColor),
+              smokeDensity(o.smokeDensity), heatHaze(o.heatHaze), embers(o.embers),
+              castLight(o.castLight), lightIntensity(o.lightIntensity), lightRange(o.lightRange),
+              castShadows(o.castShadows) {}
+
+        // Typical settings for a kind of fire (keeps lit, offset and wind).
+        void ApplyPreset(Preset preset){
+            FireComponent d;
+            d.lit = lit; d.offset = offset; d.wind = wind;
+            switch (preset){
+            case Preset::Torch: break;
+            case Preset::Candle:
+                // Thin flames let most of their glow through: brighter to look as bright.
+                d.width = 0.05f; d.height = 0.12f; d.resolution = 12; d.sourceRadius = { 0.011f, 0.012f };
+                d.exitSpeed = 0.04f; d.burnRate = 12.0f; d.buoyancy = 1.2f; d.turbulence = 0.2f; d.vorticity = 0.2f;
+                d.smoke = 0.05f; d.embers = 0.0f; d.heatHaze = 0.5f; d.brightness = 3.0f;
+                d.lightIntensity = 0.4f; d.lightRange = 1.5f; d.castShadows = false;
+                break;
+            case Preset::Campfire:
+                d.width = 1.0f; d.height = 1.8f; d.resolution = 24; d.sourceRadius = { 0.35f, 0.08f };
+                d.exitSpeed = 0.8f; d.burnRate = 5.0f; d.buoyancy = 4.0f; d.turbulence = 6.0f; d.vorticity = 2.5f;
+                d.smoke = 0.3f; d.smokeLife = 1.4f; d.smokeDensity = 0.6f; d.embers = 14.0f;
+                d.lightIntensity = 1.6f; d.lightRange = 6.0f;
+                d.pressureIterations = 16;
+                break;
+            case Preset::Brazier:
+                d.width = 0.6f; d.height = 1.2f; d.resolution = 18; d.sourceRadius = { 0.2f, 0.06f };
+                d.exitSpeed = 0.6f; d.burnRate = 6.0f; d.buoyancy = 4.5f; d.turbulence = 5.0f; d.vorticity = 2.0f;
+                d.smoke = 0.3f; d.embers = 8.0f; d.lightIntensity = 1.2f; d.lightRange = 5.0f;
+                break;
+            }
+            *this = d;
+        }
+
+        // Cells across the box and its cell size.
+        glm::ivec3 Resolution() const{
+            int n = std::max(resolution, 4);
+            return { n, std::max(4, (int)std::lround(height / std::max(width, 1e-3f) * n)), n };
+        }
+        FireSettings Settings() const{
+            FireSettings s;
+            s.resolution = Resolution();
+            s.cellSize = std::max(width, 1e-3f) / (float)s.resolution.x;
+            s.sourceRadius = sourceRadius;
+            // The source sits a little above the floor of the box, centred across it.
+            s.source = glm::vec3(width * 0.5f, std::max(sourceRadius.y, s.cellSize) + s.cellSize, width * 0.5f);
+            s.fuel = fuel; s.exitSpeed = exitSpeed; s.burnRate = burnRate; s.heat = heat; s.cooling = cooling;
+            s.buoyancy = buoyancy; s.vorticity = vorticity; s.turbulence = turbulence;
+            s.smoke = smoke; s.smokeLife = smokeLife;
+            s.pressureIterations = pressureIterations;
+            s.emberRate = embers;
             return s;
         }
     };
