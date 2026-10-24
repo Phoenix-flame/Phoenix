@@ -2709,6 +2709,33 @@ void MainLayer::BuildDefaultLayout(ImGuiID dockspaceID) {
     m_SelectDefaultTabsFrames = 2;
 }
 
+void MainLayer::DockNewPanels() {
+    // A layout saved before a panel existed has no entry for it, so the panel would
+    // open floating. Dock each such panel next to a sibling from its default group.
+    // Panels the user floated or closed do have an entry and are left alone.
+    const std::vector<std::vector<const char*>> groups = {
+        { "Settings", "Physics", "Profiler", "Shader Library" },
+        { "Training", "Timeline", "Script Editor", "Textures" },
+        { "Properties", "Agent Monitor" },
+    };
+    for (const auto& group : groups){
+        ImGuiID dockID = 0;
+        for (const char* name : group){
+            ImGuiWindowSettings* settings = ImGui::FindWindowSettings(ImHashStr(name));
+            if (settings && settings->DockId && ImGui::DockBuilderGetNode(settings->DockId)){
+                dockID = settings->DockId;
+                break;
+            }
+        }
+        if (!dockID)
+            continue;
+        for (const char* name : group){
+            if (!ImGui::FindWindowSettings(ImHashStr(name)))
+                ImGui::DockBuilderDockWindow(name, dockID);
+        }
+    }
+}
+
 void MainLayer::SetActiveScene(const Ref<Scene>& scene) {
     // The old scene is being discarded: just tear its simulation down, no restore.
     m_Environment.reset();
@@ -2970,6 +2997,8 @@ void MainLayer::OnImGuiRender(){
             ImGuiDockNode* node = ImGui::DockBuilderGetNode(dockspace_id);
             if (!node || !node->IsSplitNode())
                 m_ResetLayout = true;
+            else
+                DockNewPanels();
         }
         if (m_ResetLayout){
             m_ResetLayout = false;
