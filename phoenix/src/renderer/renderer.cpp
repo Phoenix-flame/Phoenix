@@ -97,6 +97,11 @@ namespace Phoenix{
 
         s_ShadowShader->Bind();
         s_ShadowShader->SetMat4("u_LightSpaceMatrix", lightSpaceMatrix);
+        // Slope-scaled depth offset for casters: surfaces seen at a grazing angle from
+        // the light span a range of depths per texel and would otherwise shadow
+        // themselves (acne). Pairs with the normal offset in lighting.glsl.
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glPolygonOffset(1.5f, 2.0f);
     }
 
     void Renderer::SubmitShadow(const Ref<VertexArray>& vertexArray, const glm::mat4& transform){
@@ -122,6 +127,7 @@ namespace Phoenix{
     }
 
     void Renderer::EndShadowPass(){
+        glDisable(GL_POLYGON_OFFSET_FILL);
         s_ShadowShader->Unbind();
         glBindFramebuffer(GL_FRAMEBUFFER, (uint32_t)s_PrevFBO);
         glViewport(s_PrevViewport[0], s_PrevViewport[1], s_PrevViewport[2], s_PrevViewport[3]);

@@ -103,6 +103,9 @@ out vec4 FragColor;
 #define SHADOW_COLS 4
 #define SHADOW_ROWS 2
 uniform highp sampler2DShadow u_ShadowMap;
+// World size of one shadow-map texel: light frustum width (30 units, orthoHalf = 15 in
+// Scene.cpp) / tile resolution (SHADOW_TILE = 1024 in renderer.cpp).
+const float SHADOW_TEXEL_WORLD = 30.0 / 1024.0;
 uniform mat4 u_LightSpaceMatrices[NR_SHADOWS];
 uniform int u_NumShadows;
 uniform bool u_ShadowsEnabled;
@@ -218,7 +221,14 @@ void main()
         float shadow = 0.0;
         if (u_ShadowsEnabled && i < u_NumShadows){
             vec3 lightDir = normalize(-dirLights[i].direction);
-            vec4 fls = u_LightSpaceMatrices[i] * vec4(FragPos, 1.0);
+            // Normal-offset shadows: look the depth up slightly above the surface
+            // (along its geometric normal, more at grazing angles). Comparing the
+            // surface against its own shadow-map texels otherwise self-shadows in
+            // stripes ("shadow acne": the moire rings on large floors).
+            vec3 geomNormal = normalize(Normal);
+            float grazing = 1.0 - clamp(dot(geomNormal, lightDir), 0.0, 1.0);
+            vec3 shadowPos = FragPos + geomNormal * SHADOW_TEXEL_WORLD * (0.6 + 1.6 * grazing);
+            vec4 fls = u_LightSpaceMatrices[i] * vec4(shadowPos, 1.0);
             vec3 proj = fls.xyz / fls.w;
             proj = proj * 0.5 + 0.5;
             // Only shadow fragments inside this light's frustum (else the kernel would
