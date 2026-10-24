@@ -51,6 +51,7 @@ private:
 
     // Dock the editor panels around the viewport (first run, or View > Reset Layout).
     void BuildDefaultLayout(ImGuiID dockspaceID);
+    void DockNewPanels();
 
     // Editor chrome. The title bar holds the logo, menus, Play/Stop and (for the
     // undecorated window) the window controls; it also drags the OS window.

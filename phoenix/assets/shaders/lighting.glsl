@@ -186,13 +186,24 @@ vec3 SampleEnvironment(vec3 dir)
 // 2. Penumbra estimate: wider the further the receiver is behind its occluders, and the
 //    bigger the light (contact hardening).
 // 3. Filter: that many hardware-PCF taps over a disk of that size.
-// Taps lie on a Vogel (golden-angle) disk rotated per pixel, so a few taps give a smooth,
-// slightly grainy penumbra instead of banding.
+// Taps lie on a Vogel (golden-angle) disk rotated per pixel, so a few taps give a smooth
+// penumbra instead of banding; QuadAverage then blends each 2x2 pixel quad, whose four
+// rotations differ, so the per-pixel grain doesn't show.
 
 float ShadowNoise()
 {
     // interleaved gradient noise, as an angle
     return 6.2831853 * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+}
+
+// Box-average a value over the pixel's 2x2 quad using the screen-space derivatives
+// (the quad neighbour is v +/- dFdx(v)). Must be called in uniform control flow.
+float QuadAverage(float v)
+{
+    vec2 parity = mod(floor(gl_FragCoord.xy), 2.0) - 0.5; // -0.5 even, +0.5 odd
+    v -= dFdx(v) * parity.x;
+    v -= dFdy(v) * parity.y;
+    return v;
 }
 
 vec2 VogelDisk(int i, int count, float phi)
@@ -212,8 +223,16 @@ vec2 AtlasUV(vec4 rect, vec2 uv, float texel)
 // `slope` (raw depth per tile uv) keeps a tilted receiver from occluding itself.
 vec2 FindBlockers(highp sampler2D depthMap, vec4 rect, vec2 uv, float ref, float radius, float slope, float texel, int count, float phi)
 {
+    // The centre tap needs no slope allowance. Without it, near contact (receiver just
+    // behind its occluder) the slope allowance can reject every disk tap, and pixels
+    // inside the shadow would come out fully lit.
     float sum = 0.0;
     float found = 0.0;
+    float center = textureLod(depthMap, AtlasUV(rect, uv, texel), 0.0).r;
+    if (center < ref){
+        sum = center;
+        found = 1.0;
+    }
     for (int i = 0; i < count; i++){
         vec2 offset = VogelDisk(i, count, phi) * radius;
         float depth = textureLod(depthMap, AtlasUV(rect, uv + offset, texel), 0.0).r;
@@ -378,6 +397,7 @@ void main()
         float shadow = 0.0;
         if (u_ReceiveShadows && dot(norm, lightDir) > 0.0)
             shadow = DirShadow(i, geomNormal, lightDir, phi);
+        shadow = clamp(QuadAverage(shadow), 0.0, 1.0);
         result += CalcDirLight(dirLights[i], norm, viewDir, diffuseColor, shadow);
     }
 
@@ -387,6 +407,7 @@ void main()
         float shadow = 0.0;
         if (u_ReceiveShadows && dot(norm, pointLights[i].position - FragPos) > 0.0)
             shadow = PointShadow(i, geomNormal, pointLights[i].position, phi);
+        shadow = clamp(QuadAverage(shadow), 0.0, 1.0);
         result += CalcPointLight(pointLights[i], norm, FragPos, viewDir, diffuseColor, shadow);
     }
 

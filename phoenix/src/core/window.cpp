@@ -22,12 +22,25 @@ namespace Phoenix{
         _data.Height = props.height;
         _data.CustomTitleBar = props.customTitleBar;
 
+#if GLFW_VERSION_MAJOR > 3 || (GLFW_VERSION_MAJOR == 3 && GLFW_VERSION_MINOR >= 4)
+        // A custom title bar moves the window itself (glfwSetWindowPos), which Wayland
+        // doesn't allow. Run through XWayland instead when it is available.
+        if (props.customTitleBar && glfwPlatformSupported(GLFW_PLATFORM_X11))
+            glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
+#endif
 
         int success = glfwInit();
         PHX_CORE_ASSERT(success, "Could not initialize GLFW!");
         glfwSetErrorCallback(GLFWErrorCallback);
 
-        if (props.customTitleBar)
+#if GLFW_VERSION_MAJOR > 3 || (GLFW_VERSION_MAJOR == 3 && GLFW_VERSION_MINOR >= 4)
+        // Still on Wayland: an undecorated window couldn't be dragged, so let the
+        // compositor draw the frame.
+        if (_data.CustomTitleBar && glfwGetPlatform() == GLFW_PLATFORM_WAYLAND)
+            _data.CustomTitleBar = false;
+#endif
+
+        if (_data.CustomTitleBar)
             glfwWindowHint(GLFW_DECORATED, GLFW_FALSE);
 
         // Don't open larger than the desktop (minus a margin), e.g. on a small laptop screen.
@@ -44,7 +57,7 @@ namespace Phoenix{
         _data.Height = height;
 
         _window = glfwCreateWindow(width, height, props.title.c_str(), nullptr, nullptr);
-        if (props.customTitleBar)
+        if (_data.CustomTitleBar)
             glfwSetWindowSizeLimits(_window, 640, 360, GLFW_DONT_CARE, GLFW_DONT_CARE);
 
         glfwMakeContextCurrent(_window);
