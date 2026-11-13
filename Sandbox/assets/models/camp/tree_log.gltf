@@ -1,0 +1,195 @@
+{
+ "asset": {
+  "generator": "UnityGLTF",
+  "version": "2.0"
+ },
+ "extensionsUsed": [
+  "KHR_texture_transform"
+ ],
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0
+   ],
+   "name": "tree-log"
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 148,
+   "type": "VEC3",
+   "max": [
+    0.12740518152713776,
+    0.17148177325725555,
+    0.5
+   ],
+   "min": [
+    -0.12208196520805359,
+    -0.10565509647130966,
+    -0.5
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 148,
+   "type": "VEC3",
+   "max": [
+    0.9984459280967712,
+    0.866025447845459,
+    1.0
+   ],
+   "min": [
+    -0.9984459280967712,
+    -0.8646795153617859,
+    -1.0
+   ]
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 148,
+   "type": "VEC4",
+   "max": [
+    1.0,
+    0.498189240694046,
+    1.0,
+    1.0
+   ],
+   "min": [
+    -1.0,
+    -0.498189240694046,
+    -1.0,
+    1.0
+   ]
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5126,
+   "count": 148,
+   "type": "VEC2",
+   "max": [
+    0.84375,
+    0.9750000238418579
+   ],
+   "min": [
+    0.59375,
+    0.7749999761581421
+   ]
+  },
+  {
+   "bufferView": 4,
+   "componentType": 5121,
+   "count": 264,
+   "type": "SCALAR",
+   "max": [
+    147.0
+   ],
+   "min": [
+    0.0
+   ]
+  }
+ ],
+ "buffers": [
+  {
+   "byteLength": 7368,
+   "uri": "tree_log.bin"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteLength": 1776,
+   "byteStride": 12,
+   "target": 34962,
+   "byteOffset": 0
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 1776,
+   "byteLength": 1776,
+   "byteStride": 12,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 3552,
+   "byteLength": 2368,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 5920,
+   "byteLength": 1184,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 7104,
+   "byteLength": 264,
+   "target": 34963
+  }
+ ],
+ "images": [
+  {
+   "uri": "kenney_survival_colormap.png",
+   "name": "colormap"
+  }
+ ],
+ "materials": [
+  {
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 0,
+     "extensions": {
+      "KHR_texture_transform": {
+       "texCoord": 0
+      }
+     }
+    },
+    "metallicFactor": 0.0
+   },
+   "doubleSided": true,
+   "name": "colormap"
+  }
+ ],
+ "meshes": [
+  {
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TANGENT": 2,
+      "TEXCOORD_0": 3
+     },
+     "indices": 4,
+     "material": 0
+    }
+   ],
+   "name": "tree-log"
+  }
+ ],
+ "nodes": [
+  {
+   "mesh": 0,
+   "name": "tree-log"
+  }
+ ],
+ "samplers": [
+  {
+   "magFilter": 9728,
+   "minFilter": 9984
+  }
+ ],
+ "textures": [
+  {
+   "sampler": 0,
+   "source": 0,
+   "name": "colormap"
+  }
+ ]
+}

@@ -351,6 +351,7 @@ namespace Phoenix{
         for (auto entity : registry.view<PoolComponent>())
             if (auto& water = registry.get<PoolComponent>(entity).water) { water->Reset(); }
         m_Scene->ResetFluids();
+        m_Scene->ResetFires();
 
         // Teleport the physics bodies to match and stop them.
         if (physics){

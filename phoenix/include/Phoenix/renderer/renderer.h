@@ -169,7 +169,7 @@ namespace Phoenix{
 		// Up to this many directional / point lights, each optionally with its own shadow.
 		// Must match NR_DIR_LIGHTS / NR_POINT_LIGHTS in lighting.glsl.
 		static const int MAX_DIR_LIGHTS = 8;
-		static const int MAX_POINT_LIGHTS = 4;
+		static const int MAX_POINT_LIGHTS = 8;
 
 		// Upload the lighting environment once per scene, before any Submit calls.
 		// Pass arrays of directional lights (with their world-space directions) and point
@@ -339,6 +339,31 @@ namespace Phoenix{
 		};
 		static void RenderFluid(const std::vector<glm::vec4>& positions, const FluidParams& params);
 
+		// Fires (FireComponent): each flame's grid ray-marched as glowing soot (the black-body
+		// colour of its temperature where fuel burns, a faint blue in the reaction zone) with
+		// smoke and the shimmer of the hot air above it; then its embers as glowing streaks.
+		// Call after CaptureScene (the shimmer bends that copy and the march stops at its
+		// depth), back to front.
+		struct FireParams{
+			glm::vec3 origin = glm::vec3(0.0f);                 // world box: min corner
+			glm::vec3 size = glm::vec3(1.0f);                   // and extent
+			glm::ivec3 dims = glm::ivec3(1);                    // cells
+			uint32_t volume = 0;                                // FireVolume texture
+			float brightness = 1.0f;
+			float flameTemperature = 1900.0f;                   // kelvin at temperature 1
+			glm::vec3 smokeColor = glm::vec3(0.12f);
+			float smokeDensity = 1.0f;
+			float heatHaze = 1.0f;
+			float time = 0.0f;
+			glm::vec3 ambient = glm::vec3(0.1f);                // light on the smoke
+		};
+		static void RenderFire(const FireParams& params);
+		// One glowing ember: world position, temperature (1 = the flame's), velocity, radius.
+		struct EmberPoint{ glm::vec3 position; float temperature; glm::vec3 velocity; float radius; };
+		static void RenderEmbers(const std::vector<EmberPoint>& embers, float flameTemperature, float brightness);
+		// Colour of a black body at `kelvin` (linear RGB, normalised to a maximum component of 1).
+		static glm::vec3 BlackBodyColor(float kelvin);
+
 		// Linear lighting (opt-in; off keeps the original look). When on, colour textures
 		// are sampled through their sRGB views, colours picked in the editor (materials,
 		// lights, ambient, water, gizmos) are converted from sRGB to linear before shading,
@@ -383,6 +408,16 @@ namespace Phoenix{
             int width = 0, height = 0;
         };
         static FluidTargets s_FluidTargets;
+
+        // Fire: volume and ember shaders, the black-body table, the ember buffer.
+        static Ref<Shader> s_FireVolumeShader, s_FireEmberShader;
+        struct FireTargets{
+            uint32_t blackBody = 0;     // RGB16F, 0..FIRE_MAX_KELVIN
+            uint32_t vao = 0, vbo = 0;
+            size_t capacity = 0;
+            uint32_t frame = 0;
+        };
+        static FireTargets s_FireTargets;
         // Binds the sun's shadow (directional light 0) for a shader that declares it.
         static void BindSunShadow(const Ref<Shader>& shader);
 

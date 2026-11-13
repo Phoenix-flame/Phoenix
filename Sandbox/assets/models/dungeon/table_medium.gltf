@@ -1,0 +1,125 @@
+{
+ "asset": {
+  "generator": "Khronos glTF Blender I/O v0.9.36",
+  "version": "2.0"
+ },
+ "scene": 0,
+ "scenes": [
+  {
+   "name": "Scene",
+   "nodes": [
+    0
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "mesh": 0,
+   "name": "table_medium"
+  }
+ ],
+ "materials": [
+  {
+   "name": "texture",
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 0,
+     "texCoord": 0
+    },
+    "metallicFactor": 0,
+    "roughnessFactor": 0.44999998807907104
+   }
+  }
+ ],
+ "meshes": [
+  {
+   "name": "Cube.16027",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "indices": 3,
+     "material": 0
+    }
+   ]
+  }
+ ],
+ "textures": [
+  {
+   "source": 0
+  }
+ ],
+ "images": [
+  {
+   "name": "dungeon_texture",
+   "uri": "dungeon_texture.png"
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 477,
+   "max": [
+    1.0000003576278687,
+    1,
+    1.0000004768371582
+   ],
+   "min": [
+    -1,
+    8.195638656616211e-08,
+    -1
+   ],
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 477,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 477,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5123,
+   "count": 768,
+   "type": "SCALAR"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteLength": 5724,
+   "byteOffset": 0
+  },
+  {
+   "buffer": 0,
+   "byteLength": 5724,
+   "byteOffset": 5724
+  },
+  {
+   "buffer": 0,
+   "byteLength": 3816,
+   "byteOffset": 11448
+  },
+  {
+   "buffer": 0,
+   "byteLength": 1536,
+   "byteOffset": 15264
+  }
+ ],
+ "buffers": [
+  {
+   "byteLength": 16800,
+   "uri": "table_medium.bin"
+  }
+ ]
+}

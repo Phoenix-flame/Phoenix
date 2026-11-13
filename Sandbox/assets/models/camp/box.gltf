@@ -1,0 +1,195 @@
+{
+ "asset": {
+  "generator": "UnityGLTF",
+  "version": "2.0"
+ },
+ "extensionsUsed": [
+  "KHR_texture_transform"
+ ],
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0
+   ],
+   "name": "box"
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 248,
+   "type": "VEC3",
+   "max": [
+    0.125,
+    0.25,
+    0.125
+   ],
+   "min": [
+    -0.125,
+    0.0,
+    -0.125
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 248,
+   "type": "VEC3",
+   "max": [
+    0.9914832711219788,
+    1.0,
+    0.9991419315338135
+   ],
+   "min": [
+    -0.9914832711219788,
+    -1.0,
+    -0.9991419315338135
+   ]
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 248,
+   "type": "VEC4",
+   "max": [
+    1.0,
+    0.39371374249458313,
+    0.9957506656646729,
+    1.0
+   ],
+   "min": [
+    -1.0,
+    -0.39371374249458313,
+    -0.9957506656646729,
+    1.0
+   ]
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5126,
+   "count": 248,
+   "type": "VEC2",
+   "max": [
+    0.84375,
+    0.9750000238418579
+   ],
+   "min": [
+    0.59375,
+    0.7749999761581421
+   ]
+  },
+  {
+   "bufferView": 4,
+   "componentType": 5121,
+   "count": 372,
+   "type": "SCALAR",
+   "max": [
+    247.0
+   ],
+   "min": [
+    0.0
+   ]
+  }
+ ],
+ "buffers": [
+  {
+   "byteLength": 12276,
+   "uri": "box.bin"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteLength": 2976,
+   "byteStride": 12,
+   "target": 34962,
+   "byteOffset": 0
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 2976,
+   "byteLength": 2976,
+   "byteStride": 12,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 5952,
+   "byteLength": 3968,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 9920,
+   "byteLength": 1984,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 11904,
+   "byteLength": 372,
+   "target": 34963
+  }
+ ],
+ "images": [
+  {
+   "uri": "kenney_survival_colormap.png",
+   "name": "colormap"
+  }
+ ],
+ "materials": [
+  {
+   "pbrMetallicRoughness": {
+    "baseColorTexture": {
+     "index": 0,
+     "extensions": {
+      "KHR_texture_transform": {
+       "texCoord": 0
+      }
+     }
+    },
+    "metallicFactor": 0.0
+   },
+   "doubleSided": true,
+   "name": "colormap"
+  }
+ ],
+ "meshes": [
+  {
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TANGENT": 2,
+      "TEXCOORD_0": 3
+     },
+     "indices": 4,
+     "material": 0
+    }
+   ],
+   "name": "box"
+  }
+ ],
+ "nodes": [
+  {
+   "mesh": 0,
+   "name": "box"
+  }
+ ],
+ "samplers": [
+  {
+   "magFilter": 9728,
+   "minFilter": 9984
+  }
+ ],
+ "textures": [
+  {
+   "sampler": 0,
+   "source": 0,
+   "name": "colormap"
+  }
+ ]
+}

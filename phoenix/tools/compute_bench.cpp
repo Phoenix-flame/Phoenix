@@ -1,9 +1,10 @@
-// Checks the OpenCL water ripples and terrain generation against their CPU paths (they
-// must match bit for bit) and times both across grid sizes.
+// Checks the OpenCL water ripples, terrain generation, particle fluid and fire against
+// their CPU paths (they must match bit for bit) and times both.
 //   compute_bench [frames=120]
 #include <Phoenix/Compute/Compute.h>
 #include <Phoenix/renderer/WaterRipples.h>
 #include <Phoenix/Physics/ParticleFluid.h>
+#include <Phoenix/Physics/FireSim.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <Phoenix/Scene/TerrainGenerator.h>
 #include <Phoenix/core/log.h>
@@ -163,6 +164,47 @@ int main(int argc, char** argv){
             gpuUs / frames / 1000.0, same ? "identical" : "MISMATCH");
         std::printf("  after %.1f s: %d outside the tank, mean height %.3f m (a still %.2f m deep pool: %.3f), max speed %.2f m/s, push on the ball %.1f N s up\n",
             frames / 60.0f, outside, meanY, volume / 4.0f, volume / 8.0f, maxSpeed, push.y);
+    }
+
+    // Fire: a torch-sized and a campfire-sized grid, the same wind gusts on both backends.
+    std::printf("\nfire, %d steps at 60 Hz\n", frames);
+    for (glm::ivec3 res : { glm::ivec3(16, 40, 16), glm::ivec3(32, 64, 32) }){
+        FireSettings settings;
+        settings.resolution = res;
+        settings.cellSize = 0.4f / res.x;
+        settings.source = glm::vec3(0.2f, 0.06f, 0.2f);
+        settings.emberRate = 20.0f;
+        FireSim cpu, gpu;
+        cpu.SetSettings(settings);
+        gpu.SetSettings(settings);
+        if (!gpu.UseOpenCL(true)) { std::printf("device fire failed\n"); return 1; }
+        double cpuUs = 0.0, gpuUs = 0.0;
+        float minPower = 1e30f, maxPower = 0.0f;
+        for (int f = 0; f < frames; f++){
+            glm::vec3 wind(std::sin(f * 0.05f) * 0.6f, 0.0f, 0.2f);
+            bool burning = f < frames * 3 / 4;
+            auto t0 = Clock::now();
+            cpu.Step(1.0f / 60.0f, wind, burning);
+            cpuUs += Microseconds(t0);
+            t0 = Clock::now();
+            gpu.Step(1.0f / 60.0f, wind, burning);
+            gpuUs += Microseconds(t0);
+            if (f > 60 && burning) { minPower = std::min(minPower, cpu.Power()); maxPower = std::max(maxPower, cpu.Power()); }
+        }
+        const size_t n = (size_t)cpu.Cells();
+        bool same = gpu.OnDevice()
+                 && std::memcmp(cpu.Scalars().data(), gpu.Scalars().data(), sizeof(glm::vec4) * n) == 0
+                 && std::memcmp(cpu.Velocities().data(), gpu.Velocities().data(), sizeof(glm::vec4) * n) == 0;
+        ok &= same;
+        float maxT = 0.0f, maxV = 0.0f;
+        for (size_t i = 0; i < n; i++){
+            maxT = std::max(maxT, cpu.Scalars()[i].x);
+            maxV = std::max(maxV, glm::length(glm::vec3(cpu.Velocities()[i])));
+        }
+        std::printf("  %d x %d x %d: cpu %.2f ms/step  opencl %.2f ms/step  %s\n", res.x, res.y, res.z,
+            cpuUs / frames / 1000.0, gpuUs / frames / 1000.0, same ? "identical" : "MISMATCH");
+        std::printf("    burning: power %.3g..%.3g (flicker), flame temperature %.2f; at the end: max T %.3f, max speed %.2f m/s, %d embers\n",
+            minPower, maxPower, cpu.FlameTemperature(), maxT, maxV, (int)cpu.Embers().size());
     }
     return ok ? 0 : 2;
 }
